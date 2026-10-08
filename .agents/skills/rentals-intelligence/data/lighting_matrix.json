@@ -1,0 +1,138 @@
+{
+  "voltage_nepal_ac": 230,
+  "circuit_standards_nepal": {
+    "domestic_standard_socket": { "rating_amps": 5, "max_continuous_watts": 1150, "safe_load_watts": 920 },
+    "power_socket_15a": { "rating_amps": 15, "max_continuous_watts": 3450, "safe_load_80_pct_watts": 2760 },
+    "portable_honda_generator_eu30is": { "rated_kva": 2.8, "continuous_watts": 2800, "surge_watts": 3000 }
+  },
+  "fixtures": {
+    "Aputure LS 600x Pro": {
+      "type": "Bi-Color Point Source COB",
+      "power_draw_w": 720,
+      "amperage_at_230v": 3.13,
+      "cct": "2700K - 6500K",
+      "cri": 96,
+      "tlci": 98,
+      "ssi_d56": 74,
+      "lux_1m_bare": 18510,
+      "lux_3m_hyper_reflector": 5610,
+      "lux_5m_hyper_reflector": 2080,
+      "mount": "Bowens S",
+      "weather_rating": "IP54 Weather Resistant",
+      "weight_kg": 18.2,
+      "power_supply": "Built-in dual V-mount ballast / 100-240V AC",
+      "battery_compatibility": "Dual 14.4V V-Mount (50% output) or Dual 26V/28.8V V-Mount (100% output)"
+    },
+    "Aputure 400x": {
+      "type": "Bi-Color Point Source COB",
+      "power_draw_w": 450,
+      "amperage_at_230v": 1.96,
+      "cct": "2700K - 6500K",
+      "cri": 96,
+      "tlci": 97,
+      "mount": "Bowens S",
+      "weight_kg": 9.5
+    },
+    "amaran 300c": {
+      "type": "RGBWW Full Color Point Source COB",
+      "power_draw_w": 360,
+      "amperage_at_230v": 1.57,
+      "cct": "2500K - 7500K + HSI",
+      "cri": 95,
+      "tlci": 95,
+      "ssi_d56": 71,
+      "lux_1m_reflector": 26580,
+      "lux_3m_reflector": 2980,
+      "mount": "Bowens S",
+      "weight_kg": 3.52,
+      "battery_compatibility": "48V DC via 2x V-Mount battery station"
+    },
+    "amaran 200d S": {
+      "type": "Daylight Point Source COB",
+      "power_draw_w": 221,
+      "amperage_at_230v": 0.96,
+      "cct": "5600K",
+      "cri": 96,
+      "tlci": 99,
+      "ssi_d56": 87,
+      "lux_1m_reflector": 55800,
+      "mount": "Bowens S",
+      "weight_kg": 2.35
+    },
+    "amaran 60d S": {
+      "type": "Ultra-compact Daylight COB",
+      "power_draw_w": 78,
+      "amperage_at_230v": 0.34,
+      "cct": "5600K",
+      "cri": 96,
+      "tlci": 99,
+      "ssi_d56": 86,
+      "mount": "Bowens S (Mini adapter included)",
+      "weight_kg": 0.67,
+      "battery_compatibility": "Dual NP-F970 or D-Tap V-Mount"
+    },
+    "amaran F22c": {
+      "type": "2x2 Flexible RGBWW Mat",
+      "power_draw_w": 200,
+      "amperage_at_230v": 0.87,
+      "cct": "2500K - 7500K + HSI",
+      "cri": 95,
+      "tlci": 97,
+      "weight_kg": 2.85,
+      "battery_compatibility": "14.4V / 26V / 28.8V V-Mount"
+    },
+    "amaran T4c Tube (4ft)": {
+      "type": "4ft RGBWW Pixel Tube Light",
+      "power_draw_w": 40,
+      "amperage_at_230v": 0.17,
+      "cct": "2500K - 7500K + RGB",
+      "battery_runtime_hours": 1.7,
+      "weight_kg": 2.3
+    },
+    "amaran T2c Tube (2ft)": {
+      "type": "2ft RGBWW Pixel Tube Light",
+      "power_draw_w": 25,
+      "amperage_at_230v": 0.11,
+      "cct": "2500K - 7500K + RGB",
+      "battery_runtime_hours": 1.5,
+      "weight_kg": 1.1
+    },
+    "Aputure MC Pro (8-Light Production Kit)": {
+      "type": "RGBWW Micro-panel 8-Light Charging Case",
+      "power_draw_w": 120,
+      "amperage_at_230v": 0.52,
+      "cct": "2000K - 10000K",
+      "cri": 96,
+      "tlci": 97,
+      "weather_rating": "IP65 Waterproof per unit",
+      "weight_kg": 8.5
+    },
+    "Fog Machine 1000W": {
+      "type": "Special Effects Fogger",
+      "power_draw_w": 1000,
+      "amperage_at_230v": 4.35,
+      "duty_cycle": "Intermittent (heating element draws 1000W bursts)"
+    }
+  },
+  "load_calculation_engine": {
+    "safe_threshold_watts": 2760,
+    "max_circuit_threshold_watts": 3450,
+    "circuit_evaluation_rules": [
+      {
+        "condition": "total_watts <= 2500",
+        "status": "SAFE",
+        "action": "Can run safely on a single dedicated 15A power socket in Nepal."
+      },
+      {
+        "condition": "total_watts > 2500 and total_watts <= 5000",
+        "status": "SPLIT_ACROSS_CIRCUITS",
+        "action": "Exceeds safe continuous capacity for one 15A outlet. Must split across two separate breaker circuits."
+      },
+      {
+        "condition": "total_watts > 5000 or outdoor_location == true",
+        "status": "GENERATOR_REQUIRED",
+        "action": "Total electrical load exceeds domestic/commercial wall outlets. Requires heavy-duty silent cinema generator (5kVA+)."
+      }
+    ]
+  }
+}

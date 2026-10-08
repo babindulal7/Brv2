@@ -31,59 +31,135 @@ export const QuantityChip: React.FC<QuantityChipProps> = ({
 
   if (compact) {
     return (
-      <div className={`inline-flex items-center gap-1.5 text-xs font-mono select-none ${className}`}>
-        <span className="text-slate-300 font-semibold">{booked} total</span>
-        {returned > 0 && <span className="text-emerald-400">({returned} ret)</span>}
-        {pickedUp > 0 && <span className="text-blue-400">({pickedUp} out)</span>}
-        {missing > 0 && <span className="text-red-400 font-bold">({missing} miss)</span>}
-        {damaged > 0 && <span className="text-amber-400 font-bold">({damaged} dmg)</span>}
+      <div
+        className={className || undefined}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          fontSize: 'var(--t-meta)',
+          fontFamily: 'var(--font-id, sans-serif)',
+          fontVariantNumeric: 'tabular-nums',
+          userSelect: 'none',
+        }}
+      >
+        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{booked} total</span>
+        {returned > 0 && <span style={{ color: 'var(--st-in-fg)' }}>({returned} ret)</span>}
+        {pickedUp > 0 && <span style={{ color: 'var(--st-out-fg)' }}>({pickedUp} out)</span>}
+        {missing > 0 && <span style={{ color: 'var(--st-danger-fg)', fontWeight: 700 }}>({missing} miss)</span>}
+        {damaged > 0 && <span style={{ color: 'var(--st-progress-fg)', fontWeight: 700 }}>({damaged} dmg)</span>}
       </div>
     )
   }
 
+  const chipBase: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 8px',
+    borderRadius: 'var(--r-chip)',
+    fontSize: 'var(--t-meta)',
+    fontWeight: 500,
+    lineHeight: 1.2,
+  }
+
   return (
-    <div className={`inline-flex items-center flex-wrap gap-1.5 text-xs select-none ${className}`}>
+    <div
+      className={className || undefined}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 6,
+        fontSize: 'var(--t-meta)',
+        userSelect: 'none',
+      }}
+    >
       {/* Booked Total */}
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 font-medium">
+      <span
+        style={{
+          ...chipBase,
+          background: 'var(--card2)',
+          border: '1px solid var(--border)',
+          color: 'var(--text)',
+        }}
+      >
         <span>{booked} Booked</span>
       </span>
 
       {/* Packed */}
       {packed > 0 && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-950/60 border border-amber-800 text-amber-300 font-medium">
-          <IconPackage className="w-3 h-3" />
+        <span
+          style={{
+            ...chipBase,
+            background: 'var(--st-progress-bg)',
+            border: '1px solid var(--st-progress-border)',
+            color: 'var(--st-progress-fg)',
+          }}
+        >
+          <IconPackage size={12} />
           <span>{packed} Packed</span>
         </span>
       )}
 
       {/* Picked Up (On Rent) */}
       {pickedUp > 0 && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800 text-blue-300 font-medium">
-          <IconArrowUpRight className="w-3 h-3" />
+        <span
+          style={{
+            ...chipBase,
+            background: 'var(--st-out-bg)',
+            border: '1px solid var(--st-out-border)',
+            color: 'var(--st-out-fg)',
+          }}
+        >
+          <IconArrowUpRight size={12} />
           <span>{pickedUp} Out</span>
         </span>
       )}
 
       {/* Returned */}
       {returned > 0 && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950/60 border border-emerald-800 text-emerald-300 font-medium">
-          <IconCheck className="w-3 h-3" />
+        <span
+          style={{
+            ...chipBase,
+            background: 'var(--st-in-bg)',
+            border: '1px solid var(--st-in-border)',
+            color: 'var(--st-in-fg)',
+          }}
+        >
+          <IconCheck size={12} />
           <span>{returned} In</span>
         </span>
       )}
 
       {/* Missing */}
       {missing > 0 && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-950/80 border border-red-800 text-red-300 font-semibold">
-          <IconAlertOctagon className="w-3 h-3" />
+        <span
+          style={{
+            ...chipBase,
+            background: 'var(--st-danger-bg)',
+            border: '1px solid var(--st-danger-border)',
+            color: 'var(--st-danger-fg)',
+            fontWeight: 700,
+          }}
+        >
+          <IconAlertOctagon size={12} />
           <span>{missing} Missing</span>
         </span>
       )}
 
       {/* Damaged */}
       {damaged > 0 && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-950/80 border border-amber-700 text-amber-300 font-semibold">
-          <IconFlame className="w-3 h-3" />
+        <span
+          style={{
+            ...chipBase,
+            background: 'var(--st-progress-bg)',
+            border: '1px solid var(--st-progress-border)',
+            color: 'var(--st-progress-fg)',
+            fontWeight: 700,
+          }}
+        >
+          <IconFlame size={12} />
           <span>{damaged} Damaged</span>
         </span>
       )}

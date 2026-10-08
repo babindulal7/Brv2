@@ -43,10 +43,14 @@
  * `Sample Data.md`'s "what good seed data must contain" list is longer than
  * this corpus. Not modelled here, each for a stated reason:
  *
- *   - **A booking crossing a BS month boundary.** `bs.ts` carries the length
- *     of exactly one month (Shrawan 2083) and returns `null` outside it, so
- *     the Date Engine cannot currently *verify* such a booking. Emitting one
- *     it cannot check would be hand-typed data wearing a generator's clothes.
+ *   - **A booking crossing a BS month boundary.** The reason changed on 5 Sep
+ *     2026 and the gap did not: `bs.ts` used to carry one month (Shrawan 2083)
+ *     and return `null` outside it, so the engine could not *verify* such a
+ *     booking. It now carries the published 2078-2095 table, so it could. The
+ *     corpus still has none — that is now an omission rather than a limit, and
+ *     adding one is a corpus change, not a comment change. TODO(corpus): a
+ *     booking spanning 31 Ashadh -> 1 Shrawan 2083 would exercise the boundary
+ *     the old note said was unreachable.
  *   - **A reversed payment.** `payment_reversals` rows never flow back into
  *     `invoices.paid_amount` (PLAN.md §6.8 records this, unfixed and blocked
  *     on a flooring/reversal formula ruling). A seeded reversal would make
@@ -120,10 +124,29 @@ export const SEQUENCES = {
   booking: { key: 'booking', code: 'BK', padding: 1, year: null },
   client: { key: 'client', code: 'CL', padding: 1, year: null },
   invoice: { key: 'invoice', code: 'INV', padding: 1, year: null },
-  /* Unruled — left exactly as they were. `DEP` has no registry row at all,
-     which is reported rather than papered over with an invented one. */
+  /* Payment keeps the year-bearing `PAY-YYYY-NNNN` here, but the claim this
+     comment used to make — "nothing has ruled it" — was overtaken on 4 Sep.
+     R-18 (RULINGS-2026-09-04.md) rules that `number_sequences.payment` must
+     stop resetting yearly: `include_year = false`, a direct breach of the
+     15 Aug never-reset ruling. That is a change to the SEQUENCE, made by
+     migration, and R-18 is explicit that numbers already issued are not
+     rewritten. The corpus below is historical payments — already issued — so
+     the shape stays put and this spec does NOT move until a migration lands.
+     Do not "fix" it here: changing the emitted shape without the sequence
+     change would make the seed disagree with what the database mints. */
   payment: { key: 'payment', code: 'PAY', padding: 4, year: 2026 },
-  deposit: { key: 'deposit', code: 'DEP', padding: 4, year: 2026 },
+  /* Deposit IS ruled: 0081_ruled_sequences_completion.sql rewrites every
+     `DEP-YYYY-NNNN` to `DEP-<n>` and then asserts none survive. This spec
+     used to emit the retired year-bearing shape, so 0056 rewrote the seeded
+     rows on a fresh build and a second apply then missed its own
+     `on conflict (deposit_no)` arbiter and died on the client_uuid unique
+     (measured 3 Sep 2026: DEP-2026-0001 written, DEP-1 stored). Emitting the
+     ruled shape makes 0056's rewrite a no-op and lets a second apply get past
+     deposits (it still fails closed later — see the file header).
+     numbering.ts:211 carries the DEP row with `format: null`, so this is the
+     one place the shape is decided. Movement numbers derive from this and
+     become `DEP-<n>-M<k>`; nothing constrains or rewrites them. */
+  deposit: { key: 'deposit', code: 'DEP', padding: 1, year: null },
   equipment: { key: 'equipment', code: 'EQ', padding: 6, year: null },
 } as const satisfies Record<string, SequenceSpec>
 
@@ -392,15 +415,27 @@ interface BookingSpec {
   paymentShare?: number
   depositRequiredRupees: number
   depositReceivedRupees: number
+  /**
+   * How much of the deposit was given back — a `Released` `deposit_movements`
+   * row, which `sync_deposit_balances` sums into `refunded_amount`.
+   *
+   * Added 7 Sep 2026 with RL-05. §1.7 gate 2 asks what is still HELD
+   * (`received − refunded − applied`), not what is still owed, so a `Closed`
+   * booking that received a deposit and never released it is not closeable —
+   * correctly. Absent means `0`: the deposit is still held.
+   */
+  depositRefundedRupees?: number
   /** Whether the packed units are recorded on `booking_line_units`. */
   unitsAssigned: boolean
 }
 
 /**
- * `1 Shrawan 2083 BS · 16 Jul 2026, 06:00 AM` — `Sample Data.md`'s date, in
- * Kathmandu (UTC+05:45), stored as the UTC instant. `assertBs` below feeds it
- * back through `bs.ts` and fails the build if it does not render as
- * `1 Shrawan 2083`.
+ * `16 Jul 2026, 06:00 AM` in Kathmandu (UTC+05:45), stored as the UTC instant —
+ * `Sample Data.md`'s date for the reference booking.
+ *
+ * ⛔ That spec pairs this instant with `1 Shrawan 2083 BS`, which is wrong: under
+ * the corrected month-length table 16 Jul 2026 is **32 Ashadh 2083**. Law 7 keeps
+ * the instant and moves the label — see the guard at the end of this file.
  */
 const NPT_OFFSET_MIN = 345
 
@@ -632,7 +667,7 @@ const CLIENTS: readonly ClientSpec[] = [
 ]
 
 /**
- * The day the app treats as *now* — `bs.ts`'s `TODAY`, 31 Jul 2026.
+ * The day this corpus treats as *now* — 31 Jul 2026 (month is 0-indexed).
  *
  * Every generated booking is placed relative to this rather than to a real
  * clock, for the same reason the corpus has no `Math.random`: a seed whose
@@ -640,6 +675,33 @@ const CLIENTS: readonly ClientSpec[] = [
  * was written, and "is Today broken or is the data just old" is not a question
  * anyone should have to ask. The rental day runs 06:00→06:00, so that is the
  * hour these land on.
+ *
+ * ⛔ **This comment used to say "`bs.ts`'s `TODAY`, 31 Jul 2026". That constant
+ * no longer exists,** and the justification above has quietly inverted.
+ * `bs.ts:255` records that `export const TODAY = new Date(Date.UTC(2026, 6, 31))`
+ * was replaced by `getBusinessToday()`, which reads the **real clock**, because
+ * "every overdue chip, ageing count and days-left figure derived from it was
+ * measuring distance from a day in the past".
+ *
+ * **The app was un-frozen; this anchor was not.** They now disagree by however
+ * long ago 31 Jul 2026 was, and the failure the paragraph above warns about is
+ * the one this constant now causes: `STAGE_PLAN` puts `Packed` at 0–2 days out,
+ * so regenerating the corpus today emits Packed pickups dated 31 Jul – 2 Aug and
+ * **Today ▸ Going out renders empty anyway**. Both a drifting anchor and a frozen
+ * one end at the same empty screen; only the direction of the lie differs.
+ *
+ * TODO(decision): PLAN.md §4 — should the anchor track the clock at GENERATION
+ * time (`npm run seed:sql` emits dates relative to the day it is run) or stay
+ * fixed? Fixed keeps `0047` byte-reproducible and keeps the test suite's
+ * expectations stable, which is why it is not simply changed here. Clock-relative
+ * keeps the Today screens meaningful without a re-anchor every month. The cost of
+ * getting it wrong: fixed means every demo after the anchor date shows an empty
+ * floor; clock-relative means a regenerated `0047` no longer matches the one on
+ * record, and any test asserting a literal seeded instant breaks.
+ *
+ * Not urgent for the live corpus, which is not generated from this file at all —
+ * see `supabase/migrations/0074_seed_operational_stage_corpus.sql`, which seeds
+ * the two missing stages from the clock at apply time.
  */
 const ANCHOR = kathmandu(2026, 6, 31, 6, 0)
 const DAY_MS = 24 * 60 * 60_000
@@ -737,11 +799,18 @@ function demoBookings(): readonly BookingSpec[] {
 
       /* Closed is not a label here — `closeGates` decides it. A booking may only
          be Closed with nothing outstanding and its deposit resolved, so these
-         two lines are what make the stage above legal rather than asserted. */
+         lines are what make the stage above legal rather than asserted.
+
+         RL-05 (7 Sep) added the fourth: "resolved" means the deposit was given
+         BACK, so a Closed booking releases everything it took. Before that fix
+         the corpus could leave a Closed rental holding Rs 20,000 of a client's
+         money and the gate called it settled, because it was reading what the
+         client still owed instead. */
       const closed = plan.stage === 'Closed'
       const paymentShare = closed ? 1 : cycle([0, 0.25, 0.5, 0.4], i)
       const depositRequiredRupees = i % 4 === 0 ? 0 : 5000 * (1 + (i % 4))
       const depositReceivedRupees = closed ? depositRequiredRupees : i % 3 === 0 ? 0 : depositRequiredRupees / 2
+      const depositRefundedRupees = closed ? depositReceivedRupees : 0
 
       out.push({
         seq: 800 + i,
@@ -759,6 +828,7 @@ function demoBookings(): readonly BookingSpec[] {
         paymentShare,
         depositRequiredRupees,
         depositReceivedRupees,
+        depositRefundedRupees,
         /* ⚠ Deliberately false on every generated booking.
          *
          * `booking_line_units` names a specific physical unit, and this
@@ -790,7 +860,7 @@ const BOOKINGS: readonly BookingSpec[] = [...REFERENCE_BOOKINGS, ...demoBookings
  * exists to prevent.
  *
  * Derived from the row's natural key instead: same corpus in, same keys out,
- * and `on conflict (client_uuid) do nothing` makes a second apply a no-op.
+ * and `on conflict (client_uuid) do nothing` makes a second apply of that ROW a no-op. (The file as a whole is one-shot — see its header and PLAN.md §4.42(a).)
  * Well-formed (version 4 nibble, RFC 4122 variant) but not random — a hash of
  * the key, which is what an idempotency key is supposed to be.
  */
@@ -1180,9 +1250,23 @@ export function buildCorpus(): SeedCorpus {
      * close gates would wave through. */
     const depositPending = (rupees(spec.depositRequiredRupees) - rupees(spec.depositReceivedRupees)) as Paisa
     if (depositPending < 0) fail(`${bookingNo}: deposit received exceeds deposit required`)
+    /* RL-05, 7 Sep — the gate asks what is still HELD, not what is still owed.
+     * `depositPending` (required − received) answers the second question and is
+     * kept for the Law 5 assertion in the emitted SQL, which checks exactly
+     * that column. The gate needs the other one: received − refunded, since
+     * this corpus never applies a deposit to a charge. A Closed rental returns
+     * the deposit — {@link BookingSpec.depositRefundedRupees} says so, and the
+     * `Released` movement emitted below is what makes it true in the database
+     * as well as here. */
+    const depositHeld = (rupees(spec.depositReceivedRupees) -
+      rupees(spec.depositRefundedRupees ?? 0)) as Paisa
+    if (depositHeld < 0) fail(`${bookingNo}: deposit refunded exceeds deposit received`)
     const gates = closeGates({
+      /* Every booking in this corpus is invoiced and the invoice is issued —
+         `INVOICE_ISSUED_STATUS` ('Sent'), set once the figures are final. */
+      rentalInvoiced: true,
       rentalOutstandingPaisa: breakdown.outstanding,
-      depositResolved: depositPending === 0,
+      depositHeldPaisa: depositHeld,
       openCases: 0,
       damageChargesPendingApproval: 0,
     })
@@ -1212,7 +1296,8 @@ export function buildCorpus(): SeedCorpus {
 
     /* Date Engine — Law 7. BS never reaches a column; it is derived here only
      * so the generator can prove the stored UTC instant is the day the spec
-     * names. `bs.ts` vouches for Shrawan 2083 and returns null elsewhere. */
+     * names. Since 5 Sep 2026 `bs.ts` vouches for BS 2078-2095 (14 Apr 2021 to
+     * 2039) and returns null only outside that range. */
     const bs = toBs(spec.pickupAt)
 
     bookings.push({
@@ -1247,8 +1332,28 @@ export function buildCorpus(): SeedCorpus {
   if (mismatches.length > 0) fail(`B-715 does not reproduce Foundation §2.8 — ${mismatches.join('; ')}`)
   if (reference.itemCount !== 18) fail(`B-715 must carry 18 items (Sample Data.md), corpus has ${reference.itemCount}`)
   if (reference.days !== 3) fail(`B-715 must run 3 days (Sample Data.md), corpus has ${reference.days}`)
-  if (reference.bsPickup !== '1 Shrawan 2083 BS') {
-    fail(`B-715 pickup must render as 1 Shrawan 2083 BS (Sample Data.md), bs.ts renders ${reference.bsPickup ?? 'null'}`)
+  /*
+   * ⛔ Was `'1 Shrawan 2083 BS'` until 5 Sep 2026, and that guard pinned a bug.
+   *
+   * `Sample Data.md` states the pairing **"1 Shrawan 2083 BS · 16 Jul 2026,
+   * 06:00 AM"**. Under the corrected month-length table those cannot both be
+   * true: 16 Jul 2026 is **32 Ashadh 2083**, and 1 Shrawan is the 17th. The spec
+   * inherited the same off-by-one the engine had, and this assertion then held
+   * it in place — it would have failed the corrected engine and looked like the
+   * engine was wrong.
+   *
+   * **Law 7 decides which half survives: AD is stored, BS is rendered and never
+   * stored.** The UTC instant is the fact; the BS string was a derived label the
+   * spec mis-derived. So the instant is unchanged and the expectation moves.
+   *
+   * To revert the other way — move the booking rather than the label — set this
+   * booking's pickup/return to 17/20 Jul and restore `'1 Shrawan 2083 BS'`.
+   * That is a data change, not an engine change, and needs a ruling because it
+   * moves a reference booking every money assertion in the suite is keyed to.
+   */
+  const referenceBs = toBs(reference.spec.pickupAt)
+  if (referenceBs?.year !== 2083 || referenceBs.month !== 3 || referenceBs.day !== 32) {
+    fail('B-715 pickup must convert to 32 Ashadh 2083 (16 Jul 2026 under the corrected BS table)')
   }
 
   return {
@@ -1370,11 +1475,97 @@ export function emitSql(corpus: SeedCorpus): string {
 -- without explicit approval." This file has been generated and reviewed, not
 -- executed — no local Postgres instance exists in this repo.
 --
--- Re-applying is a no-op: every insert carries a derived client_uuid (Law 8)
--- and conflicts on its natural key.
+-- Re-applying is NOT a no-op — it is a one-shot seed that FAILS CLOSED, and the
+-- earlier header claiming otherwise was never tested until 3 Sep 2026. What is
+-- true, measured: every INSERT is idempotent (natural-key / client_uuid
+-- arbiters all conflict on a second run — 40/125/120/89/64/93 rows before and
+-- after, nothing duplicated), and the gate prologue and 0056's deposit rewrite
+-- are both no-ops on a built database. What is not: the invoice issuance
+-- UPDATE (Draft -> Sent) ahead of each payment is unguarded, so on a re-apply
+-- it re-runs while the payment INSERT that would move the invoice on is
+-- skipped, and this file's own self-check then refuses ('INV-1 is Sent after
+-- a part payment, expected Partially Paid'). The single transaction rolls the
+-- whole file back and re-enables the gate. Apply it ONCE, into a database that
+-- has never held it; the fix is a where status = 'Draft' guard on that
+-- update — filed, not done here (PLAN.md §4.42a residual).
 -- =============================================================================
 
 begin;
+
+-- -----------------------------------------------------------------------------
+-- The handover/close gate is SUSPENDED for this load, and only for this load.
+--
+-- trg_booking_gate_check (0010:369) refuses a move into 'On Rent' or 'Closed'
+-- while the booking has a pending deposit or an outstanding invoice. 38 of the
+-- bookings below are exactly that: gear that went out against an invoice the
+-- client had not yet settled. The trigger is right about a TRANSITION a user
+-- performs; this file performs no transitions. It restates a STATE the business
+-- was already in, in bulk, in one transaction — the same distinction that lets a
+-- restore reinstate rows a workflow would have had to earn.
+--
+-- Ruled 2 Sep 2026 (PLAN.md §4.42a). Two things this deliberately does NOT do:
+-- it does not weaken the gate, which stays fully armed for every write the
+-- application makes; and it does not restate the corpus to dodge it, which would
+-- have cost the fixture the On Rent / Returned spread every operational screen is
+-- built against.
+--
+-- ⬅ TODO(decision) §4.42(a), still open and NOT answered by the above: may gear
+-- go out against an unsettled rental invoice at all? clients.payment_terms
+-- (Net 15/30) says the business already sells on terms, which the gate forbids.
+-- If that is ruled a defect in the GATE, this suspension becomes unnecessary
+-- rather than wrong.
+--
+-- The re-enable is unconditional and inside the same transaction: if anything
+-- below raises, the whole file rolls back and the trigger was never disabled.
+-- -----------------------------------------------------------------------------
+alter table bookings disable trigger trg_booking_gate_check;
+
+-- -----------------------------------------------------------------------------
+-- Identifier CHECKs, pulled forward from 0055 when — and only when — needed.
+--
+-- 0005 (clients:89) and 0002 (bookings:58) constrain client_code / booking_no to the RETIRED shapes
+-- (CL-YYYY-NNNN / BK-YYYY-NNNN). 0055 is what legalises the ruled C-<n> / B-<n>
+-- this corpus has always carried, and 0055 sits eighteen files LATER. So on a
+-- from-scratch build the very first client below would fail its own CHECK.
+--
+-- The fix is NOT to seed the retired shape and let 0055 rewrite it (tried, and
+-- measured: that shape-locks this file to pre-0055, breaks --from 0047 on any
+-- built database, and makes it disagree with seedCompact.ts — the transport
+-- form that actually reached live). The fix is to swap the two CHECKs to their
+-- ruled form HERE if the retired form is still in force, exactly as 0055 will.
+--
+-- Idempotent with 0055 by construction: 0055 does drop constraint if exists
+-- then add constraint with the same names and the same regexes, and its
+-- update … where … ~ '^CL-…' rewrite finds zero rows because nothing retired
+-- was ever seeded. Final state is identical whether 0055 runs before this file
+-- (production's actual order) or after it (filename order). Nothing between
+-- 0047 and 0055 references either shape (checked). The regexes are copied from
+-- 0055:101-105 and must stay verbatim.
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'clients'::regclass
+      and conname = 'clients_client_code_format'
+      and pg_get_constraintdef(oid) like '%CL-%'
+  ) then
+    alter table clients drop constraint clients_client_code_format;
+    alter table clients add constraint clients_client_code_format
+      check (client_code ~ '^C-[0-9]+$');
+  end if;
+
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'bookings'::regclass
+      and conname = 'bookings_booking_no_format'
+      and pg_get_constraintdef(oid) like '%BK-%'
+  ) then
+    alter table bookings drop constraint bookings_booking_no_format;
+    alter table bookings add constraint bookings_booking_no_format
+      check (booking_no ~ '^B-[0-9]+$');
+  end if;
+end $$;
 `)
 
   /* clients */
@@ -1501,10 +1692,9 @@ insert into bookings (
   ${txt(s.project)},
   ${ts(s.pickupAt)},
   ${ts(s.returnAt)},
-  -- Sample Data.md: transport Rs 0 — the client collects. 'Customer Pickup' is
-  -- the delivery_type enum member's own spelling (0001), not UI copy; Law 17
-  -- governs what the screens say, and no screen renders this literal.
-  'Customer Pickup'::delivery_type,
+  -- Sample Data.md: transport Rs 0 — the client collects.
+  -- 0113 renamed delivery_type enum to 'Client Pickup' (Law 17).
+  'Client Pickup'::delivery_type,
   ${money(rupees(s.depositRequiredRupees))},
   ${BILLING},
   ${BILLING}
@@ -1806,6 +1996,32 @@ on conflict (deposit_no) do nothing;
 on conflict (movement_no) do nothing;
 `)
       }
+      /* RL-05 — a Closed rental has given the deposit back, and the corpus has
+         to SAY so rather than let the gate assume it. `sync_deposit_balances`
+         sums `Released` into `security_deposits.refunded_amount`; without this
+         row the trigger leaves `refunded_amount` at 0, `received − refunded`
+         stays positive, and the §1.7 deposit gate refuses to close a booking
+         this corpus emits as Closed. `pending_amount` is untouched by it — that
+         column is `greatest(required − received, 0)` and the Law 5 assertion at
+         the foot of this file still checks exactly that. */
+      const depositRefundedRupees = s.depositRefundedRupees ?? 0
+      if (depositRefundedRupees > 0) {
+        const movementNo = `${b.depositNo}-M2`
+        out.push(`-- Law 5: the deposit is the client's money, and on ${b.bookingNo} it has gone back to them.
+insert into deposit_movements (
+  client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
+) values (
+  ${uuid(seedUuid(`deposit_movement:${movementNo}`))},
+  ${txt(movementNo)},
+  ${deposit(b.depositNo)},
+  'Released'::deposit_movement_type,
+  ${money(rupees(depositRefundedRupees))},
+  ${BANK},
+  ${BILLING}
+)
+on conflict (movement_no) do nothing;
+`)
+      }
     }
 
     /* Law 4 — payments are ledger rows, immutable once written. */
@@ -1944,6 +2160,9 @@ begin
   }
   out.push(`  raise notice 'Seed corpus verified: % booking(s), Foundation §2.8 reconciles.', ${corpus.bookings.length};
 end $$;
+
+-- Gate back on before commit — see the note at the top of this file.
+alter table bookings enable trigger trg_booking_gate_check;
 
 commit;
 `)

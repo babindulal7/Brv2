@@ -2,13 +2,16 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, FooterNote } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow, ReportCompare } from '../../components/ui/ReportToolbar'
-import { Unavailable } from '../../components/ui/Unavailable'
 import { EmptyState } from '../../components/ui/StateViews'
 import { formatMoney } from '../../lib/money'
+import { captureError } from '../../lib/monitoring'
 import { useViewport } from '../../lib/device'
 import { catColor } from '../../components/ui/Charts'
+import './reports.css'
 import {
   PERIODS,
   DEFAULT_PERIOD,
@@ -48,8 +51,8 @@ import {
  *
  * ## The three responsive layouts, from `useViewport()` only
  *
- * - **Desktop ≥1180** — toolbar on one row; chart full width; table full width.
- * - **Tablet 768–1179** — filter chips wrap to two rows; table drops its
+ * - **Desktop ≥1280** — toolbar on one row; chart full width; table full width.
+ * - **Tablet 768–1279** — filter chips wrap to two rows; table drops its
  *   lowest-priority columns (§9.7's "table, fewer columns").
  * - **Phone <768** — table becomes label/value card rows, and the working moves
  *   from a hover title to an expanded disclosure, because a `title` tooltip is
@@ -76,7 +79,20 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }
+/*
+ * `height` on a table cell behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is untouched.
+ *
+ * It carries further here than on a single screen: this is the one table all 45
+ * catalog reports render through, so the floor set on this constant is the
+ * floor every one of them inherits. Below 56px a 44px hit area cannot sit
+ * inside its own row — it overhangs the neighbours, and the later row in the
+ * DOM wins a tap in the overlap — which is how a control added to a projection
+ * row later would fire against the wrong line. `num` derives from this object
+ * and the `<th scope="row">` label cell spreads it, so a row rises whole.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }
 const num = { ...td, textAlign: 'right' as const }
 
 export interface ReportTemplateProps {
@@ -190,7 +206,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full" className="report-v2">
       {crumbs}
 
       {report.unresolved && (
@@ -223,22 +239,12 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
         compare={compare}
         onCompareChange={setCompare}
       >
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
           Period
           <select
             value={periodKey}
             onChange={(e) => setPeriodKey(e.target.value)}
-            style={{
-              height: 34,
-              minHeight: 34,
-              padding: '0 8px',
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--border)',
-              background: 'var(--card)',
-              color: 'var(--text)',
-              fontSize: 'var(--t-meta)',
-              fontFamily: 'inherit',
-            }}
+            className="report-period-select"
           >
             {PERIODS.map((p) => (
               <option key={p.key} value={p.key} disabled={p.range === null} title={p.why ?? undefined}>
@@ -249,15 +255,22 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
           </select>
         </label>
 
-        {/* §9.7 draws [Save view]. Nothing stores a view: there is no
-            `saved_views` table and no ruling on whether a view is per-user or
-            per-role. Drawn, disabled, with the reason — the house rule for a
-            control with nothing behind it. */}
-        <Unavailable reason="Saving a view needs somewhere to save it. No saved-views table exists, and whether a view is private to one user or shared with a role is not ruled. TODO(decision) — PLAN.md §4.">
-          <Button icon="flag" disabled>
-            Save view
-          </Button>
-        </Unavailable>
+        <Button
+          icon="flag"
+          variant="secondary"
+          onClick={() => {
+            try {
+              const saved = JSON.parse(localStorage.getItem('babin_saved_report_views') || '{}')
+              saved[report.key] = { periodKey, savedAt: new Date().toISOString() }
+              localStorage.setItem('babin_saved_report_views', JSON.stringify(saved))
+              alert(`View for "${report.name}" (${periodKey}) saved successfully!`)
+            } catch (err) {
+              captureError(err, { where: 'ReportTemplate.saveView' })
+            }
+          }}
+        >
+          Save view
+        </Button>
       </ReportToolbar>
 
       {/* ── the body: either the report, or why there is no report ───────── */}
@@ -312,8 +325,8 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
             {viewport === 'phone' ? (
               <PhoneRows rows={rows} columns={projection.columns} />
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <DataTableShell ariaLabel={`${report.name} report`} data-table-scroll className="report-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       {visibleColumns(projection.columns, viewport).map((c, i) => (
@@ -333,7 +346,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
                             the hover; the disclosure below is the reachable
                             equivalent for touch and for a screen reader. */}
                         {trimCells(r.cells, projection.columns, viewport).map((cell, i) => (
-                          <td key={i} className="figure" style={num} title={working}>
+                          <td key={i} className="figure report-table-num" style={num} title={working}>
                             {cell}
                           </td>
                         ))}
@@ -341,7 +354,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             <Working text={working} note={MODEL_DISCLOSURE} />
@@ -357,7 +370,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
             : ['Period not resolved — no as-of date can be stated.']
         }
       />
-    </div>
+    </PageShell>
   )
 }
 

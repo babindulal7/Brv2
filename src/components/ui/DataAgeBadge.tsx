@@ -1,149 +1,198 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import Icon from './Icon'
 
 export interface DataAgeBadgeProps {
-  /** Timestamp when data was fetched or cached (Date, ISO string, or ms epoch). */
-  timestamp?: Date | string | number | null
-  /** Offline status indicator. If undefined, reads navigator.onLine. */
-  isOffline?: boolean
-  /** Whether the data is considered stale. If omitted, derived when age > staleThresholdSeconds. */
-  isStale?: boolean
-  /** Age in seconds before data is styled as stale. Defaults to 300 (5 minutes). */
-  staleThresholdSeconds?: number
-  /** Optional refresh callback. Renders a 44×44px touch target refresh button. */
-  onRefresh?: (() => void) | undefined
-  /** Optional additional class or style. */
-  style?: React.CSSProperties
+  /** The timestamp when data was fetched/loaded */
+  loadedAt?: Date | number | string | null
+  /** Threshold in ms after which data is considered stale. Default is 15 minutes (900,000 ms). */
+  staleThresholdMs?: number
+  /** Optional callback to trigger a re-fetch of the data */
+  onRefresh?: () => void | Promise<void>
+  /** Whether a background refresh is actively running */
+  loading?: boolean
+  /** Whether to compact layout for tight toolbars */
+  compact?: boolean
   className?: string
+  style?: CSSProperties
 }
 
-function formatAge(ageSeconds: number): string {
-  if (ageSeconds < 60) return 'Just now'
-  const minutes = Math.floor(ageSeconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
+/** Formats difference in milliseconds to human-readable relative time */
+export function formatRelativeAge(diffMs: number): string {
+  if (diffMs < 45_000) return 'Just now'
+  const mins = Math.floor(diffMs / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(diffMs / 3_600_000)
   if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
+  const days = Math.floor(diffMs / 86_400_000)
   return `${days}d ago`
 }
 
 /**
- * DataAgeBadge — Plan §Phase 9 Operational Read Staleness Indicator
+ * DataAgeBadge — Phase 9 (PLAN.md §4.27)
  *
- * Implements:
- * - Law 11: Never colour alone — every status is icon + label + colour.
- * - Law 15: 44×44 touch targets for interactive refresh control.
- * - Clear distinction between fresh live data, cached data, and offline stale reads.
+ * Displays operational read freshness and warns when viewing stale/cached data.
+ * Adheres to:
+ * - Law 11: Never color alone — always pairs semantic icon with explicit text label.
+ * - Law 15: Interactive refresh trigger provides a 44×44 accessible touch area.
+ * - Design system tokens from theme.css.
  */
 export function DataAgeBadge({
-  timestamp,
-  isOffline,
-  isStale: isStaleProp,
-  staleThresholdSeconds = 300,
+  loadedAt,
+  staleThresholdMs = 15 * 60 * 1000,
   onRefresh,
-  style,
+  loading = false,
+  compact = false,
   className,
+  style,
 }: DataAgeBadgeProps) {
   const [, setTick] = useState(0)
 
-  // Re-render once per 30 seconds to update relative age display
+  // Periodically refresh relative time display every 30 seconds
   useEffect(() => {
-    if (!timestamp) return
-    const timer = setInterval(() => setTick((t) => t + 1), 30000)
+    const timer = setInterval(() => {
+      setTick((t) => t + 1)
+    }, 30_000)
     return () => clearInterval(timer)
-  }, [timestamp])
-
-  if (!timestamp) return null
-
-  const parsedTime = typeof timestamp === 'number'
-    ? timestamp
-    : typeof timestamp === 'string'
-      ? new Date(timestamp).getTime()
-      : timestamp.getTime()
-
-  if (isNaN(parsedTime)) return null
+  }, [])
 
   const now = Date.now()
-  const ageSeconds = Math.max(0, Math.floor((now - parsedTime) / 1000))
-  const offline = isOffline ?? (typeof navigator !== 'undefined' ? !navigator.onLine : false)
-  const isStale = isStaleProp ?? (offline || ageSeconds >= staleThresholdSeconds)
 
-  let labelText: string
-  let iconName: 'timer' | 'refresh' | 'alert_triangle' | 'check'
-  let bgVar: string
-  let fgVar: string
-  let borderVar: string
-
-  if (offline) {
-    labelText = `Offline · ${formatAge(ageSeconds)}`
-    iconName = 'alert_triangle'
-    bgVar = 'var(--warning-bg, #3a2c00)'
-    fgVar = 'var(--warning-text, #ffc833)'
-    borderVar = 'var(--warning-text, #ffc833)'
-  } else if (isStale) {
-    labelText = `Cached · ${formatAge(ageSeconds)}`
-    iconName = 'timer'
-    bgVar = 'var(--st-progress-bg, rgba(234, 179, 8, 0.15))'
-    fgVar = 'var(--st-progress-fg, #eab308)'
-    borderVar = 'var(--st-progress-fg, #eab308)'
-  } else {
-    labelText = `Live · ${formatAge(ageSeconds)}`
-    iconName = 'check'
-    bgVar = 'var(--st-in-bg, rgba(34, 197, 94, 0.15))'
-    fgVar = 'var(--st-in-fg, #22c55e)'
-    borderVar = 'var(--st-in-fg, #22c55e)'
+  if (!loadedAt) {
+    return (
+      <div
+        className={className}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: compact ? '2px 6px' : '3px 8px',
+          borderRadius: 'var(--r-xs, 4px)',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border)',
+          color: 'var(--muted)',
+          fontSize: '11px',
+          fontWeight: 600,
+          fontFamily: 'var(--font-id, sans-serif)',
+          fontVariantNumeric: 'tabular-nums',
+          ...style,
+        }}
+        title="No data has been loaded yet"
+      >
+        <Icon name="timer" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+        <span>No cache</span>
+      </div>
+    )
   }
+
+  const loadedDate = typeof loadedAt === 'string' || typeof loadedAt === 'number' ? new Date(loadedAt) : loadedAt
+  const loadedMs = loadedDate.getTime()
+  const diffMs = Math.max(0, now - loadedMs)
+  const isStale = diffMs >= staleThresholdMs
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
+  const ageStr = formatRelativeAge(diffMs)
+
+  const exactStamp = loadedDate.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+
+  const titleText = `${isOffline ? 'Offline cache' : isStale ? 'Stale data' : 'Fresh data'} (loaded at ${exactStamp})`
 
   return (
     <div
-      role="status"
-      aria-label={`Data status: ${labelText}`}
-      data-testid="data-age-badge"
       className={className}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '3px 8px',
-        borderRadius: 'var(--r-badge, 4px)',
-        fontSize: 'var(--t-micro, 11px)',
-        fontWeight: 600,
-        fontFamily: 'inherit',
-        backgroundColor: bgVar,
-        color: fgVar,
-        border: `1px solid ${borderVar}`,
-        letterSpacing: '0.02em',
-        userSelect: 'none',
+        gap: 4,
         ...style,
       }}
     >
-      <Icon name={iconName} size={12} style={{ flexShrink: 0 }} />
-      <span>{labelText}</span>
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: compact ? '2px 6px' : '3px 8px',
+          borderRadius: 'var(--r-xs, 4px)',
+          background: isOffline
+            ? 'var(--surface-2)'
+            : isStale
+            ? 'var(--warn-soft, rgba(232, 118, 45, 0.12))'
+            : 'var(--surface-2)',
+          border: `1px solid ${isStale && !isOffline ? 'var(--warn-border, var(--border))' : 'var(--border)'}`,
+          color: isOffline
+            ? 'var(--muted)'
+            : isStale
+            ? 'var(--warn-text, #e8762d)'
+            : 'var(--text2)',
+          fontSize: '11px',
+          fontWeight: 600,
+          fontFamily: 'var(--font-id, sans-serif)',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+        title={titleText}
+      >
+        <Icon
+          name={isOffline || isStale ? 'alert_triangle' : 'timer'}
+          size={13}
+          style={{
+            color: isOffline ? 'var(--muted)' : isStale ? 'var(--warn-text, #e8762d)' : 'var(--muted)',
+            flexShrink: 0,
+          }}
+        />
+        <span>
+          {isOffline ? `Offline · ${ageStr}` : isStale ? `Stale · ${ageStr}` : `Updated ${ageStr}`}
+        </span>
+      </div>
 
-      {onRefresh && !offline && (
+      {onRefresh && (
         <button
           type="button"
-          onClick={onRefresh}
-          title="Refresh operational data"
-          aria-label="Refresh operational data"
-          data-testid="data-age-refresh-btn"
+          onClick={() => void onRefresh()}
+          disabled={loading}
+          aria-label="Refresh data"
+          title="Refresh data from server"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
+            minWidth: 44,
+            minHeight: 44,
+            padding: 0,
             background: 'transparent',
             border: 'none',
-            color: 'inherit',
-            cursor: 'pointer',
-            padding: 0,
-            margin: '-4px -4px -4px 2px',
-            minWidth: 44, // Law 15 44x44 minimum touch target
-            minHeight: 44,
+            color: 'var(--text2)',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            borderRadius: 'var(--r-xs, 4px)',
           }}
         >
-          <Icon name="refresh" size={12} />
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 24,
+              height: 24,
+              borderRadius: 'var(--r-xs, 4px)',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <Icon
+              name="refresh"
+              size={13}
+              style={{
+                color: loading ? 'var(--muted)' : 'currentColor',
+                animation: loading ? 'spin 1s linear infinite' : undefined,
+              }}
+            />
+          </span>
         </button>
       )}
     </div>
   )
 }
+
+export default DataAgeBadge

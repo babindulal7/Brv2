@@ -128,6 +128,85 @@ export const RENTAL_WINDOW_BOUNDS: BoundConvention = 'half-open'
  */
 export const DISQUALIFYING_UNIT_STATES: ReadonlySet<string> = new Set(['Maintenance', 'Missing', 'Retired'])
 
+/* ── Settings-driven rules ───────────────────────────────────────────────────
+ *
+ * Both rulings above became Settings keys on 16 Aug 2026 (`unitAvailabilityRule`,
+ * `rentalTurnaround`), so the owner can change them without a release. The
+ * *mapping* from a stored label to what this engine does lives HERE and not in
+ * `lib/settingsStore.ts`, because it is business logic and Law 1 keeps that out
+ * of a registry as firmly as it keeps it out of a page.
+ *
+ * This file still imports nothing and touches no storage. It exposes the
+ * lookups; `lib/queries/availability.ts` — which is already the IO layer — reads
+ * the setting and calls them. That is what lets the engine stay drivable by
+ * execution in a test with no `window`, no localStorage and no stubbing.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * What each `unitAvailabilityRule` option means, as a state set.
+ *
+ * The three presets are the three that were reasoned about when §4.30(c) was
+ * ruled, kept in that form so the setting reads as a decision rather than as
+ * ten tick-boxes over an enum:
+ *
+ *  - **Condition only** (ruled default) — a unit is out only if it is broken,
+ *    lost or retired. Inspection and Cleaning stay assignable, on the stated
+ *    assumption those queues clear before a future pickup.
+ *  - **Condition and turnaround** — also holds back units in Inspection or
+ *    Cleaning. For a floor where those queues genuinely run long.
+ *  - **Only In Stock** — the strictest reading. Note it double-counts the
+ *    date-overlap check: a unit On Rent *today* becomes unassignable for a
+ *    booking three months out, so utilisation drops sharply. Offered because it
+ *    is a defensible choice, not because it is recommended.
+ *
+ * ⚠ No preset contains `Reserved`, `Packed`, `On Rent` or `Returning` except
+ * the strict one, and that is the whole design — see `DISQUALIFYING_UNIT_STATES`.
+ */
+export const UNIT_AVAILABILITY_PRESETS: Readonly<Record<string, ReadonlySet<string>>> = {
+  'Condition only': DISQUALIFYING_UNIT_STATES,
+  'Condition and turnaround': new Set(['Maintenance', 'Missing', 'Retired', 'Inspection', 'Cleaning']),
+  'Only In Stock': new Set([
+    'Reserved',
+    'Packed',
+    'On Rent',
+    'Returning',
+    'Inspection',
+    'Cleaning',
+    'Maintenance',
+    'Missing',
+    'Retired',
+  ]),
+}
+
+/**
+ * Resolves a stored `unitAvailabilityRule` label to its state set.
+ *
+ * **Falls back to the ruled default rather than to an empty set.** An unknown
+ * label — a spec renamed, a hand-edited localStorage, a setting written by an
+ * older build — must not silently mean "nothing disqualifies a unit", which
+ * would put gear in Maintenance onto a shoot. Failing to the ruled answer is
+ * the safe direction and the honest one.
+ */
+export function unitStatesForRule(label: string): ReadonlySet<string> {
+  return UNIT_AVAILABILITY_PRESETS[label] ?? DISQUALIFYING_UNIT_STATES
+}
+
+/**
+ * Resolves a stored `rentalTurnaround` label to a bound convention.
+ *
+ * `'Turnaround required'` is the *cautious* option, so it is the one an unknown
+ * label must NOT fall through to silently — but neither may an unknown label
+ * quietly tighten availability either. It falls back to `RENTAL_WINDOW_BOUNDS`,
+ * the ruled answer, for the same reason `unitStatesForRule` does: the ruling is
+ * the defined behaviour, and an unrecognised string is a bug to be surfaced by
+ * behaviour matching the spec, not a third silent mode.
+ */
+export function boundsForTurnaround(label: string): BoundConvention {
+  if (label === 'Turnaround required') return 'closed'
+  if (label === 'Same-instant handover allowed') return 'half-open'
+  return RENTAL_WINDOW_BOUNDS
+}
+
 /** An existing hold on one physical unit, for a window. */
 export interface UnitHold {
   /** `product_units.id`. */
@@ -153,6 +232,28 @@ export interface UnitCandidate {
   readonly state: string
   /** `product_units.retired_at`. Non-null means retired — see `isRetired`. */
   readonly retiredAt: string | null
+  /**
+   * An OPEN `cleaning_queue_entries` row for this unit — `requires_reset` with
+   * no `reset_completed_at` — or `null` when the unit is off the queue.
+   *
+   * **Why the queue and not `product_units.status`.** The obvious answer would
+   * be an `inventory_state` of `'Cleaning'`, but `product_units` is
+   * Booqable-mastered (`dataAccess.ts`'s `BOOQABLE_READ_ONLY_TABLES`) and the OS
+   * may not write that column at all. `cleaning_queue_entries` is the OS's own
+   * table, it is what Return fills and Reset stamps, and until this field
+   * existed nothing read `reset_completed_at` — so completing a reset had no
+   * consequence anywhere and unreset gear stayed bookable
+   * (BUG_AUDIT_LIFECYCLE RS-02).
+   */
+  readonly openCleaning?: OpenCleaning | null
+}
+
+/** The queue entry holding a unit off the shelf, as the picker should say it. */
+export interface OpenCleaning {
+  /** The booking the gear came back from, for the sentence the picker prints. */
+  readonly bookingNo: string | null
+  /** True when the entry also still wants a clean — reported, not judged. */
+  readonly requiresClean: boolean
 }
 
 /** Why a candidate was not assignable. Every rejection carries one. */
@@ -160,6 +261,7 @@ export type RejectionReason =
   | { readonly kind: 'retired'; readonly retiredAt: string }
   | { readonly kind: 'state'; readonly state: string }
   | { readonly kind: 'held'; readonly by: UnitHold }
+  | { readonly kind: 'cleaning'; readonly by: OpenCleaning }
 
 export interface RejectedCandidate {
   readonly unitId: string
@@ -310,6 +412,37 @@ export interface SelectUnitsInput {
 }
 
 /**
+ * Least-used-first ordering of candidates — **D5, ruled 30 Aug 2026**.
+ *
+ * The 27 Jul lock ("least-used unit auto-reserved at creation") stands, and
+ * this is its one implementation: candidates sorted by how many times each
+ * unit has ever been assigned (`booking_line_units` rows carrying its
+ * `asset_id`), fewest first. `selectUnitsForLine` deliberately assigns
+ * first-fit in the caller's order — its doc note says *which* free unit to
+ * prefer "is a product question nobody has answered". D5 answered it; this
+ * function is the answer, kept separate so the assignment rule and the
+ * preference rule stay individually testable.
+ *
+ * The sort is STABLE: units with equal usage keep the caller's order, which
+ * `queries/availability.ts` supplies as `asset_tag` ascending — so two
+ * never-used units are picked in tag order, deterministically.
+ *
+ * A unit absent from `usageByUnit` counts as never used. That is the honest
+ * reading of "no rows found", and it is also the D5-safe direction: an
+ * over-counted unit is merely passed over, an under-counted one merely picked
+ * — neither double-books anything, because holds are checked separately.
+ */
+export function rankLeastUsed(
+  candidates: readonly UnitCandidate[],
+  usageByUnit: ReadonlyMap<string, number>,
+): UnitCandidate[] {
+  return candidates
+    .map((unit, index) => ({ unit, index, used: usageByUnit.get(unit.unitId) ?? 0 }))
+    .sort((a, b) => a.used - b.used || a.index - b.index)
+    .map((entry) => entry.unit)
+}
+
+/**
  * First-fit assignment of physical units to one booking line.
  *
  * **Never partially lies.** A caller asking for 4 and receiving 2 gets
@@ -358,6 +491,26 @@ export function selectUnitsForLine(input: SelectUnitsInput): AssignmentOutcome {
       continue
     }
 
+    /*
+     * The gear is physically on the reset bench, so it is not assignable —
+     * regardless of the window, and that is the part still to rule.
+     *
+     * `TODO(decision)`: an open queue entry is a fact about TODAY, and §4.30(c)
+     * settled that facts about today belong to the date-overlap check rather
+     * than to a hard exclusion (which is why the four booking-lifecycle states
+     * are not in `DISQUALIFYING_UNIT_STATES`). A reset has no expected
+     * completion date anywhere in the schema, so there is no honest horizon to
+     * compare a future window against — inventing one ("clean within a day")
+     * would be inventing the rule. Until it is ruled this excludes the unit
+     * outright, which is the direction that can only ever refuse a legal
+     * booking; the other direction puts unreset gear on a shoot.
+     */
+    const cleaning = unit.openCleaning
+    if (cleaning !== undefined && cleaning !== null) {
+      rejected.push({ unitId: unit.unitId, assetTag: unit.assetTag, reason: { kind: 'cleaning', by: cleaning } })
+      continue
+    }
+
     const conflicts = conflictingHolds(unit.unitId, window, holds, bounds)
     const blocker = conflicts[0]
     if (blocker !== undefined) {
@@ -398,7 +551,447 @@ export function explainShortfall(outcome: AssignmentOutcome, productName: string
   for (const rejection of unavailable) {
     if (rejection.reason.kind === 'retired') parts.push(`${rejection.assetTag} is retired.`)
     else if (rejection.reason.kind === 'state') parts.push(`${rejection.assetTag} is ${rejection.reason.state}.`)
+    else if (rejection.reason.kind === 'cleaning') {
+      const from = rejection.reason.by.bookingNo
+      parts.push(
+        `${rejection.assetTag} is on the reset bench${from === null ? '' : ` after ${from}`} and has not been ` +
+          `${rejection.reason.by.requiresClean ? 'cleaned or ' : ''}reset yet.`,
+      )
+    }
   }
 
   return parts.join(' ')
 }
+
+/* ── QUANTITY-TRACKED STOCK — the other half of the schema ───────────────────
+ *
+ * Everything above answers the SERIALISED question: which physical unit goes on
+ * which booking. `product_tracking_mode` (0001:505-509) has three values and two
+ * of them — `Quantity` and `Consumable` — have no `product_units` rows at all
+ * ("Governs whether product_units rows may exist", 0001:504). For those, "is it
+ * free" is not a question about units; it is a question about a NUMBER.
+ *
+ * Until 7 Sep 2026 nothing here asked it, so a booking line naming bulk stock
+ * resolved an empty candidate pool and Confirm refused it — on the live project
+ * that is 204 of 204 products (INV-02).
+ *
+ * ## This mirrors a trigger that is already live
+ *
+ * `enforce_inventory_reservation_capacity()` — `0045_reservation_capacity_ceiling.sql`,
+ * applied to the live project — is the arbiter, exactly as the GiST exclusion is
+ * the arbiter for serial holds. It takes a `for update` lock on the `products`
+ * row and refuses a hold whose PEAK CONCURRENT qty would exceed stock on hand.
+ * This function is the app-side preview of that answer, so an operator gets a
+ * sentence rather than a 400 — the same relationship `selectUnitsForLine` has
+ * with the exclusion, and the same one `confirmRental` has with the stage
+ * trigger. **It is not the defence.** Two operators pressing Confirm in the same
+ * second are separated by the row lock in the database, never by this file.
+ *
+ * ## Peak concurrency, not a naive total — and why the arithmetic is copied
+ *
+ * Two holds of 100 each on a stock of 150 are perfectly legal if they do not
+ * overlap, so summing every hold that touches the window would refuse a legal
+ * booking. 0045 evaluates occupancy at a set of candidate instants and compares
+ * the maximum; the candidates are the lower bounds of the overlapping live
+ * holds, clamped to the new row's own period, and the new row is itself one of
+ * them so its start is always in the set. The occupancy function only ever steps
+ * UP at a hold's lower bound, so its maximum over the window is attained at one
+ * of those instants or nowhere.
+ *
+ * That sweep is restated here, deliberately, rather than approximated. An app
+ * preview that disagrees with the arbiter at the edges is worse than no preview:
+ * it produces a green screen followed by a database refusal nobody can explain.
+ * The one thing that must never drift is therefore written twice and pinned by
+ * tests on both sides.
+ *
+ * ## Law 1
+ *
+ * Pure. No IO, no clock, no settings read. `bounds` and the numbers arrive from
+ * `lib/queries/availability.ts`, which is the only module that touches storage,
+ * for the same reasons stated at the top of this file.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * An existing live hold on a product's BULK stock, for a window.
+ *
+ * The quantity-mode sibling of `UnitHold`: `inventory_reservations` names either
+ * an `asset_id` **or** a `product_id`, never both
+ * (`inventory_reservations_serialised_xor_quantity`, 0003:1457-1459), and a
+ * serial hold is additionally pinned to `qty = 1`
+ * (`inventory_reservations_serialised_hold_is_one`). So a hold carrying a `qty`
+ * above one is always this shape.
+ *
+ * `bookingNo` is carried for exactly the reason `UnitHold` carries it — a
+ * conflict that names the booking holding the stock tells the coordinator what
+ * to do next, which "unavailable" does not.
+ */
+export interface QuantityHold {
+  /** `inventory_reservations.booking_id`. */
+  readonly bookingId: string
+  /** `bookings.booking_no`, for the operator-facing sentence. */
+  readonly bookingNo: string
+  /** `inventory_reservations.qty` — `> 0` at the database. */
+  readonly qty: number
+  readonly window: RentalWindow
+}
+
+/**
+ * Why a quantity line could not be covered. Every refusal carries one, the same
+ * contract `RejectionReason` holds for the serialised path.
+ */
+export type CapacityProblem =
+  /** `products.total_quantity` is 0 — the product records no bulk stock at all. */
+  | { readonly kind: 'no-stock' }
+  /** More was asked for than the product owns, so no date frees it. */
+  | { readonly kind: 'exceeds-stock'; readonly totalQuantity: number }
+  /** One hold that was live at the peak instant. */
+  | { readonly kind: 'held'; readonly by: QuantityHold }
+
+export interface CapacityOutcome {
+  /** `products.total_quantity` — the ceiling 0045 compares against. */
+  readonly totalQuantity: number
+  /** The largest qty held at any one instant inside the window, by OTHER holds. */
+  readonly peakHeld: number
+  /** `totalQuantity − peakHeld`, floored at 0. */
+  readonly free: number
+  readonly qtyRequested: number
+  /** `qtyRequested − free`, floored at 0. Zero means the line is covered. */
+  readonly shortfall: number
+  /**
+   * The instant the peak was attained, reported as it was supplied. `null` when
+   * the window contains no instant at all — a zero-length window under
+   * `half-open` is empty and holds nothing, which is Postgres's own range
+   * semantics and is left as-is for the reason `windowsOverlap` gives.
+   */
+  readonly peakAtAd: string | null
+  /** Empty exactly when `shortfall` is 0. */
+  readonly problems: readonly CapacityProblem[]
+}
+
+export interface CapacityInput {
+  /** The window to hold for, normally the booking's `pickup_at`…`return_at`. */
+  readonly window: RentalWindow
+  /**
+   * Live holds drawing on this product's stock. Released holds must be filtered
+   * out by the caller (Law 3), matching the trigger's `released_at is null`.
+   *
+   * For a Serialised product this must ALSO carry that product's serial holds as
+   * `qty: 1` entries — 0045's `live` CTE unions both shapes, because a
+   * model-level hold of 3 plus a serial hold on a fourth unit is 4 units
+   * claimed. Passing only one shape would preview a ceiling the database does
+   * not have.
+   */
+  readonly holds: readonly QuantityHold[]
+  /** `products.total_quantity` — `integer not null default 0`, CHECK ≥ 0 (0004:97, :142). */
+  readonly totalQuantity: number
+  /** `booking_lines.qty` for this line. */
+  readonly qtyRequested: number
+  /**
+   * Required, no default — the same rule every entry point above holds to.
+   * Application code passes the value carried on the plan, which came from
+   * `boundsForTurnaround`. See `BoundConvention`.
+   */
+  readonly bounds: BoundConvention
+}
+
+/**
+ * Is `atAd` inside `window`? Postgres's `range @> timestamptz`.
+ *
+ * Split out and exported because it is the one place the bound convention
+ * decides an INSTANT rather than an overlap, and 0045's sweep asks this question
+ * at every candidate. Under `half-open` a window ending at 18:00 does not
+ * contain 18:00 — the same ruling (§4.30(b)) that lets a booking ending at 18:00
+ * free its stock for one starting at 18:00, seen from the other side.
+ */
+export function windowContains(window: RentalWindow, atAd: string, bounds: BoundConvention): boolean {
+  assertWindow(window, 'The window')
+  if (!isInstant(atAd)) {
+    throw new Error(
+      `${JSON.stringify(atAd)} is not an AD/UTC instant carrying an offset (Law 7). Nothing was checked.`,
+    )
+  }
+  return containsMs(window, instant(atAd), bounds)
+}
+
+function containsMs(window: RentalWindow, atMs: number, bounds: BoundConvention): boolean {
+  const from = instant(window.fromAd)
+  const to = instant(window.toAd)
+  return bounds === 'closed' ? from <= atMs && atMs <= to : from <= atMs && atMs < to
+}
+
+/**
+ * How much of a product's bulk stock is free across `window`, and why not more.
+ *
+ * The quantity-mode counterpart of `selectUnitsForLine`, and it keeps that
+ * function's contract: it **never partially lies**. A caller asking for 4 with 2
+ * free receives `shortfall: 2` and the holds standing in the way, not a number
+ * that looks like a yes.
+ *
+ * Refuses rather than answers on input it cannot have meant, for the reason
+ * `assertWindow` gives: a wrong answer here is the direction that puts the same
+ * cable on two shoots.
+ */
+export function capacityFor(input: CapacityInput): CapacityOutcome {
+  const { window, holds, totalQuantity, qtyRequested, bounds } = input
+
+  if (!Number.isInteger(qtyRequested) || qtyRequested < 1) {
+    throw new Error(
+      `A line needs at least one of a product; received ${JSON.stringify(qtyRequested)}. ` +
+        'booking_lines carries `qty > 0` at the database (Law 9). Nothing was checked.',
+    )
+  }
+  if (!Number.isInteger(totalQuantity) || totalQuantity < 0) {
+    throw new Error(
+      'Stock on hand must be a whole number of units at or above zero; received ' +
+        `${JSON.stringify(totalQuantity)}. products.total_quantity is \`integer not null\` with a CHECK at ` +
+        'or above 0 (0004:97, :142), so this is a failed read rather than a real stock level, and ' +
+        'answering it would invent capacity. Nothing was checked.',
+    )
+  }
+  assertWindow(window, 'The booking window')
+
+  const overlapping: QuantityHold[] = []
+  for (const hold of holds) {
+    if (!Number.isInteger(hold.qty) || hold.qty < 1) {
+      throw new Error(
+        `${hold.bookingNo} holds ${JSON.stringify(hold.qty)} of this product, which is not a whole number ` +
+          'above zero. inventory_reservations_qty_positive forbids it at the database, so this is a failed ' +
+          'read — and a hold that cannot be counted is stock that would look free. Nothing was checked.',
+      )
+    }
+    if (windowsOverlap(window, hold.window, bounds)) overlapping.push(hold)
+  }
+
+  /*
+   * 0045's candidate set, restated: the lower bound of every overlapping live
+   * hold that falls INSIDE this window, plus this window's own start — which is
+   * the trigger's `NEW.period @> lower(l.period)` with NEW itself among `live`.
+   * Occupancy only steps up at a lower bound, so the maximum is attained at one
+   * of these or nowhere.
+   */
+  const candidates = new Set<number>()
+  const start = instant(window.fromAd)
+  if (containsMs(window, start, bounds)) candidates.add(start)
+  for (const hold of overlapping) {
+    const at = instant(hold.window.fromAd)
+    if (containsMs(window, at, bounds)) candidates.add(at)
+  }
+
+  let peakHeld = 0
+  let peakAt: number | null = null
+  let peakHolds: readonly QuantityHold[] = []
+
+  for (const at of candidates) {
+    const live = overlapping.filter((hold) => containsMs(hold.window, at, bounds))
+    const held = live.reduce((sum, hold) => sum + hold.qty, 0)
+    if (peakAt === null || held > peakHeld) {
+      peakHeld = held
+      peakAt = at
+      peakHolds = live
+    }
+  }
+
+  const free = Math.max(0, totalQuantity - peakHeld)
+  const shortfall = Math.max(0, qtyRequested - free)
+
+  const problems: CapacityProblem[] = []
+  if (shortfall > 0) {
+    if (totalQuantity === 0) problems.push({ kind: 'no-stock' })
+    else if (qtyRequested > totalQuantity) problems.push({ kind: 'exceeds-stock', totalQuantity })
+    for (const hold of peakHolds) problems.push({ kind: 'held', by: hold })
+  }
+
+  return {
+    totalQuantity,
+    peakHeld,
+    free,
+    qtyRequested,
+    shortfall,
+    peakAtAd: peakAt === null ? null : instantSourceOf(peakAt, window, overlapping),
+    problems,
+  }
+}
+
+/**
+ * The ISO text the peak instant arrived as, so nothing is re-serialised into a
+ * third format — the same text/instant distinction the rest of this file keeps.
+ * The fallback can only be reached if a candidate came from neither the window
+ * nor a hold, which the construction above forbids.
+ */
+function instantSourceOf(atMs: number, window: RentalWindow, holds: readonly QuantityHold[]): string {
+  if (instant(window.fromAd) === atMs) return window.fromAd
+  for (const hold of holds) {
+    if (instant(hold.window.fromAd) === atMs) return hold.window.fromAd
+  }
+  return new Date(atMs).toISOString()
+}
+
+/**
+ * The operator-facing sentence for a quantity shortfall — Law 12's inline,
+ * persistent, specific error, and the sibling of `explainShortfall`.
+ *
+ * Names the bookings holding the stock for the same reason that one does: it is
+ * the fact that tells a coordinator what to do next. It does NOT restate 0045's
+ * exception text — that message belongs to the database, arrives only when the
+ * database refuses, and quoting it here would suggest the app had been refused
+ * when it had not.
+ */
+export function explainCapacityShortfall(outcome: CapacityOutcome, productName: string): string | null {
+  if (outcome.shortfall === 0) return null
+
+  const parts = [
+    `${productName}: ${outcome.shortfall} more needed than the stock free for these dates ` +
+      `(${outcome.free} of ${outcome.totalQuantity} free, ${outcome.qtyRequested} asked for).`,
+  ]
+
+  for (const problem of outcome.problems) {
+    if (problem.kind === 'no-stock') {
+      parts.push(`${productName} records no stock on hand at all (Total Quantity is 0).`)
+    } else if (problem.kind === 'exceeds-stock') {
+      parts.push(
+        `${outcome.qtyRequested} is more than the ${problem.totalQuantity} this product owns in total, ` +
+          'so no date frees it.',
+      )
+    } else {
+      parts.push(`${problem.by.bookingNo} holds ${problem.by.qty} over these dates.`)
+    }
+  }
+
+  return parts.join(' ')
+}
+
+/* ── PREDICTIVE TURNAROUND BUFFERS (Pillar 1) ────────────────────────────────
+ *
+ * In high-demand rental logistics, gear returned requires turnaround time for
+ * QA, sensor cleaning, battery recharging, cable coiling, and repacking before
+ * going out again. Consecutive bookings for the same unit with insufficient gap
+ * risk dispatching uninspected equipment.
+ *
+ * Like windowsOverlap, these functions are PURE: they take windows and millisecond
+ * buffers and evaluate conflicts/gaps without I/O or database access.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export interface CategoryTurnaroundBuffer {
+  readonly category: string
+  readonly bufferMs: number
+}
+
+/** Standard category buffers: Heavy AV / LED Wall = 12h, Camera / Drone = 6h, Audio / Lighting = 4h */
+export const DEFAULT_CATEGORY_TURNAROUND_BUFFERS: Readonly<Record<string, number>> = {
+  'Heavy AV': 12 * 60 * 60 * 1000,
+  'LED Wall': 12 * 60 * 60 * 1000,
+  'Camera': 6 * 60 * 60 * 1000,
+  'Drone': 6 * 60 * 60 * 1000,
+  'Lighting': 4 * 60 * 60 * 1000,
+  'Audio': 4 * 60 * 60 * 1000,
+}
+
+export function turnaroundBufferMsForCategory(category?: string | null): number {
+  if (!category) return 0
+  return DEFAULT_CATEGORY_TURNAROUND_BUFFERS[category] ?? 0
+}
+
+export interface TurnaroundBufferViolation {
+  readonly unitId: string
+  readonly bookingNo: string
+  readonly requiredBufferMs: number
+  readonly actualGapMs: number
+  readonly priorWindow: RentalWindow
+  readonly nextWindow: RentalWindow
+}
+
+/**
+ * Does the gap between two non-overlapping windows violate a turnaround buffer?
+ *
+ * Windows that already overlap according to windowsOverlap are direct conflicts.
+ * If they do not overlap, this checks whether the non-negative turnaround gap
+ * between one ending and the other starting is strictly less than bufferMs.
+ */
+export function violatesTurnaroundBuffer(
+  a: RentalWindow,
+  b: RentalWindow,
+  bufferMs: number,
+): boolean {
+  if (bufferMs <= 0) return false
+  assertWindow(a, 'Window A')
+  assertWindow(b, 'Window B')
+
+  const aFrom = instant(a.fromAd)
+  const aTo = instant(a.toAd)
+  const bFrom = instant(b.fromAd)
+  const bTo = instant(b.toAd)
+
+  // If A finishes before or exactly when B begins
+  if (aTo <= bFrom) {
+    const gap = bFrom - aTo
+    return gap < bufferMs
+  }
+
+  // If B finishes before or exactly when A begins
+  if (bTo <= aFrom) {
+    const gap = aFrom - bTo
+    return gap < bufferMs
+  }
+
+  // Windows overlap in time — immediate conflict
+  return true
+}
+
+/**
+ * Finds all existing holds on a unit that violate a turnaround buffer when
+ * evaluated against a proposed rental window.
+ */
+export function findTurnaroundBufferViolations(
+  unitId: string,
+  window: RentalWindow,
+  holds: readonly UnitHold[],
+  bufferMs: number,
+): readonly TurnaroundBufferViolation[] {
+  if (bufferMs <= 0) return []
+  assertWindow(window, 'The candidate window')
+
+  const violations: TurnaroundBufferViolation[] = []
+  const wFrom = instant(window.fromAd)
+  const wTo = instant(window.toAd)
+
+  for (const hold of holds) {
+    if (hold.unitId !== unitId) continue
+    const hFrom = instant(hold.window.fromAd)
+    const hTo = instant(hold.window.toAd)
+
+    if (hTo <= wFrom) {
+      const gap = wFrom - hTo
+      if (gap < bufferMs) {
+        violations.push({
+          unitId,
+          bookingNo: hold.bookingNo,
+          requiredBufferMs: bufferMs,
+          actualGapMs: gap,
+          priorWindow: hold.window,
+          nextWindow: window,
+        })
+      }
+    } else if (wTo <= hFrom) {
+      const gap = hFrom - wTo
+      if (gap < bufferMs) {
+        violations.push({
+          unitId,
+          bookingNo: hold.bookingNo,
+          requiredBufferMs: bufferMs,
+          actualGapMs: gap,
+          priorWindow: window,
+          nextWindow: hold.window,
+        })
+      }
+    }
+  }
+
+  return violations
+}
+
+export function explainTurnaroundViolation(violation: TurnaroundBufferViolation, assetTag: string): string {
+  const reqHours = (violation.requiredBufferMs / (3600 * 1000)).toFixed(1).replace(/\.0$/, '')
+  const gapHours = (violation.actualGapMs / (3600 * 1000)).toFixed(1).replace(/\.0$/, '')
+  return `${assetTag} has only ${gapHours}h turnaround gap with booking ${violation.bookingNo} (minimum recommended: ${reqHours}h).`
+}
+

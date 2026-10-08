@@ -8,7 +8,7 @@ import { useAuth } from '../../../lib/auth'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
 import { parseMoney, rupees, toRupees } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
-import { toBs, formatBs, formatAd, TODAY } from '../../../lib/bs'
+import { toBs, formatBs, formatAd, getBusinessToday } from '../../../lib/bs'
 import {
   NEXT_ASSET_CODE,
   assetTagFor,
@@ -17,14 +17,22 @@ import {
   modelName,
   bundlesUsing,
   suggestedChildrenFor,
-  locationsIn,
   locationLabel,
   LABEL_PRINT_UNAVAILABLE_REASON,
   PACKING_PREVIEW_UNAVAILABLE_REASON,
-} from '../../../data/addEquipment'
-import type { TrackingMode, LocationChoice } from '../../../data/addEquipment'
+  LOCATIONS as ALL_LOCATIONS,
+} from '../../../lib/queries/addEquipment'
+import type { TrackingMode, LocationChoice } from '../../../lib/queries/addEquipment'
 import { Chip, DraftStatusBadge, countOf, formatBytes } from './EquipmentShared'
 import type { UnitDraft, ContainedDraft, FileDraft } from './EquipmentShared'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Inventory ▸ Add Equipment** — built against `06 Inventory/Add Equipment.PNG`
@@ -247,8 +255,25 @@ export function useEquipmentFormState() {
 
   const usedInBundles = useMemo(() => bundlesUsing(name), [name])
 
-  const warehouseLocations: LocationChoice[] = useMemo(
-    () => (warehouseId ? locationsIn(warehouseId) : []),
+  /*
+   * The bin list is seed data and is no longer partitioned by warehouse.
+   *
+   * `warehouseId` is now a real `warehouses.id` (the picker reads the table,
+   * because `product_units.warehouse_id` is NOT NULL and every save against a
+   * seed name was refused). `locationsIn` keys `data/addEquipment.ts`'s LOCATIONS
+   * off the SEED warehouse ids, so filtering by the real uuid returns nothing and
+   * the required bin field could never be filled — trading one blocker for
+   * another.
+   *
+   * These labels cannot be read from the database either: `storage_zones` has no
+   * room, rack, shelf, bin or capacity column. The chosen bin is stored as free
+   * text on the unit with `storage_zone_id` null, which `createEquipment` already
+   * documents. So the list is shown whole, and the field's hint says it is seed —
+   * rather than implying a relationship to the chosen facility that no schema
+   * supports.
+   */
+  const warehouseLocations: readonly LocationChoice[] = useMemo(
+    () => (warehouseId ? ALL_LOCATIONS : []),
     [warehouseId],
   )
   const chosenLocation = useMemo(
@@ -279,16 +304,26 @@ export function useEquipmentFormState() {
    */
   const errors: Record<string, string> = submitted ? validate(submitted) : {}
 
+  /* One primitive per section, so the memo below keys on what actually
+     changed rather than on `errors`, which is (deliberately) rebuilt every
+     render and so would have re-run it every render. */
+  const identityBlocked = Boolean(errors.name || errors.category || errors.brand)
+  const stockBlocked = Boolean(errors.stock)
+  const relationshipsBlocked = Boolean(errors.relationships)
+  const locationBlocked = Boolean(errors.location)
+  const purchaseBlocked = Boolean(errors.replacementValue || errors.purchasePrice)
+  const pricingBlocked = Boolean(errors.dailyRate || errors.deposit)
+
   const sectionDefs = useMemo(() => {
     const base: Array<{ id: string; label: string; complete: boolean; blocked: boolean }> = [
-      { id: 'sec-identity', label: 'Identity', complete: identityComplete, blocked: Boolean(errors.name || errors.category || errors.brand) },
-      { id: 'sec-stock', label: 'Stock & Units', complete: stockComplete, blocked: Boolean(errors.stock) },
-      { id: 'sec-relationships', label: 'Relationships', complete: relationshipsComplete, blocked: Boolean(errors.relationships) },
-      { id: 'sec-location', label: 'Location', complete: locationComplete, blocked: Boolean(errors.location) },
+      { id: 'sec-identity', label: 'Identity', complete: identityComplete, blocked: identityBlocked },
+      { id: 'sec-stock', label: 'Stock & Units', complete: stockComplete, blocked: stockBlocked },
+      { id: 'sec-relationships', label: 'Relationships', complete: relationshipsComplete, blocked: relationshipsBlocked },
+      { id: 'sec-location', label: 'Location', complete: locationComplete, blocked: locationBlocked },
     ]
     if (money) {
-      base.push({ id: 'sec-purchase', label: 'Purchase', complete: purchaseComplete, blocked: Boolean(errors.replacementValue || errors.purchasePrice) })
-      base.push({ id: 'sec-pricing', label: 'Pricing & Rental', complete: pricingComplete, blocked: Boolean(errors.dailyRate || errors.deposit) })
+      base.push({ id: 'sec-purchase', label: 'Purchase', complete: purchaseComplete, blocked: purchaseBlocked })
+      base.push({ id: 'sec-pricing', label: 'Pricing & Rental', complete: pricingComplete, blocked: pricingBlocked })
     }
     base.push({ id: 'sec-maintenance', label: 'Maintenance & Documents', complete: maintenanceComplete, blocked: false })
     return base
@@ -301,7 +336,12 @@ export function useEquipmentFormState() {
     pricingComplete,
     maintenanceComplete,
     money,
-    errors,
+    identityBlocked,
+    stockBlocked,
+    relationshipsBlocked,
+    locationBlocked,
+    purchaseBlocked,
+    pricingBlocked,
   ])
 
   const sectionNumber = (id: string) => sectionDefs.findIndex((s) => s.id === id) + 1
@@ -622,7 +662,14 @@ export function useEquipmentFormState() {
     return e
   }
 
-  function handleSubmit(mode: 'draft' | 'create') {
+  /**
+   * Returns whether the record validated. The page's submit handler used to
+   * ignore a `void` return and dispatch `createEquipment` regardless — harmless
+   * while the action was a stub, an invalid record written the day it was not
+   * (`docs/pages/17_add_equipment.md` gap 2). The boolean is that fix's other
+   * half: the caller now dispatches only on `true`.
+   */
+  function handleSubmit(mode: 'draft' | 'create'): boolean {
     setSubmitted(mode)
     const e = validate(mode)
     setOutcome(null)
@@ -643,7 +690,7 @@ export function useEquipmentFormState() {
                     : false,
       )
       if (firstSection) document.getElementById(firstSection.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      return
+      return false
     }
 
     const lines = [
@@ -664,6 +711,7 @@ export function useEquipmentFormState() {
         : 'Draft — excluded from booking search, availability and Inventory totals',
     ]
     setOutcome({ kind: mode === 'create' ? 'validated' : 'draft', lines })
+    return true
   }
 
   /* ── rail ────────────────────────────────────────────────────────────── */
@@ -729,7 +777,7 @@ export function useEquipmentFormState() {
             </div>
           ))}
           <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
-            §4 — one code drives both. The barcode and QR <strong>images</strong> are not drawn: a glyph no scanner can
+            {/* §4 — one code drives both. The barcode and QR */}one code drives both. The barcode and QR <strong>images</strong> are not drawn: a glyph no scanner can
             read would be fabricated data on the one panel whose job is identifiers. Rendering arrives with label printing.
           </p>
         </div>

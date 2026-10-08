@@ -1,11 +1,14 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Donut, Legend, HBars, catColor } from '../../components/ui/Charts'
-import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
+import { BRAND, BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   KPIS,
   GROWTH,
@@ -24,7 +27,9 @@ import {
   HIGH_RISK,
   INSIGHTS,
   BS_NOTE,
-} from '../../data/clientReports'
+  getClientReportsSummary,
+  type ClientReportsSummary,
+} from '../../lib/queries/clientReports'
 
 const th = {
   textAlign: 'left' as const,
@@ -35,7 +40,21 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * This table is the case the rule exists for. Every client row ends in a
+ * control cell — a `role="button"` view-client glyph and the overflow beside it
+ * — and each of those owes a 44px hit area that cannot fit inside a 10+~18+10
+ * row: it would overhang the rows above and below, and in the overlap band the
+ * later row in the DOM wins the tap, so a thumb near a boundary opens the WRONG
+ * client. 56px is what makes the row able to hold the target those glyphs still
+ * need; they render at 14px today, and giving them a real `TouchTarget` is the
+ * next fix, which needs this row height before it can be done safely.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
 
 /*
@@ -172,11 +191,25 @@ function clientsCsv(money: boolean): ReportCsvRow[] {
  * carries that note precisely because the order is the exception, not the rule.
  */
 export default function ClientReports() {
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
+  const tablet = viewport === 'tablet'
+  const [, setSummary] = useState<ClientReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getClientReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
   const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Outstanding Receivables')
   const summary = money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Outstanding Receivables' && s.label !== 'Average Lifetime Value')
   const membershipStats = money ? MEMBERSHIP.stats : MEMBERSHIP.stats.filter((s) => s.label === 'Renewal Rate')
@@ -213,7 +246,7 @@ export default function ClientReports() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={kpis.length} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(3, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : tablet ? 'repeat(2, minmax(0,1fr))' : money ? 'repeat(3, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             <Card title="Client Growth Trend">
               <GrowthChart />
             </Card>
@@ -232,7 +265,7 @@ export default function ClientReports() {
             </Card>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: money ? 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)' : 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : tablet ? 'repeat(2, minmax(0,1fr))' : money ? 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)' : 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)', gap: 'var(--sp-md)' }}>
             <Card title="Booking Frequency">
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${frequency.length},1fr)`, gap: 'var(--sp-sm)' }}>
                 {frequency.map((f, i) => (
@@ -306,7 +339,7 @@ export default function ClientReports() {
           </div>
 
           <Card title="Client Performance Overview" bodyStyle={{ padding: 0 }}>
-            <div style={{ overflowX: 'auto' }}>
+            <DataTableShell ariaLabel="Client Performance Overview">
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
@@ -345,9 +378,19 @@ export default function ClientReports() {
                               alignItems: 'center',
                               height: 19,
                               padding: '0 7px',
-                              borderRadius: 5,
-                              background: STATUS[c.membershipKey].bg,
-                              color: STATUS[c.membershipKey].fg,
+                              borderRadius: 'var(--r-chip)',
+                              /*
+                               * Membership TIER is an entity attribute, not a
+                               * state — §2 reserves the hue vocabulary for
+                               * state, so a Gold/Silver tier reading as a
+                               * status is a category error. Worse here than
+                               * most: a tier chip beside a real status chip in
+                               * the same row invites reading them as the same
+                               * kind of fact.
+                               */
+                              background: 'var(--surface-2)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text2)',
                               fontSize: 'var(--t-meta)',
                               fontWeight: 700,
                             }}
@@ -392,37 +435,42 @@ export default function ClientReports() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              {/*
+                BUG-003 — a nine-control pager (`« ‹ 1 2 3 4 … 209 ›`) stood here
+                with no handler on any of it, beneath "Showing 1 to 6 of 1,248
+                clients".
+
+                It is gone rather than wired, for the same reason the `PeriodPill`
+                above it went: **there is no page 2 to reach.** `CLIENTS` holds
+                six rows, `:340` maps all six unsliced, and both figures were
+                literals — 1,248 is the seeded Total Clients KPI, and 209 is that
+                number divided by six. So the pager was not a broken pager; it was
+                decoration advertising 1,242 records this screen has never held.
+                Wiring it would page through exactly one page.
+
+                The `aria-current="page"` on the "1" button is the part that had to
+                go regardless: it told assistive tech this was a working pager, so
+                a screen-reader user was invited to look for pages that do not
+                exist. The audit read the symptom as "records beyond page 1 are
+                unreachable" — there are none; nothing is unreachable.
+
+                The real, DB-backed, genuinely paginated client list is `/clients`,
+                so the row now says where to go instead of faking it here. Making
+                this report query the register is a separate job: every
+                `/reports/*` screen is seed-only (LAYER-D-VERIFICATION).
+              */}
               <span>
-                Showing 1 to 6 of 1,248 clients
+                Showing all {CLIENTS.length} rows
                 <span style={{ display: 'block', color: 'var(--link)', fontSize: 'var(--t-meta)', marginTop: 2 }}>{BS_NOTE}</span>
               </span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                {['«', '‹', '1', '2', '3', '4', '…', '209', '›'].map((p, i) => {
-                  const on = p === '1'
-                  return (
-                    <button
-                      key={`${p}-${i}`}
-                      type="button"
-                      aria-current={on ? 'page' : undefined}
-                      style={{
-                        minWidth: 24,
-                        height: 24,
-                        borderRadius: 'var(--r-xs)',
-                        border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                        background: on ? 'var(--btn-primary-bg)' : 'transparent',
-                        color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: on ? 700 : 500,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
+              <span style={{ marginLeft: 'auto' }}>
+                A seeded sample, not a client-register query — the full directory is at{' '}
+                <Link to="/clients" style={link}>
+                  Clients
+                </Link>
+                .
               </span>
             </div>
           </Card>
@@ -479,7 +527,7 @@ export default function ClientReports() {
                   </span>
                 </div>
               ))}
-              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet">
                 View All High Risk →
               </span>
             </Card>

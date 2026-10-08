@@ -21,7 +21,8 @@ export type Paisa = number & { readonly __paisa: unique symbol }
 
 /** Rupees → paisa. The only sanctioned way to write a literal amount. */
 export function rupees(n: number): Paisa {
-  return Math.round(n * 100) as Paisa
+  if (!Number.isFinite(n)) return 0 as Paisa
+  return roundHalfUp(Number(n.toFixed(4)) * 100) as Paisa
 }
 
 /** Paisa → rupees, as a number. For arithmetic only; never for display. */
@@ -72,12 +73,28 @@ export function formatMoney(p: Paisa): string {
 export const formatPaisa = formatMoney
 
 
-/** Parses user input — "1,39,506", "Rs 1,39,506", "139506.50" — to paisa. */
+/** Parses user input — "1,39,506", "Rs 1,39,506", "139506.50" — to paisa without float drift. */
 export function parseMoney(input: string): Paisa | null {
   const cleaned = input.replace(/[^\d.-]/g, '')
-  if (!cleaned || !/^-?\d*\.?\d*$/.test(cleaned)) return null
-  const n = Number(cleaned)
-  return Number.isFinite(n) ? (roundHalfUp(n * 100) as Paisa) : null
+  if (!cleaned || !/^-?\d*(\.\d*)?$/.test(cleaned) || cleaned === '-' || cleaned === '.' || cleaned === '-.') return null
+  const isNegative = cleaned.startsWith('-')
+  const abs = isNegative ? cleaned.slice(1) : cleaned
+  const parts = abs.split('.')
+  const wholeStr = parts[0] || '0'
+  const whole = Number(wholeStr)
+  if (!Number.isSafeInteger(whole)) return null
+  let paisa = whole * 100
+  if (parts.length > 1 && parts[1]) {
+    const fraction = parts[1]
+    const centsStr = fraction.slice(0, 2).padEnd(2, '0')
+    let cents = parseInt(centsStr, 10)
+    if (fraction.length >= 3 && fraction[2] !== undefined) {
+      const thirdDigit = parseInt(fraction[2], 10)
+      if (thirdDigit >= 5) cents += 1
+    }
+    paisa += cents
+  }
+  return (isNegative ? -paisa : paisa) as Paisa
 }
 
 /* ── §2.1 · the calculation order ──────────────────────────────────────── */
@@ -142,15 +159,36 @@ export function price(i: PriceInput): PriceBreakdown {
 /** Alias for price calculation function */
 export const calculatePrice = price
 
-/** §2.5 — >10% needs a reason ≥10 chars and a Manager. No Owner bypass. */
-export const DISCOUNT_CAP = 25
-export const DISCOUNT_APPROVAL_THRESHOLD = 10
+/**
+ * **The discount gate is GONE — D3, ruled 30 Aug 2026, confirmed by Babin on
+ * 31 Aug ("don't put any gate on discount").** The old Law 10 ceremony
+ * (>10% needs reason ≥10 chars + named approver; 25% hard cap; role tiers)
+ * is removed everywhere in one change set: this engine, `lib/discount.ts`,
+ * `rbac.ts:canApproveDiscount`, and — once `0074_drop_discount_gate.sql` is
+ * approved and applied — the `booking_discounts` / `invoices` CHECKs and the
+ * stacking trigger. PLAN.md Law 10 carries the amended text.
+ *
+ * What survives is ARITHMETIC VALIDITY, not a gate:
+ *
+ *  - **A negative percent is still refused.** A negative discount is a price
+ *    increase wearing a discount's clothes — the R3-1 security fix (16 Aug,
+ *    PLAN.md §4.35: `-5` once drew an approving green tick on Settings ▸
+ *    Tools). Removing the gate does not reopen that hole.
+ *  - **Above 100% is still refused.** A >100% discount is a negative price;
+ *    `price()` would compute a refund nobody rules on. This is the ceiling a
+ *    percentage HAS, not a cap anyone chose.
+ *
+ * `DISCOUNT_CAP` therefore now reads 100 and means "the arithmetic ceiling";
+ * `DISCOUNT_APPROVAL_THRESHOLD` is deleted — there is no approval to
+ * threshold. `reason`/`approver` stay in the signature so call sites keep
+ * compiling, and because an operator may still WANT to record a reason —
+ * optional forever, required never.
+ */
+export const DISCOUNT_CAP = 100
 
-export function discountGate(percent: number, reason: string, approver: string | null) {
-  if (percent > DISCOUNT_CAP) return { ok: false as const, why: `Discount is capped at ${DISCOUNT_CAP}%` }
-  if (percent <= DISCOUNT_APPROVAL_THRESHOLD) return { ok: true as const }
-  if (reason.trim().length < 10) return { ok: false as const, why: 'A discount above 10% needs a reason of at least 10 characters' }
-  if (!approver) return { ok: false as const, why: 'A discount above 10% needs a Manager approver' }
+export function discountGate(percent: number, _reason: string, _approver: string | null) {
+  if (percent < 0) return { ok: false as const, why: 'A discount cannot be negative — that is a price increase' }
+  if (percent > DISCOUNT_CAP) return { ok: false as const, why: 'A discount above 100% is a negative price, not a discount' }
   return { ok: true as const }
 }
 
@@ -200,6 +238,50 @@ export function crewBilling(i: CrewBillingInput): CrewBillingBreakdown {
     ? coordinationFeePaisa
     : ((coordinationFeePaisa - i.expensesPaisa) as Paisa)
   return { coordinationFeePaisa, billedPaisa, costPaisa, marginPaisa }
+}
+
+/* ── booking profit & subrental margin · AUD-019 ────────────────────────── */
+
+export interface BookingProfitInput {
+  revenuePaisa: Paisa
+  equipmentCostPaisa?: Paisa
+  subRentalCostPaisa?: Paisa
+  crewCostPaisa?: Paisa
+  transportCostPaisa?: Paisa
+  expensesPaisa?: Paisa
+}
+
+export interface BookingProfitBreakdown {
+  revenuePaisa: Paisa
+  totalCostPaisa: Paisa
+  grossProfitPaisa: Paisa
+  grossMarginPercent: number
+}
+
+/**
+ * Calculates gross profit and margin % for a booking, factoring in equipment,
+ * sub-rental costs, crew costs, transport, and direct expenses (AUD-019).
+ */
+export function calculateBookingProfit(i: BookingProfitInput): BookingProfitBreakdown {
+  const totalCostPaisa = (
+    (i.equipmentCostPaisa ?? 0) +
+    (i.subRentalCostPaisa ?? 0) +
+    (i.crewCostPaisa ?? 0) +
+    (i.transportCostPaisa ?? 0) +
+    (i.expensesPaisa ?? 0)
+  ) as Paisa
+
+  const grossProfitPaisa = (i.revenuePaisa - totalCostPaisa) as Paisa
+  const grossMarginPercent = i.revenuePaisa > 0
+    ? roundHalfUp((grossProfitPaisa / i.revenuePaisa) * 100 * 100) / 100
+    : 0
+
+  return {
+    revenuePaisa: i.revenuePaisa,
+    totalCostPaisa,
+    grossProfitPaisa,
+    grossMarginPercent,
+  }
 }
 
 /* ── late fee · Decisions — 8 Aug 2026 §3 Q2 ───────────────────────────── */

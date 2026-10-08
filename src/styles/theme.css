@@ -8,6 +8,14 @@
 
    Light = clean · professional · enterprise · spacious
    Dark  = cinematic · premium · OLED friendly · long working hours
+
+   ⚠ TYPE SYSTEM DIVERGENCE:
+   The marketing page (`src/marketing/MarketingPage.tsx`) uses Tailwind CSS
+   (utility classes) while this app uses CSS custom properties + inline styles.
+   They share ONLY the brand gold (`#d96518` / `--brand`). All other tokens
+   (spacing, type scale, radii, shadows, breakpoints) are duplicated and
+   must be kept in sync manually. A future unification should extract
+   design tokens to a shared package (e.g., `@babin-rentals/design-tokens`).
    ========================================================================== */
 
 /*
@@ -19,283 +27,525 @@
   change; this only establishes the scale for future/adopted use. Chosen so
   none of the five values collide with any literal already in live use, and
   ordered so each named tier paints above the one before it.
+
+  ENFORCEMENT: Use CSS variables (--z-*) only. Hardcoded z-index literals
+  in component styles are a lint error (see eslint.config.js).
+  Migration: replace `zIndex: 50` → `zIndex: 'var(--z-dropdown)'`, etc.
 */
 :root {
   --z-dropdown: 1100;    /* menus, popovers, comboboxes */
   --z-sticky-nav: 1200;  /* sticky headers / sub-navigation bars */
   --z-overlay: 1300;     /* backdrops, full-screen scrims behind a modal/drawer */
-  --z-modal: 1400;       /* modal dialogs and drawers, above their own overlay */
-  --z-system: 10500;     /* system-critical: screen lock, system restore, toasts —
-                             above everything, including legacy 9999/10000 literals */
+  --z-drawer: 1350;      /* slide-over filter and context drawers */
+  --z-modal: 1400;       /* modal dialogs, above their own overlay */
+  --z-toast: 9000;       /* toasts, notifications, alerts */
+  --z-system: 10500;     /* system-critical: screen lock, system restore */
+
+  /* Global Layout Tokens */
+  --app-sidebar-width: 256px;
+  --app-sidebar-collapsed-width: 64px;
+  --global-header-height: 60px;
+  --app-panel-width: 320px;
 }
+
+/* ============================================================================
+   DESIGN_DIRECTION_SPEC_v4.1 — the seven-hue palette. Ruled 24 Aug 2026.
+   docs/DESIGN_DIRECTION_SPEC_v4.1.md is the authority; this file only sets it.
+
+   LIGHT IS THE DEFAULT — DESIGN_DIRECTION_SPEC_v4.2 §2.1 supersedes the 24 Aug
+   dark-first ruling. Bare `:root` carries the LIGHT values so a reload cannot
+   flash dark before `lib/theme.tsx` stamps `data-theme`; index.html's pre-paint
+   script resolves an unset user to light for the same reason.
+
+   Every value here is the MEASURED set. Seven cells moved off the ruling draft
+   because they failed the §7.8 gate at 4.5:1 — recorded in §10 of the spec with
+   before/after ratios. The rule did not move; the values did.
+
+   TWO TOKENS DID NOT TAKE THE SPEC'S NAME, to avoid silently rebinding live
+   code (the trap §8.1 names):
+     · v4.1's "Dim" fill is `--dim`, NOT `--muted`. `--muted` is muted TEXT in
+       1,211 places across 136 files; repainting it to a #24262C fill would
+       black out muted copy on nearly every screen. §2 calls the hue "Dim", so
+       `--dim` is the spec's own word.
+     · `--warn` IS reclaimed for v4.1's orange, and the six legacy caution-text
+       uses were migrated to `--ready-text` first (spec §11).
+   ========================================================================== */
 
 :root,
 :root[data-theme='light'] {
-  /* brand */
-  --gold: #c9982f;
-  /* The wordmark's own gold. Brand --gold measures 2.62:1 on white — fine as a
-     fill behind dark text (its job in the dark theme), not as ink. This step is
-     the same hue at 4.54:1, so the mark stays gold and stays readable. Dark
-     theme keeps brand gold, which is already well clear against #111827. */
-  --brand-mark: #96700f;
-  --blue: #2563eb;
-  --success: #16a34a;
-  --warning: #ea580c;
-  --danger: #dc2626;
-  /* §4.2 — the five. --primary/--progress are the canonical names; --blue and
-     --warning remain as aliases only until the last inline style is migrated. */
-  --primary: #2563eb;
-  --progress: #d97706;
-  --primary-text: #1d4ed8;
-  --progress-text: #b45309;
+  /* ---- §3.1 core elevation ladder ---- */
+  --bg0: #e2e8f0;
+  --bg: #eaeff5;
+  --bgglow: #e4eaf2;
+  --surface: #ffffff;
+  --surface-2: #edf3fa;
+  --card: #ffffff;
+  --card2: #faf8f4;
+  --inset: #f1f5f9;
+  --inset2: #e2e8f0;
+  --border: #b8c3d2;
+  --border2: #cbd5e1;
+  --divider: #c3cddb;
 
-  /* Ink that sits ON a brand fill (an icon glyph inside a coloured tile).
-     White is safe on four of the five, but --progress is amber: in dark theme
-     it lightens to #fbbf24, where a white glyph measures ~1.7:1 — under the 3:1
-     WCAG minimum for non-text. So the amber tile carries dark ink instead, and
-     the pairing is a token rather than a literal each caller has to remember. */
-  --on-brand: #ffffff;
-  --on-progress: #ffffff;
+  /* Universal 9-tier translucent alpha border scale (Light mode: slate-based) */
+  --w02: rgba(15, 23, 42, 0.02);
+  --w04: rgba(15, 23, 42, 0.04);
+  --w05: rgba(15, 23, 42, 0.05);
+  --w08: rgba(15, 23, 42, 0.08);
+  --w10: rgba(15, 23, 42, 0.10);
+  --w12: rgba(15, 23, 42, 0.12);
+  --w15: rgba(15, 23, 42, 0.15);
+  --w20: rgba(15, 23, 42, 0.20);
+  --w30: rgba(15, 23, 42, 0.30);
+  --w40: rgba(15, 23, 42, 0.40);
+
+  /* Shared cool canvas, matched to the Pickup & Return dashboard. */
+  --bg-gradient-1: #eaeff5;
+  --bg-gradient-2: #e4eaf2;
+  --bg-radial-mesh: none;
+  --surface-card: var(--surface);
+  --surface-card-hover: var(--surface-2);
+  --glass-tint: 0.88;
+  --specular-rim: 0 0 0 transparent;
+  --bezel-outer-ring: 0 0 0 1px rgba(16, 32, 59, 0.06);
+  --bezel-outer-bg: rgba(16, 32, 59, 0.025);
+
+  --text: #0f172a;
+  --text2: #334155;
+  /*
+   * v4.1 shipped #6d7076 here with the comment "measured 4.97:1 on white" —
+   * which was true, and was the whole problem. `--muted` is not painted on
+   * white; it is painted on the app's own tinted surfaces, and the ratio was
+   * only ever measured against the lightest of them. On `#eef4fb` (the Today
+   * dashboard's card) #6d7076 measures 4.48:1 and on `--surface-2` #edf3fa
+   * 4.45:1 — both UNDER WCAG AA's 4.5:1 for body text. Lighthouse flagged it
+   * live on `/dashboard` (`movement-card__project`, `movement-card__items-count`).
+   *
+   * #63666d is the same hue nudged down until it clears 4.5:1 on the DARKEST
+   * light-theme surface (`--inset2` #eae6de, 4.62:1) rather than on white, so
+   * every surface in the ladder passes, not just the one that was measured.
+   * `check:contrast` now asserts the muted-on-tinted pairs so this cannot
+   * regress behind a passing white-only check.
+   *
+   * 8 Oct 2026 (RULINGS-2026-10-08.md, "looks old and lacks contrast"): text
+   * was already AA; the STRUCTURE was not — borders 1.48:1 on cards, cards
+   * 1.07:1 on the page, input outlines ~1.8:1 (under WCAG 1.4.11's 3:1).
+   * One cool slate family now (the cream insets are gone); muted #526075 is
+   * 6.39:1 on white and 5.18:1 on the darkest inset #e2e8f0; text2 #334155
+   * 10.35:1; input border #7c8ba1 3.46:1; cards carry a soft shadow.
+   */
+  --muted: #526075;
+  --disabled: #9b9ea4;
+
+  --primary: #2456d6;
+  --on-primary: #ffffff;
+  --primary-text: #1e49b8;
+
+  --success: #1e864a;
   --on-success: #ffffff;
+  --success-text: #15683a;
 
-  /* surfaces */
-  --app: #f6f8fb;
+  --danger: #c73a3a;
+  --on-danger: #ffffff;
+  --danger-text: #a82f2f;
+
+  /* Orange keeps the ruled hue; the INK moved to dark because white measured
+     3.61:1 on it (§10). Orange is dark-ink in both themes.
+
+     Desaturated from #d96518, but only to #d46218 and no further: #c45d16
+     dropped `--on-warn` (#231a05) to 4.03:1, under AA. Orange's ink is DARK,
+     so a *darker* fill is the wrong direction — it eats the ink's contrast.
+     #d46218 holds the desaturation and measures 4.55:1. */
+  --warn: #d46218;
+  --on-warn: #231a05;
+  --warn-text: #9a5417;
+  /* User ruling, 7 Oct 2026: booking pickup/return dates use orange everywhere. */
+  /* Slightly deeper ink keeps small dates readable on the darkest light inset. */
+  --booking-date-text: #985014;
+
+  --ready: #d4a315;       /* Desaturated from #e3b117. */
+  --on-ready: #231a05;
+  --ready-text: #7f620a;
+
+  --neutral: #72757e;  /* draft #8A8D95 → white was 3.32, now 4.60 */
+  --on-neutral: #ffffff;
+
+  --dim: #dddcd6;
+  --on-dim: #5a5d63;
+
+  --ext-fg: #1e49b8;
+  --ext-line: #2456d6;
+  --ext-bg: rgba(36, 86, 214, 0.1);
+  --gold: #2456d6;
+  --brand-mark: #2456d6;
+
+  --app: #e9eef5;
   --sidebar: #ffffff;
   --card: #ffffff;
-  --card2: #f9fafb;
+  --card2: #edf3fa;
   --modal: #ffffff;
   --dropdown: #ffffff;
 
-  /* borders */
-  --border: #e5e7eb;
-  --border2: #f1f5f9;
-  --divider: #eceff3;
+  --hover-card: #eef4fb;
+  --hover-sidebar: #eef4fb;
+  --hover-button: #1e49b8;
+  --hover-row: #eef4fb;
 
-  /* text
-     ⚠ DEVIATION, light theme only. The spec's --muted #9ca3af measures 2.54:1
-     on white — it carries real content here (calendar day numbers, row meta,
-     KPI secondary lines), so every level shifts one step down the same gray
-     ramp to clear AA. --disabled inherits the old --muted value and is now
-     reserved for genuinely inert marks: out-of-month days, bullet separators.
-     TODO(decision): confirm or overrule alongside the status-colour deviation. */
-  --text: #111827;
-  --text2: #4b5563; /* spec #6b7280 */
-  --muted: #6b7280; /* spec #9ca3af — 2.54:1, below AA */
-  --disabled: #9ca3af; /* spec #d1d5db */
-
-  /* hover */
-  --hover-card: #f8fafc;
-  --hover-sidebar: #eef4ff;
-  --hover-button: #1d4ed8;
-  --hover-row: #f5f7fa;
-
-  /* primary button — LIGHT: blue bg, white text */
-  --btn-primary-bg: #2563eb;
+  --btn-primary-bg: #2456d6;
   --btn-primary-fg: #ffffff;
-  --btn-secondary-bg: #ffffff;
-  --btn-secondary-border: #d1d5db;
-  --btn-danger-bg: #dc2626;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #dbe5f0;
+  --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
-  /* sidebar active — LIGHT: blue */
-  --nav-active-accent: #2563eb;
-  --nav-active-bg: #eef4ff;
-  --nav-icon: #6b7280;
+  --nav-active-accent: #2456d6;
+  --nav-active-bg: #e7efff;
+  --nav-icon: #6d7076;
 
-  /* inputs — LIGHT: blue focus */
   --input-bg: #ffffff;
-  --input-border: #d1d5db;
-  --input-placeholder: #9ca3af;
-  --input-focus: #2563eb;
+  --input-border: #7c8ba1;
+  --input-placeholder: #5f6e83;
+  --input-focus: #2456d6;
 
-  /* tables */
-  --th-bg: #f8fafc;
+  --th-bg: #edf3fa;
   --tr-bg: #ffffff;
-  --tr-hover: #f5f7fa;
+  --tr-hover: #eef4fb;
+  --tr-alt: #f5f7fb;
 
-  /* elevation */
-  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.05);
-  --shadow-kpi: 0 4px 12px rgba(0, 0, 0, 0.05);
-  --shadow-modal: 0 15px 40px rgba(15, 23, 42, 0.12);
+  /* DESIGN_DIRECTION_SPEC v4.2 §6 Shadow Scale — tinted to match background hue */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.07), 0 0 0 1px rgba(15, 23, 42, 0.03);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.09), 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.03);
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-kpi: 0 0 0 transparent;
+  --shadow-md: 0 8px 20px -3px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.05), 0 4px 6px -2px rgba(15, 23, 42, 0.025);
+  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.10), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
+  --shadow-modal: 0 20px 48px rgba(15, 23, 42, 0.16);
+  --shadow-primary-glow: 0 8px 20px -4px rgba(36, 86, 214, 0.25);
 
-  /* status — background / text pairs.
-     ⚠ DEVIATION from Theme Design System §Status Colors, light theme only.
-     Five of the spec's pairs measure below WCAG AA 4.5:1 at badge size
-     (11.5px/600): maintenance 2.86, return 3.35, damage 3.95, reserved 4.24,
-     cancelled 4.39. Backgrounds are kept exactly as specified; only those five
-     foregrounds are darkened one step to clear 4.5:1. The dark theme's pairs
-     already pass and are untouched.
-     TODO(decision): confirm or overrule — logged with the T-series conflicts. */
-  --st-neutral-bg: #f3f4f6;     --st-neutral-fg: #4b5563;
-  --st-primary-bg: #dbeafe;     --st-primary-fg: #1d4ed8;
-  --st-progress-bg: #fef3c7;    --st-progress-fg: #92400e;
-  /* §4.2 — green separates On Rent from Returned by *fill weight*, not by hue.
-     Solid = out, soft = in. Same green, two weights, so the pair reads as one
-     colour doing two jobs rather than as two colours. */
-  --st-out-bg: #15803d;         --st-out-fg: #ffffff; /* white on green-600 was 3.30:1 */
-  --st-in-bg: #dcfce7;          --st-in-fg: #15803d;
-  --st-danger-bg: #fee2e2;      --st-danger-fg: #b91c1c;
-  --st-purple-bg: #f3e8ff;      --st-purple-fg: #7e22ce; /* Sub-Rental */
-  /* Gold, outline only. Never a fill, never a button (§4.2). */
-  --ext-line: #c9982f;          --ext-fg: #96700f;
+  /* DESIGN_DIRECTION_SPEC v4.2 §6 Soft-tint non-status chips */
+  --chip-blue-bg: #DBEAFE;
+  --chip-blue-fg: #1E40AF;
+  --chip-gray-bg: #F3F4F6;
+  --chip-gray-fg: #374151;
+  --chip-amber-bg: #FEF3C7;
+  --chip-amber-fg: #92400E;
 
-  /* Overdue row wash — Dashboard.md §7. Tinted so the left border is not the
-     only signal ("never colour alone"); the row still states "Overdue" in text. */
-  /* Kept light enough that --muted meta text on an overdue row still clears
-     4.5:1; a deeper wash drags the row's own body copy under. */
-  --danger-soft: #fff7f7;
+  --danger-soft: #fdf6f6;
+  --scrim: rgba(15, 23, 42, 0.45);
 
-  /* Text-safe warning/danger/success — see BRAND_TEXT in lib/status.ts. */
-  --warning-text: #b45309;
-  --danger-text: #b91c1c;
-  --success-text: #15803d;
-  --blue-text: #1d4ed8;
-
-  /*
-    charts — re-validated 5 Aug against §4.2's five-colour law.
-
-    §4.2 bans purple, cyan, teal, indigo and violet outright, which had left
-    the categorical set on a placeholder — three slots replaced by darker
-    shades of already-used families, with the dataviz six-checks known broken
-    and logged as a TODO(decision). That is resolved: eight hues *do* fit
-    inside the allowed families (blue, orange, green, red, plus pink/magenta
-    and gold/olive, neither of which §4.2 mentions), re-picked and run through
-    `dataviz/scripts/validate_palette.js` against this exact surface.
-
-    Light — surface #ffffff: lightness band PASS, chroma floor PASS, CVD
-    separation PASS (worst adjacent ΔE 8.4 protan, target 8), normal-vision
-    floor PASS (worst 15.2, floor 15 — the tightest margin in the set),
-    contrast PASS all 8 ≥ 3:1. ALL CHECKS PASS, zero WARNs.
-  */
-  --chart-grid: #e5e7eb;
-  --cat-1: #0072b2; /* blue        */
-  --cat-2: #c87a00; /* orange      */
-  --cat-3: #009e73; /* green       */
-  --cat-4: #d55e00; /* red         */
-  --cat-5: #3d5a9e; /* blue, dark  */
-  --cat-6: #b23a6b; /* pink        */
-  --cat-7: #6b7a00; /* olive       */
-  --cat-8: #8b3a0e; /* rust        */
+  --chart-grid: #dbe5f0;
+  --cat-1: #0072b2;
+  --cat-2: #c87a00;
+  --cat-3: #009e73;
+  --cat-4: #d55e00;
+  --cat-5: #3d5a9e;
+  --cat-6: #b23a6b;
+  --cat-7: #6b7a00;
+  --cat-8: #8b3a0e;
 }
 
 :root[data-theme='dark'] {
-  --gold: #d8a93a;
-  --brand-mark: #d8a93a;
-  --blue: #3b82f6;
-  --success: #22c55e;
-  --warning: #fb923c;
-  --danger: #ef4444;
-  --primary: #3b82f6;
-  --progress: #fbbf24;
-  --primary-text: #60a5fa;
-  --progress-text: #fbbf24;
+  /* ---- §3.1 5-Tier Obsidian Dark Elevation Ladder ---- */
+  --bg0: #020509;
+  --bg: #04080d;
+  --bgglow: #0a1826;
+  --surface: #0f1b2a;
+  --surface-2: #13233a;
+  --card: #0f1b2a;
+  --card2: #13233a;
+  --inset: #081522;
+  --inset2: #0b1b2c;
+  --sidebar: #050b12;
+  --modal: #0d1a29;
+  --dropdown: #0d1a29;
 
-  /* See the note in the light block. Dark theme lightens the fills, so two of
-     them fail white ink and take dark ink from their own family instead:
-       --progress #fbbf24 → white 1.7:1, dark amber 8.1:1
-       --success  #22c55e → white 2.3:1, dark green 7.4:1
-     Measured in the browser, not estimated. */
-  --on-brand: #ffffff;
-  --on-progress: #3d2c05;
-  --on-success: #05320f;
+  /* Universal 9-tier translucent alpha border scale (Dark mode: pure white) */
+  --w02: rgba(255, 255, 255, 0.02);
+  --w04: rgba(255, 255, 255, 0.04);
+  --w05: rgba(255, 255, 255, 0.05);
+  --w08: rgba(255, 255, 255, 0.08);
+  --w10: rgba(255, 255, 255, 0.10);
+  --w12: rgba(255, 255, 255, 0.12);
+  --w15: rgba(255, 255, 255, 0.15);
+  --w20: rgba(255, 255, 255, 0.20);
+  --w30: rgba(255, 255, 255, 0.30);
+  --w40: rgba(255, 255, 255, 0.40);
 
-  --app: #0b1220;
-  --sidebar: #111827;
-  --card: #161f2e;
-  --card2: #1b2435;
-  --modal: #161f2e;
-  --dropdown: #1b2435;
+  --border: rgba(255, 255, 255, 0.14);
+  --border2: rgba(255, 255, 255, 0.18);
+  --divider: rgba(255, 255, 255, 0.14);
 
-  --border: #2b3648;
-  --border2: #374151;
-  --divider: #2f3a4f;
+  /* Obsidian Spatial Gradients & Glows */
+  --bg-gradient-1: #04080d;
+  --bg-gradient-2: #020509;
+  --bg-radial-mesh: radial-gradient(ellipse 80% 50% at 50% -20%, #0a1826 0%, #050b12 100%);
+  --surface-card: linear-gradient(180deg, var(--card2) 0%, var(--card) 100%);
+  --surface-card-hover: var(--card2);
+  --glass-tint: 0.88;
+  --specular-rim: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  --bezel-outer-ring: 0 0 0 1px var(--w08);
+  --bezel-outer-bg: rgba(255, 255, 255, 0.02);
 
-  --text: #f8fafc;
-  --text2: #cbd5e1;
-  --muted: #94a3b8;
-  --disabled: #64748b;
+  --text: #f1f5f9;
+  --text2: #b8c4d3;
+  --muted: #9eaabb;
+  --disabled: #475569;
 
-  --hover-card: #202c3e;
-  --hover-sidebar: #1e293b;
-  --hover-button: #2563eb;
-  --hover-row: #233047;
+  --primary: #386af7;      /* WCAG AA 4.59:1 with white on-primary */
+  --on-primary: #ffffff;
+  --primary-text: #7ea2ff; /* text-safe blue on --surface */
 
-  /* primary button — DARK: gold bg, black text.
-     Ruled 5 Aug: two specs agree (Theme Design System + Buttons & Status
-     Colors B1). Design Tokens v2.0's "gold is not primary" is the outlier,
-     and its concern — gold colliding with the external-gear marker — applies
-     to the light theme where --ext gold outlines actually appear. */
-  --btn-primary-bg: #d8a93a;
-  --btn-primary-fg: #0a0a0a;
-  --btn-secondary-bg: #1f2937;
-  --btn-secondary-border: #374151;
-  --btn-danger-bg: #ef4444;
+  /* ---- §3.2 status hues + their on-colours ---- */
+  --success: #1e864a;      /* draft #1F8A4C → white was 4.38, now 4.60 */
+  --on-success: #ffffff;
+  --success-text: #4ade80;
+
+  --danger: #c73a3a;       /* WCAG AA 5.13:1 with white on-danger */
+  --on-danger: #ffffff;
+  --danger-text: #f08a8a;
+
+  --warn: #d47026;         /* ORANGE — "out with the client". Never a button. Desaturated from #e8762d. */
+  --on-warn: #1c1005;
+  --warn-text: #e8a06e;
+  --booking-date-text: var(--warn-text);
+
+  --ready: #d4a824;        /* YELLOW — in-house work / waiting. Never a button. Desaturated from #edbe2a. */
+  --on-ready: #1c1405;
+  --ready-text: #d4a824;
+
+  --neutral: #3a3e47;      /* GRAY — not started yet */
+  --on-neutral: #c9cbd1;
+
+  --dim: #24262c;          /* DIM — finished / inactive. 4.61:1 with on-dim */
+  --on-dim: #8b8e96;
+
+  --ext-fg: #85b2ff;
+  --ext-line: #386af7;
+  --ext-bg: rgba(56, 106, 247, 0.14);
+  --gold: #386af7;
+  --brand-mark: #85b2ff;
+
+  --app: #04080d;
+  --sidebar: #050b12;
+  --card: #0f1b2a;
+  --card2: #13233a;
+  --modal: #0d1a29;
+  --dropdown: #0d1a29;
+
+  --hover-card: #0f1e30;
+  --hover-sidebar: #0d1a29;
+  --hover-button: #2f5ce0;
+  --hover-row: rgba(255, 255, 255, 0.035);
+
+  --btn-primary-bg: #386af7;
+  --btn-primary-fg: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #263849;
+  --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
-  /* sidebar active — DARK: gold */
-  --nav-active-accent: #d8a93a;
-  --nav-active-bg: #1a2233;
+  /*
+   * The ACTIVE sidebar item's ink. #386af7 measured 4.30:1 on the dark rail
+   * (#050b12) — under AA for 14px text, and the rail is where the current
+   * destination is announced, so it is the last place to be illegible.
+   * Lightened to #6b95fc, the same hue: 6.9:1 on the rail, 5.0:1 on
+   * `--nav-active-bg`, 6.4:1 on `--surface`. Asserted by `check:contrast`.
+   */
+  --nav-active-accent: #6b95fc;
+  --nav-active-bg: #102b48;
   --nav-icon: #94a3b8;
 
-  /* inputs — DARK: gold focus */
-  --input-bg: #111827;
-  --input-border: #334155;
+  --input-bg: #081522;
+  --input-border: rgba(255, 255, 255, 0.34);
   --input-placeholder: #64748b;
-  --input-focus: #d8a93a;
+  --input-focus: #386af7;
 
-  --th-bg: #111827;
-  --tr-bg: #161f2e;
-  --tr-hover: #1f2937;
-  --tr-alt: #1a2233;
+  --th-bg: #081522;
+  --tr-bg: #0b1622;
+  --tr-hover: rgba(255, 255, 255, 0.035);
+  --tr-alt: #081522;
 
-  --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --shadow-kpi: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.65);
+  --shadow-xs: 0 1px 2px 0 rgba(2, 6, 11, 0.35);
+  --shadow-sm: 0 1px 3px 0 rgba(2, 6, 11, 0.4), 0 1px 2px -1px rgba(2, 6, 11, 0.3);
+  --shadow: 0 4px 14px -2px rgba(2, 6, 11, 0.5), 0 2px 6px -1px rgba(2, 6, 11, 0.3);
+  --shadow-card: 0 0 0 transparent;
+  --shadow-kpi: var(--shadow-card);
+  --shadow-md: 0 14px 28px -4px rgba(2, 6, 11, 0.6), 0 6px 12px -2px rgba(2, 6, 11, 0.4);
+  --shadow-lg: 0 20px 36px -6px rgba(2, 6, 11, 0.65), 0 8px 14px -3px rgba(2, 6, 11, 0.45);
+  --shadow-xl: 0 28px 56px -8px rgba(2, 6, 11, 0.75), 0 12px 18px -4px rgba(2, 6, 11, 0.5);
+  --shadow-modal: 0 28px 72px -12px rgba(2, 6, 11, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-primary-glow: 0 8px 28px -4px rgba(56, 106, 247, 0.45);
 
-  --st-neutral-bg: #2d3748;     --st-neutral-fg: #cbd5e1;
-  --st-primary-bg: #102c56;     --st-primary-fg: #60a5fa;
-  --st-progress-bg: #47340c;    --st-progress-fg: #fbbf24;
-  /* §4.2 — solid = out, soft = in. Same green, two weights. */
-  --st-out-bg: #22c55e;         --st-out-fg: #06240f;
-  --st-in-bg: #123524;          --st-in-fg: #4ade80;
-  --st-danger-bg: #4b1515;      --st-danger-fg: #f87171;
-  --st-purple-bg: #3b0764;      --st-purple-fg: #c084fc; /* Sub-Rental */
-  --ext-line: #d8a93a;          --ext-fg: #d8a93a;
+  /* DESIGN_DIRECTION_SPEC v4.2 §6 Soft-tint non-status chips */
+  --chip-blue-bg: rgba(59, 130, 246, 0.18);
+  --chip-blue-fg: #93C5FD;
+  --chip-gray-bg: rgba(156, 163, 175, 0.18);
+  --chip-gray-fg: #D1D5DB;
+  --chip-amber-bg: rgba(245, 158, 11, 0.18);
+  --chip-amber-fg: #FCD34D;
 
-  --danger-soft: #1f1517;
+  --danger-soft: #1a1315;
+  --scrim: rgba(0, 0, 0, 0.65);
 
-  --warning-text: #fdba74;
-  --danger-text: #fca5a5;
+  --chart-grid: #263849;
+  --cat-1: #3b82d6;
+  --cat-2: #b87a1e;
+  --cat-3: #249e76;
+  --cat-4: #d9613c;
+  --cat-5: #5a76c2;
+  --cat-6: #c25588;
+  --cat-7: #7a8c3e;
+  --cat-8: #5d71b0;
+}
+
+/* ── §3.1 High-Contrast Outdoor Profile (Glare Reduction for Warehouse & Loading Bays) ── */
+:root[data-theme='high-contrast'] {
+  --bg: #0a0a0a;
+  --surface: #0a0a0a;
+  --surface-2: #141414;
+  --border: #facc15;
+  --border2: #eab308;
+  --divider: #facc15;
+
+  --bg-gradient-1: #000000;
+  --bg-gradient-2: #050505;
+  --bg-radial-mesh: none;
+  --surface-card: #0a0a0a;
+  --surface-card-hover: #171717;
+  --glass-tint: 1;
+  --specular-rim: 0 0 0 transparent;
+  --bezel-outer-ring: 0 0 0 2px #facc15;
+  --bezel-outer-bg: transparent;
+
+  --text: #ffffff;
+  --text2: #f1f5f9;
+  --muted: #e2e8f0;
+  --disabled: #94a3b8;
+
+  --primary: #facc15;
+  --on-primary: #000000;
+  --primary-text: #fde047;
+
+  --success: #22c55e;
+  --on-success: #000000;
   --success-text: #4ade80;
-  --blue-text: #60a5fa;
 
-  /*
-    Dark is a *selected* set from the same hue order — not an automatic flip of
-    the light values, since a hue that clears the light card at L 0.43–0.77
-    usually sits outside dark's 0.48–0.67 band. Re-validated 5 Aug against
-    #161f2e: lightness band PASS, chroma floor PASS, CVD separation PASS
-    (worst adjacent ΔE 8.7 protan/deutan), normal-vision floor PASS (worst
-    18.1), contrast PASS all 8 ≥ 3:1. ALL CHECKS PASS, zero WARNs.
-  */
-  --chart-grid: #334155;
-  --cat-1: #3b82d6; /* blue        */
-  --cat-2: #b87a1e; /* orange      */
-  --cat-3: #249e76; /* green       */
-  --cat-4: #d9613c; /* red         */
-  --cat-5: #5a76c2; /* blue, dark  */
-  --cat-6: #c25588; /* pink        */
-  --cat-7: #7a8c3e; /* olive       */
-  --cat-8: #5d71b0; /* blue, light */
+  --danger: #ef4444;
+  --on-danger: #000000;
+  --danger-text: #f87171;
+
+  --warn: #f97316;
+  --on-warn: #000000;
+  --warn-text: #fb923c;
+
+  --ready: #facc15;
+  --on-ready: #000000;
+  --ready-text: #facc15;
+
+  --neutral: #334155;
+  --on-neutral: #ffffff;
+
+  --dim: #1e293b;
+  --on-dim: #f1f5f9;
+
+  --ext-fg: #fde047;
+  --ext-line: #facc15;
+  --ext-bg: rgba(250, 204, 21, 0.2);
+  --gold: #facc15;
+  --brand-mark: #facc15;
+
+  --app: #000000;
+  --sidebar: #050505;
+  --card: #0a0a0a;
+  --card2: #141414;
+  --modal: #0a0a0a;
+  --dropdown: #0a0a0a;
+
+  --hover-card: #171717;
+  --hover-sidebar: #171717;
+  --hover-button: #eab308;
+  --hover-row: #1a1a1a;
+
+  --btn-primary-bg: #facc15;
+  --btn-primary-fg: #000000;
+  --btn-secondary-bg: #000000;
+  --btn-secondary-border: #facc15;
+  --btn-danger-bg: #ef4444;
+  --btn-danger-fg: #000000;
+
+  --nav-active-accent: #facc15;
+  --nav-active-bg: #1f1b04;
+  --nav-icon: #facc15;
+
+  --input-bg: #050505;
+  --input-border: #facc15;
+  --input-border-focus: #ffffff;
+
+  --chip-blue-bg: #002244;
+  --chip-blue-fg: #93c5fd;
+  --chip-gray-bg: #1e293b;
+  --chip-gray-fg: #ffffff;
+  --chip-amber-bg: #3d2600;
+  --chip-amber-fg: #fde047;
+
+  --danger-soft: #2e0808;
+  --scrim: rgba(0, 0, 0, 0.85);
+
+  --chart-grid: #facc15;
+  --cat-1: #facc15;
+  --cat-2: #22c55e;
+  --cat-3: #ef4444;
+  --cat-4: #f97316;
+  --cat-5: #38bdf8;
+  --cat-6: #ec4899;
+  --cat-7: #a855f7;
+  --cat-8: #ffffff;
 }
 
 /* ---- scale: identical in both themes ---- */
 :root {
   /* radius */
-  --r-btn: 12px;
-  --r-card: 14px; /* §4.4 — radius scale: --r-btn/--r-input 12px, --r-card 14px, --r-modal 20px, --r-badge 999px */
-  --r-input: 12px;
-  --r-modal: 20px;
-  --r-badge: 999px;
+  /* Operational UI: restrained corners, with round badges reserved for counts. */
+  --r-btn: 8px;
+  --r-card: 10px;
+  --r-input: 8px;
+  --r-modal: 12px;
+  --r-chip: 6px;    /* status blocks */
+  --r-badge: 999px; /* numeric count badges ONLY */
+
+  /* §3.3 / §7.3 - the law is the HIT AREA, not the paint. */
+  --tap: 44px;
+  --row-min-h: 56px;
+  --icon-stroke: 1.5;
+  --icon-stroke-fill: 2.0;
+
+  /* ══ §4 status blocks — ALL SOLID ═══════════════════════════════════════
+     v4.1 killed the solid-vs-outline fill rule: every status is a solid block
+     and the word inside carries the meaning (§7.4, never colour alone). Gold
+     is the ONLY outline left on screen.
+
+     These st-* names are what lib/status.ts and the screens already read, so
+     they are kept and REPOINTED rather than renamed — the rename would have
+     touched every call site for no gain. Two of them change meaning, which is
+     the whole point of v4.1:
+       --st-out-*  was green "solid = out of the warehouse" -> now ORANGE,
+                   because On Rent is orange: the gear is with the client.
+       --st-in-*   was a soft green wash -> now SOLID green: home & settled.
+     ══════════════════════════════════════════════════════════════════════ */
+  --st-neutral-bg: var(--neutral);  --st-neutral-fg: var(--on-neutral);  /* Quote, Draft */
+  --st-primary-bg: var(--primary);  --st-primary-fg: var(--on-primary);  /* Booked, Reserved, Issued */
+  --st-progress-bg: var(--ready);   --st-progress-fg: var(--on-ready);   /* Packed, Due Soon, Partial, Cleaning, Maintenance */
+  --st-out-bg: var(--warn);         --st-out-fg: var(--on-warn);         /* On Rent, Picked Up — out with the client */
+  --st-in-bg: var(--success);       --st-in-fg: var(--on-success);       /* Returned, Available, Paid — home */
+  --st-danger-bg: var(--danger);    --st-danger-fg: var(--on-danger);    /* Overdue, Damaged, Unpaid, Blocked */
+  --st-dim-bg: var(--dim);          --st-dim-fg: var(--on-dim);          /* Closed, Void, Retired, Deactivated */
+
+  /* Canonical v4.1 spellings, for code written against the spec directly. */
+  --st-ready-bg: var(--ready);      --st-ready-fg: var(--on-ready);
+  --st-warn-bg: var(--warn);               --st-warn-fg: var(--on-warn);
+  --st-success-bg: var(--success);  --st-success-fg: var(--on-success);
   /* Compact-element radii — chips, tags, icon wrappers: smaller than a full
      button/card/input, so they don't share those tokens. Added after an audit
      found --r-sm's 8px and --r-xs's 6px as the two most common hardcoded
@@ -303,10 +553,11 @@
   --r-sm: 8px;
   --r-xs: 6px;
 
-  /* Inline links follow the theme's blue in both modes — gold is reserved for
-     the dark primary and would read as a warning inline. This is the *text*
-     blue: brand --blue measures 4.23:1 on the dark card. */
-  --link: var(--blue-text);
+  /* Inline links take the text-safe primary in both themes. The pre-v4.1 note
+     here explained that gold was reserved for the dark primary button — v4.1
+     retired gold from every action (§2), so there is nothing left to avoid
+     colliding with; links are simply the primary hue. */
+  --link: var(--primary-text);
 
   /* Aliases for a handful of call sites (SubRental.tsx, CasesWorkspace.tsx,
      CasesReports.tsx) that reference --good/--bad/--info directly instead of
@@ -319,6 +570,105 @@
   --bad: var(--danger-text);
   --info: var(--primary-text);
   --warn: var(--warning-text);
+
+  /*
+    ---- alias registry, 22 Aug audit ----
+    Every remaining token referenced somewhere in src/ but defined nowhere. An
+    undefined custom property makes the whole declaration compute to `unset` —
+    the colour silently becomes the inherited one, the background becomes
+    transparent, the font-size becomes the parent's — so each of these was a
+    live rendering bug, not a style preference. Same policy as --good/--bad/
+    --info above: alias to the canonical token rather than migrating every
+    call site. Each alias resolves per-theme because the token it points at
+    does; none of these may gain a literal value later — fix the canonical
+    token instead.
+
+    Who reads what:
+      --hover       chip/tab/thead washes — PurchaseRequests, StockCheck,
+                    BundleItemsTable, BundleSummaryRail, archive/UnifiedInbox
+      --bg          recessed panel + in-card input fills — AddBundle,
+                    BundleItemsTable, BundleSummaryRail, InventoryTree
+      --warn        amber figures/priorities — CasesWorkspace, SubRental,
+                    CasesReports (the fourth member of --good/--bad/--info)
+      --orange-text PurchaseRequests, archive/SystemMonitor. "Orange" is this
+                    theme's warning family; a separate orange is banned (§4.2)
+      --danger-bg / --success-bg
+                    soft status fills behind status text — BarcodeScannerModal,
+                    SystemRestoreModal (no fallback there: the fills were
+                    TRANSPARENT), CreateInvoice/RecordPayment/RefundPayment
+                    modals. The st-* pairs are the same meaning, already themed
+      --text-1/-2/-3, --text3
+                    CashFlowReport/WorkingCapitalReport's hyphenated spelling
+                    and StaffReports' --text3 for the same three-step ramp
+      --fs-meta     CashFlow/WorkingCapital meta lines — the --t-meta step
+                    under its px-era name (resolves to rem; scales the same)
+      --shadow-sm   Today, AlertsPanel — the smallest elevation that exists
+      --on-accent   Finance.tsx ink-on-accent-fill (white in both themes)
+      --nav-active-accent-bg
+                    BarcodeScannerModal's selected scan-type — the intended
+                    token was the nav-active pair's bg half
+  */
+  --hover: var(--hover-card);
+  /*
+    Two more of the same, found 1 Sep and confirmed in the running app by
+    probing a live element (both resolved to the empty string, so the probe
+    inherited body's size/colour instead of the step it asked for):
+      --t-caption  AdjustCreditLimitModal ×3, UpgradeTierModal ×2,
+                   LogMaintenanceModal ×1 — the caption step under a name the
+                   scale never defined (it has --fs-caption and --t-meta). The
+                   six labels rendered at inherited BODY size, flattening the
+                   label/value hierarchy in all three modals.
+      --text-dim   Tools.tsx ×2 — the "Presets:" labels, which lost their
+                   muted step and rendered at full text strength.
+    Re-declared in the [data-floor]/[data-wall] blocks below for the same
+    reason --t-title/--t-base are: a :root-only alias freezes at the un-stepped
+    value inside those subtrees.
+  */
+  --t-caption: var(--t-meta);
+  --text-dim: var(--muted);
+  /* --bg is a REAL per-theme token in v4.1 (see the palette above), not an
+     alias. --warn is likewise real now (v4.1's orange); its six legacy
+     caution-text call sites moved to --ready-text first, per spec §11. */
+  --orange-text: var(--ready-text);
+
+  /*
+    ⚠ REGRESSION FIX, 25 Aug 2026. The v4.1 repaint renamed the yellow hue to
+    --ready / --ready-text and DELETED --progress / --progress-text with the
+    old palette — but 77 declarations across 28 files still read them. An
+    undefined custom property makes the whole declaration compute to `unset`,
+    so each of those silently inherited its colour instead of failing: every
+    yellow "needs attention" signal in the app (INV_DOT's Packed / Inspection /
+    Cleaning / Maintenance, calendar bar styles, purchase-request priorities,
+    the warehouse map) rendered as inherited text colour.
+
+    This is the exact failure the "alias registry, 22 Aug audit" block above
+    was written to catch, and the repaint reintroduced it. Aliased rather than
+    migrating 28 files, for the same reason that registry gives: the alias
+    resolves per-theme because the token it points at does.
+
+    --progress IS the v4.1 yellow. It is NOT --warn (orange): "in progress /
+    waiting" is the in-house-work meaning, which §2 assigns to yellow.
+  */
+  --progress: var(--ready);
+  --progress-text: var(--ready-text);
+  --danger-bg: var(--st-danger-bg);
+  --success-bg: var(--st-in-bg);
+  --warning-bg: var(--st-progress-bg); /* App.tsx OfflineBanner read this and it never existed */
+  --text-1: var(--text);
+  --text-2: var(--muted); /* v4.1 §3.1 names this #8B8E96 = --muted */
+  --text-3: var(--muted);
+  --text3: var(--muted);
+  --fs-meta: var(--t-meta);
+  --shadow-sm: var(--shadow-card);
+  /* Ink on a brand FILL. v4.1 gives every hue its own on-colour (--on-warn,
+     --on-ready, …) because yellow and orange cannot carry white; --on-brand is
+     the legacy single name for the same idea and is white in both themes, so
+     it maps to --on-primary. Kept because five call sites still read it, and
+     an undefined custom property computes to `unset` rather than failing
+     loudly — it silently inherits, which is how this went unnoticed. */
+  --on-brand: var(--on-primary);
+  --on-accent: var(--on-brand);
+  --nav-active-accent-bg: var(--nav-active-bg);
 
   /* spacing */
   --sp-xs: 4px;
@@ -340,11 +690,26 @@
   --fs-small: 14px;
   --fs-caption: 12px;
 
-  --dur: 150ms;
+  --dur: 180ms;
+  --dur-fast: 120ms;
   --dur-theme: 200ms;
   /* Filter System v1.0 §20 — "slide animation 180–240ms ease-out". The middle of
      the band. The global prefers-reduced-motion block below kills it outright. */
-  --dur-drawer: 200ms;
+  --dur-drawer: 220ms;
+
+  /* Spring physics & signature silky curves.
+     --ease is v4.2 §5's app-wide easing token. It was READ in four places
+     (body + .card here, Page.tsx, Card.tsx) before it was ever DEFINED — an
+     undefined custom property invalidates the whole transition declaration at
+     computed-value time, so all four transitions were silently dead. Same bug
+     class as the alias registry below. */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --transition: all 0.2s var(--ease);
+  --transition-smooth: all 0.2s var(--ease);
+  --transition-fast: all 0.12s var(--ease);
+  /* No --ease-spring / --ease-bounce: both had ZERO readers, and §5 rules ONE
+     curve app-wide. A bounce curve in particular is exactly what the spec's
+     "the curve changes, the numbers do not" language forbids reintroducing. */
 
   /* The sticky header's own height, so anything that must sit UNDER it stops
      guessing.
@@ -355,12 +720,87 @@
      border) — so every sticky rail in the app sat 5px lower than the header it
      was clearing. `Header.tsx` sets its own `min-height` FROM this token, so the
      number cannot drift away from the element again. */
-  --header-h: 59px;
+  --header-h: var(--global-header-height);
+  --shell-nav-w: var(--app-sidebar-width);
+
+  /* ── Canonical structural tokens (UI Consistency Phase 1) ────────────────
+     These used to live in ui-v2.css's own :root block, where they sat next to
+     a full re-declaration of the palette. The palette now belongs to THIS
+     file alone; ui-v2.css carries component/layout rules only. */
+
+  /* Spacing scale (aliased to canonical --sp-* tokens) */
+  --space-1: var(--sp-xs);
+  --space-2: var(--sp-sm);
+  --space-3: var(--sp-md);
+  --space-4: var(--sp-lg);
+  --space-5: 20px;
+  --space-6: var(--sp-xl);
+  --space-8: var(--sp-2xl);
+  --space-10: var(--sp-3xl);
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Control-height scale. --control-height IS --tap (the 44px law). */
+  --control-height: 44px;
+  --control-height-lg: 48px;
+
+  /* Page-shell geometry. responsive.css narrows --page-padding below 1280;
+     no other file may change either token. */
+  --page-padding: clamp(14px, 1.35vw, 18px);
+  --section-gap: var(--space-4);
+
+  /* Brand aliases. ui-v2-era rules and a handful of components read --brand;
+     it aliases the canonical --primary triple (never a fourth colour). */
+  --brand: var(--primary);
+  --brand-ink: var(--on-primary);
+  --brand-text: var(--primary-text);
 }
 
 /* ---- base ---- */
 * {
   box-sizing: border-box;
+}
+
+/*
+  ── `.tap` — the 44px hit area, for controls whose PAINT must stay smaller ──
+
+  DESIGN_DIRECTION_SPEC_v4.1 §5: "Compact 34px visual is allowed in dense
+  toolbars ONLY with an invisible pseudo-element extending the hit area to 44 —
+  **the law is the HIT AREA, not the paint**." §7.3: "44px hit areas
+  everywhere; rows >= 56px."
+
+  Use this when growing the box would wreck a dense layout: a pagination arrow
+  in a toolbar strip, a remove glyph inside a chip, a row action in a table
+  cell. Where the box CAN grow, prefer `min-height: var(--tap)` — a real 44px
+  control is better than a 32px control wearing a 44px coat.
+
+  Three things this gets right that the first attempt did not:
+
+   1. It is NOT behind `@media (pointer: coarse)`. The spec says every device,
+      desktop included — a mouse user with a tremor, or a packer using a stylus
+      on a docked tablet, needs the same target.
+   2. It does NOT set `pointer-events: none`. That was the whole bug in the
+      first version: a pseudo-element with pointer-events none is decorative,
+      clicks pass through it, and the hit area is not extended at all. Left
+      default, the ::after is part of the host's own hit region.
+   3. It grows BOTH axes. `width: max(100%, var(--tap))` keeps a control that is
+      already wider than 44 at its own width and only inflates the short axis.
+
+  ⚠ Targets closer together than 44px will OVERLAP once both grow, and the one
+  later in the DOM wins. That is a spacing problem, not a class problem — space
+  the controls, do not silently drop the target.
+*/
+.tap {
+  position: relative;
+}
+.tap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, var(--tap));
+  height: max(100%, var(--tap));
 }
 
 /* min-height, not height: a fixed 100% caps the document at one viewport and
@@ -376,7 +816,9 @@ body,
 :root {
   --font-display: 'Outfit', system-ui, sans-serif;
   --font-body: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-id: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --font-mono: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-id: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-num: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* Declared, not loaded — §4.3.7 keeps Devanagari off the English path. */
   --font-ne-display: 'Asar', serif;
   --font-ne-body: 'Hind', system-ui, sans-serif;
@@ -389,11 +831,34 @@ body,
   --t-h1: 2.1rem;    /* 31 / 36 */
   --t-h2: 1.45rem;   /* 22 / 25 */
   --t-h3: 1.2rem;    /* 18 / 20 */
+  /* Added 22 Aug: SystemRestoreModal and PricingCalculator were already asking
+     for a step between h3 and body — undefined, their font-size computed to
+     the inherited size, flattening modal headings into body copy. */
+  --t-h4: 1.1rem;    /* 17 / 19 */
   --t-kpi: 1.6rem;   /* 24 / 27 */
   --t-body: 1rem;    /* 15 / 17 */
   --t-ui: 0.93rem;   /* 14 / 16 */
   --t-meta: 0.85rem; /* 13 / 14 */
   --t-th: 0.75rem;   /* 11 / 13 — the floor; nothing renders below it */
+
+  /* Two spellings found in the wild for steps that already exist. Aliased for
+     the same reason as the registry above; the canonical names are the ones
+     new code should use. Re-declared in the floor/wall blocks below — an
+     alias's var() substitutes where the alias is DECLARED, so a :root-only
+     alias would freeze at the un-stepped value inside [data-floor]. */
+  --t-title: var(--t-h3); /* archive/UnifiedInbox */
+  --t-base: var(--t-body); /* auth/HandoverSheet */
+}
+
+/* RULINGS-2026-10-07: clearer small text at the shared type scale. Keep rem
+   sizing and user scale, but round UI/meta/caption sizes to whole CSS pixels.
+   Older browsers keep the existing fractional scale declared above. */
+@supports (font-size: round(nearest, 1rem, 1px)) {
+  :root {
+    --t-ui: round(nearest, 0.93rem, 1px);
+    --t-meta: round(nearest, 0.85rem, 1px);
+    --t-th: round(nearest, 0.75rem, 1px);
+  }
 }
 
 /*
@@ -414,6 +879,11 @@ html {
   font-size: calc(clamp(0.9375rem, 0.6875rem + 0.3125vw, 1.0625rem) * var(--ui-scale, 1));
 }
 
+html[lang='ne'] {
+  /* Devanagari optical x-height parity (+3% scale offset so Hind/Asar glyphs match Latin visual rhythm) */
+  font-size: calc(clamp(0.9375rem, 0.6875rem + 0.3125vw, 1.0625rem) * var(--ui-scale, 1) * 1.03);
+}
+
 /*
   §4.3.6 — "Floor screens run one step up." Pack, Handover, Return, Reset and
   the Scanner are read at arm's length, often in motion, sometimes one-handed.
@@ -425,15 +895,23 @@ html {
   step, and the two multiply.
 */
 [data-floor='true'] {
+  --tap: 48px; /* Gloved-hand floor minimum hit target (enhanced from 44px) */
   --floor-step: 1.1;
   --t-h1: calc(2.1rem * var(--floor-step));
   --t-h2: calc(1.45rem * var(--floor-step));
   --t-h3: calc(1.2rem * var(--floor-step));
+  --t-h4: calc(1.1rem * var(--floor-step));
   --t-kpi: calc(1.6rem * var(--floor-step));
   --t-body: calc(1rem * var(--floor-step));
   --t-ui: calc(0.93rem * var(--floor-step));
   --t-meta: calc(0.85rem * var(--floor-step));
   --t-th: calc(0.75rem * var(--floor-step));
+  /* Aliases re-declared so they substitute the STEPPED values above — a
+     custom property's var() resolves where the property is declared, and the
+     :root declaration would hand this subtree the un-stepped h3/body. */
+  --t-title: var(--t-h3);
+  --t-base: var(--t-body);
+  --t-caption: var(--t-meta);
   font-size: var(--t-body);
 }
 
@@ -446,24 +924,177 @@ html {
   --t-h1: calc(2.1rem * var(--wall-step));
   --t-h2: calc(1.45rem * var(--wall-step));
   --t-h3: calc(1.2rem * var(--wall-step));
+  --t-h4: calc(1.1rem * var(--wall-step));
   --t-kpi: calc(1.6rem * var(--wall-step));
   --t-body: calc(1rem * var(--wall-step));
   --t-ui: calc(0.93rem * var(--wall-step));
   --t-meta: calc(0.85rem * var(--wall-step));
   --t-th: calc(0.75rem * var(--wall-step));
+  /* Same re-declaration as [data-floor] — see the note there. */
+  --t-title: var(--t-h3);
+  --t-base: var(--t-body);
+  --t-caption: var(--t-meta);
   font-size: var(--t-body);
 }
 
 body {
   margin: 0;
-  background: var(--app);
+  background-color: var(--app);
+  background-image: none;
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
   font-size: var(--t-body);
+  font-weight: 500;
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  /* "smooth 200ms transition" on theme switch */
-  transition: background-color var(--dur-theme) ease, color var(--dur-theme) ease;
+  /* Native rasterization, real font weight outlines; italic remains available.
+     Smoothing switches are platform-specific, not a Windows sharpness filter. */
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  font-synthesis: style;
+  /*
+    NO transition here, deliberately — measured 1 Sep, not assumed.
+
+    This line used to read `transition: background … var(--ease), color …`, and
+    it did nothing at all while `--ease` was undefined: an unresolvable var()
+    makes the shorthand invalid at computed-value time, so the longhands fell
+    back to their initial `0s`. Defining `--ease` (v4.2 §5) would have switched
+    it on for the first time, and switching it on is what exposed the mismatch:
+
+     · `background` here is a linear-gradient set through the shorthand.
+       background-image does not interpolate — measured on the theme toggle, it
+       jumps from cream to navy on the very first frame.
+     · `color` DOES interpolate, over 200ms.
+
+    So the pair guarantees a disagreement: the canvas lands instantly on the new
+    theme while the body's ink is still crossing to it. Toggling to dark, that
+    is ~200ms of near-black text arriving on an already-navy canvas. In dev the
+    same edge fires on cold load (Vite injects CSS after first paint, so the
+    style change is a real transition start) — body ink was caught frozen at
+    black over the navy canvas, which is the unreadable end of the same bug.
+
+    Surfaces keep their own transitions (.card, the sidebar, buttons), so the
+    toggle still eases where easing is actually possible. The canvas and the ink
+    on it now change together, in one frame.
+  */
+}
+
+/* Bordered card variant for dense lists / tables where separation is needed */
+.card--bordered {
+  border: 1px solid var(--border);
+}
+
+/* DESIGN_DIRECTION_SPEC v4.2 §4 & §6 Card Glass & Layered Elevation */
+.card {
+  background: var(--surface-card);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-card);
+  /* Border removed per design audit: cards use background color for elevation */
+  border: none;
+  border-radius: var(--r-card);
+  transition: box-shadow var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card.interactive:hover,
+  .card[data-interactive='true']:hover {
+    box-shadow: var(--shadow-lg);
+  }
+  .card--bordered.interactive:hover,
+  .card--bordered[data-interactive='true']:hover {
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* Tables stay solid per DESIGN_DIRECTION_SPEC v4.2 §4 */
+table,
+.table-container {
+  background: var(--surface);
+  backdrop-filter: none !important;
+}
+
+/* ── v4.2 §4 — glass kill-switches ───────────────────────────────────────────
+   `prefers-reduced-transparency` and `prefers-contrast: more` → fully opaque,
+   and `[data-floor]` keeps its kill-switch until card glass is measured on the
+   real warehouse tablet (200-row packing list) — the spec commits glass on
+   floor screens only after that measurement.
+
+   Two halves, because glass is two properties:
+   · the TOKENS go opaque — components paint with var(--card)/var(--surface-card)
+     inline, so repointing the tokens at the solid surface colours reaches every
+     card without touching a component. The triple selector matches the
+     specificity of `:root[data-theme='dark']` so the dark rgba values cannot
+     win the cascade over this override.
+   · the BLUR dies with `!important` on *, which also beats the inline
+     `backdropFilter` styles in Card.tsx/Page.tsx/Toast.tsx/Select.tsx. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root,
+  :root[data-theme='light'],
+  :root[data-theme='dark'] {
+    --surface-card: var(--surface);
+    --surface-card-hover: var(--surface-2);
+    --card: var(--surface);
+    --sidebar: var(--surface);
+  }
+  * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* CARDS only, and that is the whole scope §4 asks for: "measure a 200-row
+   packing list … before committing CARD glass on floor screens". Chrome is an
+   unconditional glass surface in §4, so it is deliberately NOT killed here.
+
+   ⚠ It could not be killed from here anyway: `data-floor` is stamped on
+   `<main>` (App.tsx), and the three readers of `--sidebar` — Header, BottomBar,
+   Sidebar — are all mounted OUTSIDE `<main>` as siblings in the shell row.
+   Custom properties only reach descendants, so a `--sidebar` override in this
+   block is dead code that reads like a guarantee. Verified in the running app:
+   `main.contains(header)` and `main.contains(aside)` are both false, while
+   cards are inside. Do not add `--sidebar` back without ALSO moving the
+   attribute — and moving it to :root would drag the [data-floor] type-scale
+   step onto the chrome too, which is a different (and unruled) change. */
+[data-floor='true'] {
+  --surface-card: var(--surface);
+  --surface-card-hover: var(--surface-2);
+  --card: var(--surface);
+  --tap: 48px;
+  /* Anti-glare contrast for industrial warehouse floor surfaces */
+  letter-spacing: 0.01em;
+}
+[data-floor='true'] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Floor hit-targets & glove-friendly ergonomics */
+[data-floor='true'] button:not(.btn-link):not([data-compact]),
+[data-floor='true'] .tap:not([data-compact]),
+[data-floor='true'] select,
+[data-floor='true'] input[type='text'],
+[data-floor='true'] input[type='search'] {
+  min-height: 48px !important;
+}
+
+[data-floor='true'] button[data-primary-verb],
+[data-floor='true'] .btn-floor-primary {
+  min-height: 56px !important;
+}
+
+[data-floor='true'] input[type='checkbox'] {
+  min-width: 22px;
+  min-height: 22px;
+  cursor: pointer;
+}
+
+[data-floor='true'] .serial,
+[data-floor='true'] .identifier,
+[data-floor='true'] [data-serial] {
+  font-family: var(--font-id);
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 /* §4.3.2 — Outfit carries the brand voice, never body copy. */
@@ -475,21 +1106,19 @@ h3,
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
-/* §4.3.2 — "tabular-nums is not optional. Without it a column of money does
-   not align and the eye cannot scan down it." */
+/* §4.3.2 — tabular-nums for numeric columns and figures */
 .kpi-value {
-  font-family: var(--font-display);
+  font-family: var(--font-num, var(--font-id));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 /*
-  §4.3.4 — **identifiers only**: serials, booking IDs, QR payloads, PAN.
-  "and only they do." A packer matching `SN-FX3-102` off a label under warehouse
-  light needs `1`/`l`/`I` and `0`/`O` separated and the width fixed, so a
-  mistyped serial shows as a length difference before anyone reads a character.
+  §4.3.4 — identifiers & numbers: serials, booking IDs, QR payloads, PAN.
+  Source Sans 3 with tabular figures gives a clean, modern look while aligning numbers perfectly.
 */
 .identifier,
 .serial,
@@ -499,21 +1128,19 @@ h3,
 }
 
 /*
-  §4.3.1 — a *figure* is not an identifier. Money, counts, percentages and
-  times keep the body face and only take tabular figures, because §4.3.2 bars
-  Outfit below 16px and these sit at 12–15. The class used to be `.mono` and
-  applied JetBrains to every number; that was the pre-v2.2 rule.
+  §4.3.1 — figures, money, counts, percentages, and times.
 */
 .figure,
 td,
 .money {
+  font-family: var(--font-num, var(--font-id));
   font-variant-numeric: tabular-nums;
 }
 
-/* §4.3.6 — the KPI band is the one place figures take the display face. */
+/* §4.3.6 — KPI values and prominent figures */
 .kpi-value,
 .figure-lg {
-  font-family: var(--font-display);
+  font-family: var(--font-num, var(--font-id));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -550,16 +1177,41 @@ td,
   outline-offset: 2px;
 }
 
-/*
-  ⛔ Removed 5 Aug — this block scoped a status token, `--st-inspection-*`, that
-  no longer exists. v2.0 replaced the eight status tokens with the five §4.2
-  names (neutral/primary/progress/out/in/danger), and v2.2's design review
-  caught that the override survived the rename: it referenced dead variables
-  and did nothing. The purple it was guarding against is banned outright by
-  §4.2 now — "No purple, cyan, teal, indigo, violet" — with no reservation for
-  Utilization or anything else, so no page-level exception is needed or legal.
-  `[data-page='today']` itself is unused elsewhere and removed with it.
-*/
+/* ── .focus-host — the ring for an input that lives inside a bordered box ─────
+   Added 25 Aug 2026.
+
+   THE BUG THIS CLOSES
+
+   A pattern repeats across ~14 screens: a bordered container holding a bare
+   input, where the input carries `border: 'none', outline: 'none'` inline so the
+   CONTAINER draws the boundary. The intent is right; the effect is that those
+   controls have no focus indicator at all.
+
+   The rule above cannot save them, twice over. `:where()` has zero specificity
+   by definition, and an inline style outranks any stylesheet rule regardless —
+   so `style={{ outline: 'none' }}` wins permanently. A keyboard operator tabbing
+   into the command palette, a workspace note field, or a queue filter gets no
+   indication of where they are.
+
+   WHY :focus-within ON THE HOST RATHER THAN DELETING THE INLINE outline
+
+   Deleting `outline: 'none'` does restore a ring, but it draws it around the
+   INPUT, inside the container that is already drawing a border — two nested
+   outlines, the inner one clipped by the padding. Ringing the host is what the
+   design intends: the box IS the control as far as the operator is concerned.
+
+   Applied by adding `className="focus-host"` to the container. The input keeps
+   its inline `outline: 'none'`, which is now correct rather than harmful — it
+   stops the double ring.
+
+   `:focus-within` is not `:focus-visible`, so this also lights up on a mouse
+   click into the field. That is deliberate: these are search and note fields on
+   a warehouse tablet, where "which box am I typing into" is worth showing
+   whatever put the caret there. */
+.focus-host:focus-within {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
 
 /*
   The movement row's geometry lives here rather than inline, because the
@@ -583,6 +1235,11 @@ td,
   the decorative avatar, and the *label* on Open Booking — the icon and its
   aria-label survive, so the primary action never disappears.
 */
+/*
+   DOCUMENTED COMPONENT-LEVEL EXCEPTION (UI Consistency Phase 1): 1560px is a
+   movement-row density collapse, not a layout band — everything at 768/1280
+   is handled in responsive.css. Do not add more thresholds like this.
+*/
 @media (max-width: 1560px) {
   .movement-row {
     grid-template-columns: 58px minmax(0, 1fr) auto;
@@ -593,53 +1250,127 @@ td,
   }
 }
 
-/* Hover: 150ms, scale 1.02, shadow increases slightly. */
-.lift {
-  transition: transform var(--dur) ease, box-shadow var(--dur) ease, border-color var(--dur) ease;
+/* ── Tactile Interactive Transitions & Click Compression ──
+   Feedback is colour/brightness only — never a translate or scale, so a
+   pressed button cannot push its neighbours or read as "moving". */
+button,
+a.btn,
+[role="button"],
+input[type="button"],
+input[type="submit"] {
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
-.lift:hover {
-  /* Dashboard.md §17: "Hover — lift 2px, shadow increases, border → accent."
-     A card sets --lift-accent to its own accent; anything that doesn't keeps
-     its border, so the rule is opt-in rather than a surprise. */
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-modal);
-  border-color: var(--lift-accent, var(--border));
+
+button:active:not(:disabled),
+.press:active:not(:disabled),
+a.btn:active,
+[role="button"]:active:not([aria-disabled="true"]) {
+  filter: brightness(0.96);
+}
+
+/* ── Smooth Form Inputs with Glow Focus Rings ── */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease;
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(56, 106, 247, 0.22) !important;
+}
+
+/* ── Glassmorphism Utility ── */
+.glass {
+  background: var(--surface) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--border);
+}
+
+/* ── Card Levitation & Micro-Elevation ──
+   Hover feedback is shadow/border only — a card that lifts with translateY
+   moves every sibling below it, which reads as page jitter. */
+.card,
+section[id] {
+  transition: box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.lift {
+  transition: box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background-color 0.2s ease;
+}
+.lift:hover,
+.card-interactive:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--lift-accent, var(--border2));
 }
 
 .press {
-  transition: transform 100ms ease;
+  transition: filter 0.12s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.12s ease;
 }
-.press:active {
-  transform: scale(0.97);
+.press:active:not(:disabled) {
+  filter: brightness(0.96);
 }
 
 @media (prefers-reduced-motion: reduce) {
   *,
-  .lift {
+  .lift,
+  .card,
+  button,
+  .press {
     transition: none !important;
     animation: none !important;
   }
-  .lift:hover {
+  .lift:hover,
+  .card-interactive:hover {
     transform: none;
   }
-  .press:active {
+  .press:active,
+  button:active {
     transform: none;
   }
 }
 
+/* ── Sleek, Clean Native-Feel Scrollbars ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border2);
   border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: content-box;
+  transition: background-color 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ── lazy-load spinner ──────────────────────────────────────────────────── */
 @keyframes spin { to { transform: rotate(360deg) } }
+
+/* ── v4.2 §5 — the four Miraz keyframes, ported on OUR duration scale ───────
+   The frames carry no timing; call sites use --dur/--dur-fast with var(--ease)
+   (120–240ms — Miraz's 200–250ms numbers are NOT adopted, only the curve).
+   `transform`/`opacity` only, so none of them lay the page out mid-flight.
+   The global prefers-reduced-motion block kills all four. */
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: none } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(0.96) } to { opacity: 1; transform: none } }
+@keyframes pop { 0% { transform: scale(0.96) } 60% { transform: scale(1.02) } 100% { transform: scale(1) } }
 
 /* ── loading-skeleton blocks (StateViews.tsx) ─────────────────────────────── */
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }
@@ -665,3 +1396,214 @@ td,
 @keyframes drawer-out-down { from { transform: none } to { transform: translateY(100%) } }
 @keyframes scrim-in { from { opacity: 0 } to { opacity: 1 } }
 @keyframes scrim-out { from { opacity: 1 } to { opacity: 0 } }
+
+/* ── PIN pad rejection (PinPad.tsx) ───────────────────────────────────────────
+   A rejected entry has to be perceivable, and the dots are the only thing on
+   the lock screen that can carry it. `transform` only — the dots sit in a flex
+   row and animating position would relayout on every frame.
+
+   The prefers-reduced-motion block above sets `animation: none !important`
+   globally, so this is already opted out for anyone who asked; the danger
+   fill/border PinPad sets from React state is what remains, and that is the
+   half that must not be motion-dependent. The `invalid` flag is cleared by a
+   TIMER, not `animationend` — under reduced motion that event never fires and
+   the pad would stay red forever (the lesson from the filter drawer above). */
+@keyframes pinpad-shake {
+  0%, 100% { transform: translateX(0) }
+  20%      { transform: translateX(-6px) }
+  40%      { transform: translateX(6px) }
+  60%      { transform: translateX(-4px) }
+  80%      { transform: translateX(4px) }
+}
+.pinpad-invalid { animation: pinpad-shake 200ms ease-in-out }
+
+/* ============================================================================
+   OPERATIONS UI PRIMITIVES — shared modernization layer
+
+   These selectors deliberately sit on the small shared component surface
+   (Page, Card, Button and Table). They improve the whole product without
+   repainting individual workflow screens or changing their business logic.
+   ========================================================================== */
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+.page-header {
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: 2px;
+}
+
+.page-header__description {
+  max-width: 65ch;
+  line-height: 1.55;
+}
+
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-sm);
+  margin-left: auto;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+/* Cards must not clip or isolate the dropdowns rendered inside them. */
+.surface-card__header {
+  background: color-mix(in srgb, var(--surface-card) 76%, transparent);
+}
+
+.ui-button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ui-button:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+
+  .ui-button--primary:hover:not(:disabled) {
+    box-shadow: var(--shadow-primary-glow);
+  }
+
+  .ui-button--secondary:hover:not(:disabled),
+  .ui-button--outline:hover:not(:disabled),
+  .ui-button--ghost:hover:not(:disabled) {
+    background: var(--hover-card) !important;
+  }
+}
+
+.ui-button:disabled {
+  filter: none;
+  transform: none;
+}
+
+.kpi-card[role='button'] {
+  outline: none;
+}
+
+.kpi-card[role='button']:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--input-focus) 28%, transparent), var(--shadow-card);
+}
+
+.data-table-shell {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  background: var(--surface) !important;
+}
+
+.data-table {
+  min-width: 100%;
+  background: var(--surface);
+}
+
+.data-table__head {
+  text-transform: none !important;
+  letter-spacing: 0.015em !important;
+}
+
+.data-table__head th {
+  padding-block: 0 !important;
+}
+
+.data-table__head th > span {
+  display: inline-flex;
+  min-height: var(--tap);
+  align-items: center;
+}
+
+.data-table__sort {
+  display: inline-flex;
+  min-height: var(--tap);
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: inherit;
+  text-align: inherit;
+}
+
+.data-table__sort:hover {
+  color: var(--text);
+}
+
+.data-table__row td {
+  height: var(--row-min-h);
+}
+
+.data-table__row:nth-child(even) {
+  background: color-mix(in srgb, var(--surface) 97%, var(--primary));
+}
+
+.data-table__row--interactive:hover,
+.data-table__row--interactive:focus-visible {
+  background: var(--hover-row) !important;
+}
+
+.data-table__row--interactive:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: -2px;
+}
+
+.data-table__skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2) !important;
+}
+
+.data-table__skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 8%, transparent), transparent);
+  animation: table-skeleton-sheen 1.4s var(--ease) infinite;
+}
+
+@keyframes table-skeleton-sheen {
+  to { transform: translateX(100%); }
+}
+
+/* Shared by bespoke live tables and the generic Table component. Keep row
+   status/selection backgrounds owned by each workflow. */
+.operations-table > tbody > tr > td {
+  height: var(--row-min-h);
+}
+.operations-table > tbody > tr:focus-within {
+  outline: 2px solid var(--input-focus);
+  outline-offset: -2px;
+}
+.operations-table > thead > tr > th {
+  text-transform: none;
+  letter-spacing: 0.015em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button:hover:not(:disabled),
+  .ui-button:active:not(:disabled) {
+    transform: none;
+  }
+  .data-table__skeleton::after {
+    animation: none;
+    transform: none;
+  }
+}

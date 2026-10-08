@@ -1,9 +1,11 @@
 import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { Field, SectionCard, inputStyle, fieldRow, ConditionBadge, DraftStatusBadge, BsAbove, th, td, barcodePayload } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { TRACKING_MODES, QUANTITY_UNITS, INTAKE_CONDITIONS } from '../../../data/addEquipment'
-import type { IntakeCondition } from '../../../data/addEquipment'
+import { TRACKING_MODES, QUANTITY_UNITS, INTAKE_CONDITIONS } from '../../../lib/queries/addEquipment'
+import type { IntakeCondition } from '../../../lib/queries/addEquipment'
+import { DateField } from '../../../components/ui/DateField'
 
 export function SectionStockUnits() {
   const {
@@ -35,7 +37,7 @@ export function SectionStockUnits() {
             id="sec-stock"
             n={sectionNumber('sec-stock')}
             title="Stock & Units"
-            note="One Tracking field — it replaces Equipment Type, Has Serial Number and Tracking Type (§5.1)."
+            note={/* One Tracking field — it replaces Equipment Type, Has Serial Number and Tracking Type (§5.1). */ "One Tracking field — it replaces Equipment Type, Has Serial Number and Tracking Type ."}
             action={
               serialised ? (
                 <>
@@ -92,7 +94,7 @@ export function SectionStockUnits() {
 
             {serialised ? (
               <>
-                <div style={{ overflowX: 'auto' }}>
+                <DataTableShell ariaLabel="Stock units table">
                   <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
@@ -128,7 +130,12 @@ export function SectionStockUnits() {
                                     return next
                                   })
                                 }
-                                style={{ ...inputStyle(Boolean(issue)), height: 31 }}
+                                /* Law 15 — no `height: 31` override here (nor on the two controls
+                                   below): `inputStyle`'s `minHeight: 44` IS the touch floor, and a
+                                   serial typed off a unit's body is exactly the kind of input that
+                                   gets tapped on a warehouse tablet. Density comes from the table's
+                                   own padding, not from shrinking its targets. */
+                                style={inputStyle(Boolean(issue))}
                               />
                               {issue && (
                                 <span style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-xs)', marginTop: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
@@ -158,9 +165,10 @@ export function SectionStockUnits() {
                             </td>
                             <td style={td}>
                               <select
+                                aria-label={`Condition for unit ${u.serial || u.id}`}
                                 value={u.condition}
                                 onChange={(e) => patchUnit(u.id, { condition: e.target.value as IntakeCondition })}
-                                style={{ ...inputStyle(), height: 31 }}
+                                style={inputStyle()}
                               >
                                 {INTAKE_CONDITIONS.map((c) => (
                                   <option key={c} value={c}>
@@ -174,11 +182,13 @@ export function SectionStockUnits() {
                             </td>
                             <td style={td}>
                               <BsAbove iso={u.purchaseIso} />
-                              <input
-                                type="date"
+                              <DateField
+                                ariaLabel="Purchase date for this unit"
                                 value={u.purchaseIso}
-                                onChange={(e) => patchUnit(u.id, { purchaseIso: e.target.value })}
-                                style={{ ...inputStyle(), height: 31, marginTop: 3 }}
+                                onChange={(v) => patchUnit(u.id, { purchaseIso: v })}
+                                showBs={false}
+                                clearable
+                                style={{ ...inputStyle(), marginTop: 3 }}
                               />
                             </td>
                             <td style={{ ...td, textAlign: 'center' }}>
@@ -198,7 +208,7 @@ export function SectionStockUnits() {
                       })}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <Button variant="secondary" icon="plus" onClick={addUnit}>
@@ -206,16 +216,16 @@ export function SectionStockUnits() {
                   </Button>
                   <span style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45, flex: 1, minWidth: 240 }}>
                     <Icon name="info" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                    Serials are the manufacturer’s and are typed or scanned — never generated (§4). Every serial is unique
+                    {/* Serials are the manufacturer’s and are typed or scanned — never generated (§4). Every serial is unique
                     across the whole system; a clash is named on the row. The asset tag is ours and may be generated; the
                     barcode and QR carry the same payload, drawn on the printed label. Status is engine-owned: a Draft’s
-                    units carry no status, and creation sets every one to In Stock (§5.3).
-                  </span>
+                    units carry no status, and creation sets every one to In Stock (§5.3). */}Serials are the manufacturer’s and are typed or scanned — never generated . Every serial is unique across the whole system; a clash is named on the row. The asset tag is ours and may be generated; the barcode and QR carry the same payload, drawn on the printed label. Status is engine-owned: a Draft’s units carry no status, and creation sets every one to In Stock . </span>
                 </div>
 
                 <input
                   ref={csvInput}
                   type="file"
+                  aria-label="Import serials CSV"
                   accept=".csv,text/csv,text/plain"
                   onChange={(e) => {
                     importCsv(e.target.files?.[0] ?? null)
@@ -241,6 +251,7 @@ export function SectionStockUnits() {
                     </button>
                     <input
                       type="number"
+                      aria-label="Total Quantity"
                       min={1}
                       value={quantity}
                       onChange={(e) => {
@@ -283,8 +294,7 @@ export function SectionStockUnits() {
                 {tracking === 'Consumable' && (
                   <Field label="Behaviour" span={3}>
                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      Consumed on return — this stock never comes back (§5.1). No units, no serials.
-                    </span>
+                      {/* Consumed on return — this stock never comes back (§5.1). No units, no serials. */}Consumed on return — this stock never comes back . No units, no serials. </span>
                   </Field>
                 )}
               </div>

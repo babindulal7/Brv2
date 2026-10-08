@@ -44,7 +44,16 @@
 -- widened here, but it is also not fixed here; flagged so it is visible.
 -- ============================================================================
 
-create or replace view client_directory_v as
+-- `create or replace view` cannot rename, retype, drop or REORDER an existing
+-- column, and this body reorders 0052's — Postgres refuses with
+--   ERROR: cannot change name of view column "approved_credit_limit" to "created_at"
+-- so the view has to be dropped and rebuilt rather than replaced. Nothing
+-- depends on it at this point in the sequence (0067's staff view comes later),
+-- and the grant and comment below are re-issued after the create, so the drop
+-- costs nothing. Without this, 0053 and 0054 both abort and no database can be
+-- built from scratch (BUG-010, PLAN.md §4.42a).
+drop view if exists client_directory_v;
+create view client_directory_v as
 select
   c.id,
   c.client_code,

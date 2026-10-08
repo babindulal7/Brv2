@@ -1,48 +1,46 @@
-import { forwardRef } from 'react'
+import { forwardRef, useId } from 'react'
 import type { InputHTMLAttributes, ReactNode } from 'react'
 import Icon from './Icon'
-
-/**
- * Rewritten from Tailwind utility classNames to the app's real inline-style +
- * CSS-variable system — see `Toast.tsx` for the full explanation of why every
- * Tailwind class in this file used to compile to nothing. Same prop API as
- * before, so every existing call site (`CasesWorkspace.tsx`, `CrewBooking.tsx`,
- * `SubRental.tsx`) is unaffected.
- */
+import { InfoTooltip } from './InfoTooltip'
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string
   error?: string | null
   helperText?: string
+  info?: ReactNode
   icon?: ReactNode
   iconRight?: ReactNode
   onClear?: () => void
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, error, helperText, icon, iconRight, onClear, className, style, id, value, ...props },
+  { label, error, helperText, info, icon, iconRight, onClear, className, style, id, value, 'aria-describedby': describedBy, ...props },
   ref
 ) {
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
+  const generatedId = useId()
+  const inputId = id ?? generatedId
+  const messageId = `${inputId}-message`
+  const descriptionIds = [describedBy, error || helperText ? messageId : undefined].filter(Boolean).join(' ') || undefined
   const showClear = Boolean(onClear && value)
   const showRightIcon = !onClear && Boolean(iconRight)
 
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
       {label && (
-        <label
-          htmlFor={inputId}
-          style={{
-            fontSize: 'var(--t-th)',
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            color: 'var(--muted)',
-          }}
-        >
-          {label}
-          {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <label
+            htmlFor={inputId}
+            style={{
+              fontSize: 'var(--t-ui)',
+              fontWeight: 600,
+              color: 'var(--text2)',
+            }}
+          >
+            {label}
+            {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
+          </label>
+          {info && <InfoTooltip content={info} />}
+        </div>
       )}
 
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -65,13 +63,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           id={inputId}
           ref={ref}
           value={value}
-          className={className}
+          className={['ui-input', className].filter(Boolean).join(' ')}
           style={{
             width: '100%',
             minHeight: 44,
             padding: '8px 14px',
             paddingLeft: icon ? 38 : 14,
-            paddingRight: showClear || showRightIcon ? 38 : 14,
+            paddingRight: showClear ? 52 : showRightIcon ? 38 : 14,
             fontSize: 'var(--t-body)',
             borderRadius: 'var(--r-input)',
             background: 'var(--input-bg)',
@@ -79,18 +77,32 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             color: 'var(--text)',
             transition: 'border-color 0.15s ease',
             ...style,
+            ...(icon ? { paddingLeft: 38 } : {}),
+            ...(showClear ? { paddingRight: 52 } : showRightIcon ? { paddingRight: 38 } : {}),
           }}
           {...props}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && onClear && value) {
+              e.preventDefault()
+              onClear()
+            }
+            props.onKeyDown?.(e)
+          }}
+          aria-invalid={error ? true : props['aria-invalid']}
+          aria-describedby={descriptionIds}
         />
 
         {showClear ? (
           <button
             type="button"
             onClick={onClear}
-            aria-label="Clear"
+            aria-label={label ? `Clear ${label}` : 'Clear'}
+            disabled={props.disabled || props.readOnly}
             style={{
               position: 'absolute',
-              right: 8,
+              right: 4,
+              minWidth: 44,
+              minHeight: 44,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -122,6 +134,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
 
       {error ? (
         <div
+          id={messageId}
+          role="alert"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -134,7 +148,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           <span>{error}</span>
         </div>
       ) : helperText ? (
-        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{helperText}</span>
+        <span id={messageId} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{helperText}</span>
       ) : null}
     </div>
   )

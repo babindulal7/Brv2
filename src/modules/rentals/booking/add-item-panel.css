@@ -1,0 +1,105 @@
+.new-rental-equipment-catalogue-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.new-rental-equipment-catalogue-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.new-rental-equipment-catalogue-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.new-rental-equipment-catalogue [hidden],
+.new-rental-equipment-catalogue-date-hint-compact {
+  display: none !important;
+}
+
+@media (max-width: 767px) {
+  .new-rental-equipment-catalogue-controls {
+    padding: 8px !important;
+    gap: 6px !important;
+  }
+
+  .new-rental-equipment-catalogue-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .new-rental-equipment-catalogue-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .new-rental-equipment-catalogue-tabs::-webkit-scrollbar { display: none; }
+
+  .new-rental-equipment-catalogue-tabs > button {
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .new-rental-equipment-catalogue-filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    width: 100%;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-btn);
+    background: var(--btn-secondary-bg);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--t-meta);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .new-rental-equipment-catalogue-sort-label {
+    color: var(--text2);
+    margin-left: auto;
+  }
+
+  .new-rental-equipment-catalogue-filter-summary {
+    color: var(--text2);
+    font-size: var(--t-meta);
+    line-height: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  .new-rental-equipment-catalogue-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .new-rental-equipment-catalogue-filters > select {
+    min-width: 0;
+    width: 100% !important;
+    min-height: 44px;
+  }
+
+  .new-rental-equipment-catalogue-filters > select:last-child { grid-column: 1 / -1; }
+
+  .new-rental-equipment-catalogue-date-hint { display: none; }
+  .new-rental-equipment-catalogue-date-hint-compact { display: inline !important; }
+  .new-rental-equipment-catalogue-availability { min-height: 18px; }
+  .new-rental-equipment-catalogue-legend { display: none !important; }
+}

@@ -35,6 +35,7 @@
 
 import { idempotentInsert } from './dataAccess'
 import { logAuditEvent } from './audit'
+import { captureError } from './monitoring'
 import { planTransition, type BookingStatus, type CloseGateInput, type Flag, type TransitionPlan } from './workflow'
 import type { SystemRole } from '../types/database'
 
@@ -94,35 +95,54 @@ export async function applyBookingTransition(req: BookingTransitionRequest): Pro
   const occurredAt = req.occurredAt ?? new Date().toISOString()
   const reason = req.reason ?? null
 
-  await idempotentInsert('booking_stage_transitions', {
-    client_uuid: req.clientUuid,
-    booking_id: req.bookingId,
-    branch_id: req.branchId,
-    from_stage: req.from,
-    to_stage: req.to,
-    is_reversal: false,
-    reason,
-    occurred_at: occurredAt,
-    actor_id: req.actorId,
-    actor_role: req.actorRole,
-    source: OS_TRANSITION_SOURCE,
-  })
+  await idempotentInsert(
+    'booking_stage_transitions',
+    {
+      client_uuid: req.clientUuid,
+      booking_id: req.bookingId,
+      branch_id: req.branchId,
+      from_stage: req.from,
+      to_stage: req.to,
+      is_reversal: false,
+      reason,
+      ...(req.gates?.depositSkipReason?.trim()
+        ? { deposit_skip_reason: req.gates.depositSkipReason.trim() }
+        : {}),
+      occurred_at: occurredAt,
+      actor_id: req.actorId,
+      actor_role: req.actorRole,
+      source: OS_TRANSITION_SOURCE,
+    },
+    /* RULING 2026-09-21 (Audit-01 P0-01): never queue a stage transition.
+       This table's trigger is the ONLY writer of `bookings.stage` (0021/
+       0094), so a queued insert is a move the database never made — and a
+       resolved promise here is what lets a caller claim it did. Opt out of
+       the outbox on BOTH dataAccess paths: offline, and a 'Failed to fetch'
+       /408 on a live connection. The row still carries the caller's Law 8
+       key, so a retry after a line cut is the duplicate branch, not a
+       second transition. */
+    { queueOnFailure: false },
+  )
 
-  await logAuditEvent({
-    eventClass: 'status change',
-    category: 'Rentals',
-    module: 'Rentals',
-    action: 'Update',
-    severity: 'Informational',
-    tableName: 'bookings',
-    recordId: req.bookingId,
-    actorId: req.actorId,
-    actorRole: req.actorRole,
-    branchId: req.branchId,
-    oldValues: { stage: req.from },
-    newValues: { stage: req.to },
-    reason,
-  })
+  try {
+    await logAuditEvent({
+      eventClass: 'status change',
+      category: 'Rentals',
+      module: 'Rentals',
+      action: 'Update',
+      severity: 'Informational',
+      tableName: 'bookings',
+      recordId: req.bookingId,
+      actorId: req.actorId,
+      actorRole: req.actorRole,
+      branchId: req.branchId,
+      oldValues: { stage: req.from },
+      newValues: { stage: req.to },
+      reason,
+    })
+  } catch (auditErr) {
+    captureError(auditErr, { where: 'bookingTransition.logAuditEvent', bookingId: req.bookingId })
+  }
 
   return { ok: true, plan }
 }

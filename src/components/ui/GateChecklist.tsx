@@ -53,22 +53,77 @@ export const GateChecklist: React.FC<GateChecklistProps> = ({
   const allPassed = items.every((i) => i.passed)
 
   return (
-    <div className={`bg-slate-900/90 border border-slate-800 rounded-xl p-5 ${className}`}>
-      <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+    <div
+      className={className || undefined}
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-card)',
+        padding: 18,
+        boxShadow: 'var(--shadow-card)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingBottom: 12,
+          borderBottom: '1px solid var(--border)',
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
         <div>
-          <h4 className="font-semibold text-sm text-slate-100 flex items-center gap-2">
+          <h4
+            style={{
+              margin: 0,
+              fontWeight: 700,
+              fontSize: 'var(--t-ui)',
+              color: 'var(--text)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
             <span>{type === 'Handover' ? 'Dispatch Gate Checklist' : 'Return & Closure Gate'}</span>
             {allPassed ? (
-              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <IconCheck className="w-3 h-3" /> Ready
+              <span
+                style={{
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  color: 'var(--st-in-fg)',
+                  background: 'var(--st-in-bg)',
+                  border: '1px solid var(--st-in-border)',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--r-badge)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <IconCheck size={12} /> Ready
               </span>
             ) : (
-              <span className="text-[11px] font-semibold text-amber-400 bg-amber-950/60 border border-amber-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <IconAlertTriangle className="w-3 h-3" /> Blocked
+              <span
+                style={{
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  color: 'var(--st-progress-fg)',
+                  background: 'var(--st-progress-bg)',
+                  border: '1px solid var(--st-progress-border)',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--r-badge)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <IconAlertTriangle size={12} /> Blocked
               </span>
             )}
           </h4>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p style={{ margin: '4px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             {type === 'Handover'
               ? 'All items must pass before handover signature and dispatch.'
               : 'All return inspections, damage reconciliations, and ledgers must clear before closure.'}
@@ -76,38 +131,68 @@ export const GateChecklist: React.FC<GateChecklistProps> = ({
         </div>
       </div>
 
-      <div className="divide-y divide-slate-800/60 mt-2">
-        {items.map((item) => (
-          <div key={item.id} className="py-3 flex items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
+      <div style={{ marginTop: 8 }}>
+        {items.map((item, idx) => (
+          <div
+            key={item.id}
+            style={{
+              padding: '12px 0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              borderBottom: idx < items.length - 1 ? '1px solid var(--border)' : 'none',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
               <button
                 type="button"
+                aria-label={`Mark ${item.label} as ${item.passed ? 'not passed' : 'passed'}`}
+                aria-pressed={item.passed}
                 disabled={disabled || !onToggleItem}
                 onClick={() => onToggleItem && onToggleItem(item.id, !item.passed)}
                 /* Law 15 — 44×44 at every width, desktop included. */
-                style={{ minWidth: 44, minHeight: 44 }}
-                className={`rounded-md flex items-center justify-center border transition-all cursor-pointer ${
-                  item.passed
-                    ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'
-                    : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-slate-600'
-                } ${disabled || !onToggleItem ? 'cursor-default' : ''}`}
+                style={{
+                  minWidth: 44,
+                  minHeight: 44,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 'var(--r-sm)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: item.passed ? '1px solid var(--st-in-border)' : '1px solid var(--border)',
+                  background: item.passed ? 'var(--st-in-bg)' : 'var(--card2)',
+                  color: item.passed ? 'var(--st-in-fg)' : 'var(--muted)',
+                  cursor: disabled || !onToggleItem ? 'default' : 'pointer',
+                  flexShrink: 0,
+                  transition: 'all var(--dur) var(--ease)',
+                }}
               >
-                {item.passed ? <IconCheck className="w-4 h-4" /> : <IconX className="w-4 h-4 opacity-40" />}
+                {item.passed ? <IconCheck size={16} /> : <IconX size={16} style={{ opacity: 0.4 }} />}
               </button>
 
-              <div>
-                <span className={`text-sm ${item.passed ? 'text-slate-200' : 'text-slate-400'}`}>
+              <div style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: item.passed ? 600 : 400,
+                    color: item.passed ? 'var(--text)' : 'var(--text2)',
+                  }}
+                >
                   {item.label}
                 </span>
-                {item.note && <p className="text-xs text-slate-500 mt-0.5">{item.note}</p>}
+                {item.note && (
+                  <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{item.note}</p>
+                )}
               </div>
             </div>
 
             {/* Law 6 — omitted, never masked. A money-blind session does not get
                 a padlock and a billing state; it gets no financial cell. */}
             {item.isFinancial && userCanSeeMoney && item.financialAmount !== undefined && (
-              <div className="shrink-0 text-right">
-                <span className="text-xs font-mono font-semibold text-slate-300">
+              <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                <span style={{ fontSize: 'var(--t-meta)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--text)' }}>
                   {formatPaisa(item.financialAmount)}
                 </span>
               </div>

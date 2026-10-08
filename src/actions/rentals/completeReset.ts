@@ -1,6 +1,6 @@
 import { createAction, type ActionContext } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
-import { runFloorVerb, validateFloorVerb, type FloorVerbResult } from './floorVerb';
+import { runFloorVerb, validateFloorVerb, type FloorVerbResult, type ResetEntryInput } from './floorVerb';
 
 /**
  * **Reset — the fourth floor verb, and the one that changes no stage.**
@@ -28,6 +28,14 @@ export type CompleteResetInput = {
    * queue would assert work on items nobody touched.
    */
   unitIds?: string[];
+  /**
+   * The fuller form of `unitIds` — the same items with the record the floor
+   * actually made (who cleaned, who checked, whether the check was skipped and
+   * why, any problem). One `cleaning_queue_entries` row each; see
+   * `ResetEntryInput` for the uuid-not-name rule on `cleanedBy` / `qcBy`. When
+   * both are given the engine uses this one.
+   */
+  resetEntries?: ResetEntryInput[];
   /** Law 8 — the action key, minted where the user acted. */
   clientUuid?: string;
   /** AD/UTC. Defaults to now. */
@@ -45,6 +53,7 @@ export const completeReset = createAction<CompleteResetInput, FloorVerbResult>({
     validateFloorVerb('Reset', {
       bookingRef: input.id,
       ...(input.unitIds === undefined ? {} : { unitIds: input.unitIds }),
+      ...(input.resetEntries === undefined ? {} : { resetEntries: input.resetEntries }),
     }),
 
   execute: async (input, ctx: ActionContext) => {
@@ -53,6 +62,7 @@ export const completeReset = createAction<CompleteResetInput, FloorVerbResult>({
       {
         bookingRef: input.id,
         ...(input.unitIds === undefined ? {} : { unitIds: input.unitIds }),
+        ...(input.resetEntries === undefined ? {} : { resetEntries: input.resetEntries }),
         ...(input.clientUuid === undefined ? {} : { clientUuid: input.clientUuid }),
         ...(input.occurredAt === undefined ? {} : { occurredAt: input.occurredAt }),
       },

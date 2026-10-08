@@ -1,0 +1,8 @@
+# Unresolved UI/UX work
+
+- P1: Verify the complete rental creation → preparation → handover → return → reset → close journey against live Supabase separately. The local PGlite lifecycle verifier now passes all 18 role and transition checks without mutating live data.
+- P1: Dashboard live records show zero booked units. The source query is verified to select `booking_lines(id, qty)` and sum only non-voided lines. The configured anonymous REST session sees `Content-Range: */0`; this is consistent with RLS filtering or an empty table, so a staff-authenticated read is still required before treating zero as a physical inventory count. UI describes the field as booked units, not items outstanding.
+- P2: Global command palette now has complete role-filtered navigation, creation actions, and a capped permission-aware cross-entity search contract for rentals, clients, equipment and invoices. Dedicated permission and result-shaping query tests now cover the contract.
+- P2: Dashboard now uses deterministic 50-row pages, exact totals, and an explicit Load more control. Remaining verification: exercise it with a staff-authenticated high-volume dataset.
+- P2: Finish responsive and keyboard review of New Rental, Rental Detail, inventory selection and floor workspaces, including loading/error/empty states and long content.
+- Pending: final browser verification of the latest New Rental changes; Chrome is present at `/dashboard`, but a fresh screenshot attempt timed out and reset the browser automation kernel. Targeted booking tests pass, including correction-link navigation and draft persistence; full production build, lint, and typecheck pass after the latest rentals filter wiring.

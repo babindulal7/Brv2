@@ -1,9 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Select } from '../../components/ui'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { parseCsv, csvCell } from '../../lib/csv'
@@ -16,14 +18,20 @@ import {
   type ImportTargetField,
   type ImportRowResult,
 } from '../../lib/clientImport'
-import { CLIENTS_DATA } from '../../data/clients'
+import { findClientMatches, type ClientRecord } from '../../lib/queries/clients'
 
 /**
  * Import Center — the last confirmed Clients gap from this session's audit
  * reconciliation (`PLAN.md §6.4`). Upload → map columns → preview & validate
- * → **stop**. Parsing, mapping-guesses, per-row validation and duplicate
- * matching are all real (`lib/csv.ts`, `lib/clientImport.ts`). The commit step
- * is not, and no longer pretends to be.
+ * → **stop**. Parsing, mapping-guesses and per-row validation are all real
+ * (`lib/csv.ts`, `lib/clientImport.ts`), and duplicate matching runs against
+ * the DATABASE: the file's phones and emails go to `client_directory_v` as a
+ * server-side filter (`findClientMatches`, Law 2) and `buildImportRow` then
+ * does the exact match over the candidates that came back. The 26-row
+ * `CLIENTS_DATA` seed this screen used to match against is gone from it —
+ * a CSV row duplicating a *real* client is now flagged, and the flag can only
+ * ever name a client that exists (docs/pages/42 §7.3). The commit step
+ * is not connected, and no longer pretends to be.
  *
  * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
  * section D — this screen was the worst entry in it). `runImport` called **no
@@ -56,8 +64,11 @@ import { CLIENTS_DATA } from '../../data/clients'
 const IMPORT_UNAVAILABLE_REASON =
   'Import is not connected in this build — no client-import action exists, so nothing can be created.'
 
+/* Law 15 — hit area, not paint; the number comes from `--tap`. The one
+   consumer is the Maps To select in the mapping preview, one per column and
+   the only thing the operator touches on this screen. Its row simply grows. */
 const inputStyle: CSSProperties = {
-  height: 34,
+  minHeight: 'var(--tap)',
   padding: '0 10px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -78,7 +89,11 @@ function downloadSampleCsv() {
   URL.revokeObjectURL(url)
 }
 
-export default function ImportCenter() {
+export interface ImportCenterProps {
+  embedded?: boolean
+}
+
+export default function ImportCenter({ embedded = false }: ImportCenterProps = {}) {
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -89,6 +104,18 @@ export default function ImportCenter() {
   const [parseError, setParseError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set())
+
+  /**
+   * The duplicate corpus: directory clients whose phone or email matches
+   * something in this file, fetched server-side. `null` means "no completed
+   * check for the current file+mapping" — distinct from `[]`, which is a
+   * completed check that found nothing. That distinction is what keeps the
+   * Possible Duplicates KPI honest: it reads '—' until a check has finished.
+   */
+  const [dupMatches, setDupMatches] = useState<ClientRecord[] | null>(null)
+  const [dupChecking, setDupChecking] = useState(false)
+  /** Law 12 — a check that could not run is stated inline, never skipped silently. */
+  const [dupCheckError, setDupCheckError] = useState<string | null>(null)
 
   const headers = useMemo(() => {
     if (rawRows.length === 0) return []
@@ -103,6 +130,52 @@ export default function ImportCenter() {
   const phoneMapped = Array.from(mappedFields).includes('phone')
   const readyToPreview = nameMapped && phoneMapped
 
+  /**
+   * Fetch the duplicate corpus for the current file + mapping: every value in
+   * the columns mapped to Phone or Email, sent to `client_directory_v` as one
+   * chunked server-side filter. Re-runs when the file, the header toggle or
+   * the mapping changes; a stale in-flight response is cancelled so it cannot
+   * overwrite a newer one.
+   */
+  useEffect(() => {
+    if (!readyToPreview || dataRows.length === 0) {
+      setDupMatches(null)
+      setDupChecking(false)
+      setDupCheckError(null)
+      return
+    }
+    const phones: string[] = []
+    const emails: string[] = []
+    dataRows.forEach((row) => {
+      row.forEach((value, colIndex) => {
+        const target = mapping[colIndex]
+        if (target === 'phone') phones.push(value)
+        else if (target === 'email') emails.push(value)
+      })
+    })
+
+    let cancelled = false
+    setDupChecking(true)
+    setDupCheckError(null)
+    findClientMatches({ phones, emails })
+      .then((rows) => {
+        if (cancelled) return
+        setDupMatches(rows)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        // An unreachable directory must not read as "no duplicates found".
+        setDupMatches(null)
+        setDupCheckError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (!cancelled) setDupChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [dataRows, mapping, readyToPreview])
+
   const results: ImportRowResult[] = useMemo(() => {
     if (!readyToPreview) return []
     return dataRows.map((row, i) => {
@@ -114,9 +187,13 @@ export default function ImportCenter() {
         const target = mapping[colIndex]
         if (target && target !== 'skip') raw[target] = value
       })
-      return buildImportRow(raw, i, CLIENTS_DATA)
+      // The duplicate corpus is the DIRECTORY MATCHES fetched above, not a
+      // seed array. While the check is in flight (or failed) it is empty and
+      // the page says so beside the preview — a row is never silently marked
+      // "Ready" as if the directory had been consulted when it had not.
+      return buildImportRow(raw, i, dupMatches ?? [])
     })
-  }, [dataRows, mapping, readyToPreview])
+  }, [dataRows, mapping, readyToPreview, dupMatches])
 
   const readyRows = results.filter((r) => r.errors.length === 0 && !skippedRows.has(r.rowIndex))
   const errorRows = results.filter((r) => r.errors.length > 0)
@@ -130,13 +207,29 @@ export default function ImportCenter() {
       .text()
       .then((text) => {
         const parsed = parseCsv(text)
-        if (parsed.length === 0) {
+
+        /*
+         * ⛔ A file the parser could not read must not reach the mapping step.
+         *
+         * `parseCsv` returned a bare `string[][]` until 16 Aug 2026 (`R3-6`),
+         * so an unterminated quote — or a stray inch mark like `6" Pipe` —
+         * produced rows indistinguishable from good ones. They mapped cleanly,
+         * validated with `errors.length === 0`, and this screen showed a green
+         * "Ready" badge over a file whose rows had silently collapsed into each
+         * other. Refusing here is the point: the operator sees WHY, and fixes
+         * the file, instead of importing a blob under a client's name.
+         */
+        if (!parsed.ok) {
+          setParseError(parsed.errors.join(' '))
+          return
+        }
+        if (parsed.rows.length === 0) {
           setParseError('That file has no rows.')
           return
         }
         setFileName(file.name)
-        setRawRows(parsed)
-        const first = parsed[0]!
+        setRawRows(parsed.rows)
+        const first = parsed.rows[0]!
         const guesses: Record<number, ImportTargetField> = {}
         first.forEach((h, i) => {
           guesses[i] = guessTargetField(h)
@@ -154,25 +247,32 @@ export default function ImportCenter() {
     setSkippedRows(new Set())
   }
 
+  // '—' until a directory check has actually completed for this file+mapping:
+  // a zero here must mean "checked, none found", never "not checked yet".
+  const dupCheckDone = dupMatches !== null
+
   const kpis: Kpi[] = readyToPreview
     ? [
         { label: 'Ready to Import', value: String(readyRows.length), icon: 'checklist', accent: 'success' },
         { label: 'Errors', value: String(errorRows.length), icon: 'alert_triangle', accent: errorRows.length ? 'danger' : 'neutral' },
-        { label: 'Possible Duplicates', value: String(duplicateRows.length), icon: 'users', accent: duplicateRows.length ? 'progress' : 'neutral' },
+        { label: 'Possible Duplicates', value: dupCheckDone ? String(duplicateRows.length) : '—', icon: 'users', accent: dupCheckDone && duplicateRows.length ? 'progress' : 'neutral' },
         { label: 'Total Rows', value: String(dataRows.length), icon: 'file', accent: 'primary' },
       ]
     : []
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 32 }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="upload"
         title="Import Clients"
         description="Upload a CSV, map its columns and validate every row. Committing the import is not connected yet — nothing here creates a client."
         actions={
-          <Button icon="external_link" onClick={() => navigate('/clients')}>
-            Back to Clients
-          </Button>
+          !embedded ? (
+            <Button icon="external_link" onClick={() => navigate('/clients')}>
+              Back to Clients
+            </Button>
+          ) : undefined
         }
       />
 
@@ -213,6 +313,7 @@ export default function ImportCenter() {
           <input
             ref={fileInputRef}
             type="file"
+            aria-label="Upload CSV file"
             accept=".csv,text/csv"
             onChange={(e) => {
               const file = e.target.files?.[0]
@@ -278,7 +379,7 @@ export default function ImportCenter() {
 
             <div>
               <h2 style={{ margin: '0 0 10px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Map Columns</h2>
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="CSV column mapping" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -294,6 +395,7 @@ export default function ImportCenter() {
                         <td style={{ ...td, color: 'var(--muted)' }}>{dataRows[0]?.[colIndex] || '—'}</td>
                         <td style={td}>
                           <Select
+                            aria-label={`Map column ${h || `Column ${colIndex + 1}`}`}
                             value={mapping[colIndex] ?? 'skip'}
                             onChange={(e) => setMapping((prev) => ({ ...prev, [colIndex]: e.target.value as ImportTargetField }))}
                             style={{ ...inputStyle, width: '100%' }}
@@ -309,7 +411,7 @@ export default function ImportCenter() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               {!readyToPreview && (
                 <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon name="error" size={13} />
@@ -323,8 +425,40 @@ export default function ImportCenter() {
             <>
               <KpiStrip items={kpis} columns={kpis.length} />
 
+              {/* The state of the directory check, stated beside the preview it
+                  qualifies. In-flight is a fact, not an error; a failed check is
+                  Law 12 — inline, persistent, never a toast. */}
+              {dupChecking && (
+                <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                  <Icon name="timer" size={14} style={{ flexShrink: 0 }} />
+                  Checking this file&rsquo;s phones and emails against the client directory…
+                </p>
+              )}
+              {dupCheckError && (
+                <p
+                  role="alert"
+                  style={{
+                    margin: 0,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 7,
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    color: 'var(--danger-text)',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>
+                    Duplicate check could not run — {dupCheckError}. The rows below were validated, but{' '}
+                    <strong>not checked against the client directory</strong>, so a row marked Ready may still duplicate
+                    an existing client.
+                  </span>
+                </p>
+              )}
+
               <Card title="Preview & Validate" bodyStyle={{ padding: 0 }}>
-                <div style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
+                <DataTableShell ariaLabel="CSV import preview" data-table-scroll style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
@@ -344,6 +478,7 @@ export default function ImportCenter() {
                             <td style={{ ...td, width: 30 }}>
                               <input
                                 type="checkbox"
+                                aria-label={`Include row ${r.rowIndex} (${r.record?.name || 'unnamed'})`}
                                 checked={!skipped}
                                 onChange={() =>
                                   setSkippedRows((prev) => {
@@ -401,7 +536,7 @@ export default function ImportCenter() {
                       })}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               </Card>
 
               {/* The commit bar. It used to say how many rows "will be imported"
@@ -457,4 +592,23 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding is left as it was — the floor is vertical.
+ *
+ * This is a DATA-INTEGRITY fix, not a density preference, and on this screen
+ * the argument is at its sharpest because both tables put a CONTROL in every
+ * row: a target-field `Select` in the mapping table, a skip checkbox in the
+ * preview table. At 10 + 10 + a --t-meta line those rows stood around 37px,
+ * too short to hold the 44px hit area §7.3 owes each of those controls, and a
+ * target larger than its row must overhang into the neighbouring row. An
+ * absolutely positioned hit area wins the hit test, so the LATER row in the
+ * DOM claims any tap in the overlap band — that is the mechanism commit
+ * 7d38cdf fixed on the floor workspaces. Here it would mean a tap toggling the
+ * skip state of the row BELOW the one the operator aimed at, or re-mapping the
+ * wrong CSV column, and both mistakes are silent: the preview still looks
+ * right, and the wrong records are the ones that go on to be created. The
+ * floor comes first so those controls can reach 44px without overlapping.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }

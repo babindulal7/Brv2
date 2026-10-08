@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Offline sync sequence",
+    "subtitle": "Queue an offline mutation, replay it safely, then refresh the local cache.",
+    "viewBox": [1080, 560],
+    "column_fit": "spread",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "offline-write", "label": "Offline write", "focus": ["operator", "app", "outbox"], "note": "A disconnected write is durably queued with its client UUID." },
+      { "id": "replay", "label": "Replay safely", "focus": ["app", "sync", "outbox", "cloud"], "note": "The sync engine drains the queue when connectivity returns." },
+      { "id": "refresh", "label": "Refresh cache", "focus": ["sync", "cloud", "cache", "app"], "note": "Master data is pulled into local storage after upstream replay." }
+    ]
+  },
+  "participants": [
+    { "id": "operator", "type": "external", "label": "Operator", "sublabel": "rental desk" },
+    { "id": "app", "type": "frontend", "label": "Web app", "sublabel": "local-first UI" },
+    { "id": "outbox", "type": "database", "label": "Offline outbox", "sublabel": "IndexedDB / Dexie" },
+    { "id": "sync", "type": "backend", "label": "Sync engine", "sublabel": "sync state + scheduler" },
+    { "id": "cloud", "type": "cloud", "label": "Supabase", "sublabel": "cloud database" },
+    { "id": "cache", "type": "database", "label": "Local cache", "sublabel": "products + clients" }
+  ],
+  "segments": [
+    { "from": 150, "to": 230, "label": "Disconnected write" },
+    { "from": 236, "to": 390, "label": "Reconnect and replay" },
+    { "from": 396, "to": 510, "label": "Refresh local data" }
+  ],
+  "messages": [
+    { "id": "offline-save", "from": "operator", "to": "app", "y": 160, "label": "save while offline", "variant": "default" },
+    { "id": "queue-write", "from": "app", "to": "outbox", "y": 188, "label": "enqueue mutation + client UUID", "variant": "emphasis" },
+    { "id": "queue-pending", "from": "outbox", "to": "app", "y": 216, "label": "pending record", "variant": "return" },
+    { "id": "network-restored", "from": "operator", "to": "app", "y": 244, "label": "connection restored", "variant": "dashed" },
+    { "id": "start-sync", "from": "app", "to": "sync", "y": 272, "label": "trigger sync", "variant": "emphasis" },
+    { "id": "drain-outbox", "from": "sync", "to": "outbox", "y": 300, "label": "drain pending mutations", "variant": "emphasis" },
+    { "id": "replay-write", "from": "outbox", "to": "cloud", "y": 328, "label": "replay insert or update", "variant": "emphasis" },
+    { "id": "replay-result", "from": "cloud", "to": "outbox", "y": 356, "label": "accepted or duplicate-safe", "variant": "return" },
+    { "id": "pending-count", "from": "outbox", "to": "sync", "y": 384, "label": "remaining pending count", "variant": "return" },
+    { "id": "pull-deltas", "from": "sync", "to": "cloud", "y": 412, "label": "pull products + clients", "variant": "default" },
+    { "id": "cache-deltas", "from": "sync", "to": "cache", "y": 440, "label": "bulkPut local deltas", "variant": "dashed" },
+    { "id": "sync-state", "from": "sync", "to": "app", "y": 468, "label": "synced or pending state", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "app", "from": 156, "to": 474, "type": "frontend" },
+    { "participant": "outbox", "from": 182, "to": 390, "type": "database" },
+    { "participant": "sync", "from": 266, "to": 474, "type": "backend" },
+    { "participant": "cloud", "from": 322, "to": 418, "type": "cloud" },
+    { "participant": "cache", "from": 434, "to": 448, "type": "database" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Idempotent replay", "items": ["Queued writes keep their original client UUID during replay.", "A duplicate client UUID that already landed is resolved rather than written twice."] },
+    { "dot": "amber", "title": "Sync triggers", "items": ["The sync engine runs when connectivity returns and on a periodic online timer.", "While offline, state remains visible instead of presenting a false successful cloud sync."] },
+    { "dot": "cyan", "title": "Two directions", "items": ["Pending mutations drain upstream before local master-data deltas are pulled down.", "Products and clients are refreshed into IndexedDB without blocking the core replay path."] }
+  ]
+}

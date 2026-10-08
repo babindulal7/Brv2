@@ -1,3 +1,4 @@
+import { formatAd } from '../lib/bs'
 import type { Slice } from '../components/ui/Charts'
 import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney, roundHalfUp } from '../lib/money'
@@ -41,8 +42,11 @@ const d = (y: number, m: number, day: number) => new Date(Date.UTC(y, m - 1, day
 export const PERIOD = { from: d(2026, 7, 1), to: d(2026, 7, 31) }
 
 /**
- * Kept for `ClientReports` and `ProductReports`, which import this list. The
- * Expenses ledger filters on a real date range instead of a chip row.
+ * No importer left (2 Sep 2026): `ClientReports` shed its chip row in the
+ * BUG-era remediation and `ProductReports` shed its on the way to
+ * `/reports/products` (§4.41(a)) — both use the shared `ReportToolbar` now.
+ * The Expenses ledger filters on a real date range instead of a chip row.
+ * Law 3 keeps the list until a ruling retires it.
  */
 export const PERIOD_CHIPS = [
   'Today',
@@ -415,7 +419,7 @@ export const EXPENSES: ExpenseRow[] = [
     branch: 'Boudha (Head Office)',
     recurring: false,
     attachments: 1,
-    note: 'A government fee is a genuine expense; VAT and TDS are not (§4.1).',
+    note: /* A government fee is a genuine expense; VAT and TDS are not (§4.1). */ "A government fee is a genuine expense; VAT and TDS are not .",
   },
   {
     id: 'EXP-2026-0712',
@@ -457,7 +461,7 @@ export const EXPENSES: ExpenseRow[] = [
     branch: 'Boudha (Head Office)',
     recurring: false,
     attachments: 1,
-    note: 'Consumables stay expenses; a serialised body above the threshold would be an asset (§3.1).',
+    note: /* Consumables stay expenses; a serialised body above the threshold would be an asset (§3.1). */ "Consumables stay expenses; a serialised body above the threshold would be an asset .",
   },
   {
     id: 'EXP-2026-0710',
@@ -703,7 +707,7 @@ export const EXPENSES: ExpenseRow[] = [
     branch: 'Boudha (Head Office)',
     recurring: true,
     attachments: 0,
-    note: 'A schedule creates a Draft on its due date and never a payment (§8). The amount is reviewed, then submitted.',
+    note: /* A schedule creates a Draft on its due date and never a payment (§8). The amount is reviewed, then submitted. */ "A schedule creates a Draft on its due date and never a payment . The amount is reviewed, then submitted.",
   },
   {
     id: 'EXP-2026-0699',
@@ -724,7 +728,7 @@ export const EXPENSES: ExpenseRow[] = [
     branch: 'Boudha (Head Office)',
     recurring: false,
     attachments: 0,
-    note: 'Rejected — not a company cost. The submitter may edit and resubmit (§7.2).',
+    note: /* Rejected — not a company cost. The submitter may edit and resubmit (§7.2). */ "Rejected — not a company cost. The submitter may edit and resubmit .",
   },
   {
     id: 'EXP-2026-0698',
@@ -745,7 +749,7 @@ export const EXPENSES: ExpenseRow[] = [
     branch: 'Boudha (Head Office)',
     recurring: false,
     attachments: 0,
-    note: 'Cancelled after the duplicate check flagged the same vendor and bill number (§7.3).',
+    note: /* Cancelled after the duplicate check flagged the same vendor and bill number (§7.3). */ "Cancelled after the duplicate check flagged the same vendor and bill number .",
   },
 ]
 
@@ -935,7 +939,7 @@ export function cumulativeTrend(rows: ExpenseRow[], from: Date, to: Date) {
   const ticks = [...new Set([0, 1, 2, 3, 4, 5, 6].map((k) => Math.round((k / 6) * (days - 1))))]
   const labels = ticks.map((i) => {
     const day = new Date(from.getTime() + i * DAY)
-    return `${day.getUTCDate()} ${day.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}`
+    return formatAd(day)
   })
   return { points, labels }
 }

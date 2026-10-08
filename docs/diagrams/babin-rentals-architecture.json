@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Babin Rentals OS architecture",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "operator", "type": "external", "label": "Rental operator", "sublabel": "Browser or tablet", "pos": [40, 300], "size": [150, 64] },
+    { "id": "app", "type": "frontend", "label": "React application shell", "sublabel": "Routes, modules and UI", "pos": [260, 300], "size": [180, 64] },
+    { "id": "auth", "type": "security", "label": "Session provider", "sublabel": "Signed-in role and lock", "pos": [260, 120], "size": [180, 64] },
+    { "id": "actions", "type": "backend", "label": "Domain actions", "sublabel": "Capability-gated writes", "pos": [530, 300], "size": [180, 64] },
+    { "id": "queries", "type": "backend", "label": "Query layer", "sublabel": "Read models", "pos": [760, 120], "size": [180, 64] },
+    { "id": "offline", "type": "database", "label": "Local offline queue", "sublabel": "Dexie-backed mutations", "pos": [530, 590], "size": [180, 64] },
+    { "id": "sync", "type": "backend", "label": "Sync provider", "sublabel": "Queue drain and status", "pos": [790, 520], "size": [180, 64] },
+    { "id": "supabase", "type": "cloud", "label": "Supabase platform", "sublabel": "PostgREST, RPC and storage", "pos": [1030, 350], "size": [190, 64] },
+    { "id": "database", "type": "database", "label": "Postgres with RLS", "sublabel": "Rental operational data", "pos": [1030, 500], "size": [190, 64] }
+  ],
+  "connections": [
+    { "id": "operator-app", "from": "operator", "to": "app", "label": "uses PWA", "variant": "emphasis" },
+    { "id": "auth-session", "from": "auth", "to": "app", "label": "session and role", "variant": "security", "labelDy": 24 },
+    { "id": "app-actions", "from": "app", "to": "actions", "label": "dispatches mutations", "variant": "emphasis", "labelAt": [485, 378] },
+    { "id": "app-queries", "from": "app", "to": "queries", "label": "loads read models", "labelAt": [464, 116] },
+    { "id": "actions-offline", "from": "actions", "to": "offline", "label": "queues eligible writes", "variant": "dashed", "labelDy": 24 },
+    { "id": "actions-supabase", "from": "actions", "to": "supabase", "label": "RPC and table writes" },
+    { "id": "queries-supabase", "from": "queries", "to": "supabase", "label": "reads data" },
+    { "id": "offline-sync", "from": "offline", "to": "sync", "label": "pending mutations", "variant": "dashed", "labelAt": [750, 668] },
+    { "id": "sync-supabase", "from": "sync", "to": "supabase", "label": "replays online", "variant": "emphasis" },
+    { "id": "supabase-db", "from": "supabase", "to": "database", "label": "enforces RLS", "variant": "security", "labelDy": 24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Application", "items": ["The React shell routes operators into rental, inventory, finance and operations modules.", "Domain actions apply capability checks before a write is attempted."] },
+    { "dot": "amber", "title": "Offline behavior", "items": ["Only eligible mutations enter the local queue.", "The sync provider reports and replays pending work when online."] },
+    { "dot": "rose", "title": "Data boundary", "items": ["Supabase is the remote platform boundary.", "Database migrations define schema and row-level policies."] }
+  ]
+}

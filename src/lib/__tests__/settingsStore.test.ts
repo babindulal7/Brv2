@@ -29,6 +29,13 @@ beforeEach(() => {
 })
 
 describe('settingsStore — defaults', () => {
+  it('corrects the former built-in company PAN and preserves other explicit PAN values', () => {
+    expect(getSetting('vatNumber')).toBe('623587106')
+    window.localStorage.setItem('br.settings.vatNumber', '601928473')
+    expect(readSettings().vatNumber).toBe('623587106')
+    writeSettings({ vatNumber: '123456789' })
+    expect(getSetting('vatNumber')).toBe('123456789')
+  })
   it('reads defaults when nothing is stored', () => {
     expect(readSettings()).toEqual(SETTINGS_DEFAULTS)
   })
@@ -88,8 +95,20 @@ describe('settingsStore — writing', () => {
     expect(() => writeSettings({ vatNumber: '601928473' })).not.toThrow()
   })
 
-  it('refuses a session timeout of zero — that is not a timeout', () => {
-    expect(() => writeSettings({ sessionTimeoutMinutes: 0 })).toThrow(/at least one minute/)
+  /*
+   * Inverted 25 Aug 2026. This read "refuses a session timeout of zero — that
+   * is not a timeout", which made OFF unrepresentable and handed every session
+   * a 30-minute idle timer nobody asked for. The owner ruled the lock off by
+   * default, and 0 is how off is stored.
+   */
+  it('accepts zero as OFF, and defaults to off', () => {
+    expect(() => writeSettings({ sessionTimeoutMinutes: 0 })).not.toThrow()
+    expect(readSettings().sessionTimeoutMinutes).toBe(0)
+  })
+
+  it('still refuses a negative or absurd timeout', () => {
+    expect(() => writeSettings({ sessionTimeoutMinutes: -1 })).toThrow()
+    expect(() => writeSettings({ sessionTimeoutMinutes: 481 })).toThrow(/eight hours/)
   })
 })
 

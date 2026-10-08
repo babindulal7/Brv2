@@ -1,379 +1,386 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
-import { rupees, formatMoney, price } from '../../../lib/money'
-import type { Paisa } from '../../../lib/money'
+import { DataTableShell } from '../../../components/ui/DataTable'
+import { BsAdDate } from '../../../components/ui/BsAdDate'
+import { Unavailable } from '../../../components/ui/Unavailable'
+import { useToast } from '../../../components/ui/Toast'
+import { formatMoney, price, rupees } from '../../../lib/money'
 import { getSetting } from '../../../lib/settingsStore'
+import { previewInvoiceForBooking } from '../../../lib/queries/invoicePreview'
+import type { InvoicePreview } from '../../../lib/queries/invoicePreview'
+import { createInvoice } from '../../../actions/finance/createInvoice'
+import type { CreateInvoiceResult } from '../../../actions/finance/createInvoice'
+import { useAuth } from '../../../lib/auth'
 import { useNetwork } from '../../../lib/network'
+import { newClientUuid } from '../../../lib/supabase'
 
 /*
- * ── This modal does not mint an invoice number, and must not ───────────────
+ * ── This is a PREVIEW of the invoice `createInvoice` will write ────────────
  *
- * Two earlier shapes stood here and both were wrong:
+ * ## What stood here, and why it could not be wired
  *
- *   1. `INV-2026-${Math.floor(1000 + Math.random() * 9000)}` — a random figure
- *      with a hardcoded prefix and a year segment the 12 Aug ruling retired.
- *   2. `issue('INV', ++mintedCounter)` against a module-scope counter seeded
- *      from `data/numbering.ts`. Better-shaped, still client-side: two browser
- *      tabs both start at 492 and both mint `INV-493`, and a reload restarts
- *      the counter, so the same number is issued twice.
+ * A free-form line editor — client name, booking number, due date and a list of
+ * hand-typed `{ description, amount }` rows — followed by a refusal that
+ * dispatched nothing. The refusal was correct at the time and its reason was
+ * exact: `createInvoice` **derives its lines from the booking**, so calling it
+ * from that form would have silently discarded every row the operator typed and
+ * billed something else. The question was filed as `PLAN.md` §4.46 — *does the
+ * invoice bill the booking, or what the operator typed?*
  *
- * **Numbering belongs to the database, and the path already exists.**
- * `next_document_number(p_sequence_key text)` — `0007_admin_security.sql:359`,
- * rewritten by `0055_ruled_identifier_formats.sql:104` — takes a row lock
- * (`select … for update`) and increments under it, which is the only way two
- * concurrent invoices cannot collide. It is not theoretical: `recordPayment.ts`
- * (~308) and `createClient.ts` (~338) both call it by RPC for `payment_no` and
- * `client_code`, and this modal must do the same the day an invoice write
- * exists.
+ * ## §4.46(a) follows from rulings that were already binding
  *
- * A client-side prediction is not merely risky here, it is **known wrong**.
- * `number_sequences.current_value` for `'invoice'` is seeded at **0**
- * (`0012_seed_data.sql:24`), so the first number the database hands out is
- * `INV-1`. `data/numbering.ts`'s INV counter is 492 — the figure printed on the
- * Settings ▸ Numbering *render*, not the database's counter — so the modal
- * would tell an operator `INV-493` while the ledger issues `INV-1`. The
- * operator then puts `INV-493` on a payment reference that nothing will ever
- * match. (0055 is written and **not applied**; until it is, the function still
- * year-formats invoices, so today's real answer would be `INV-2026-0001`.
- * Three different strings — the exact reason a screen may not guess one.)
+ * It is not a new product decision, which is why it can be settled here rather
+ * than waited on. Three documents, none of them ambiguous:
  *
- * So the number is assigned on save, by whatever action eventually performs the
- * insert, and the form says so instead of displaying a fabricated one.
+ *  · `RULINGS-2026-09-04.md` **R-03** — *"Append as lines to the **Draft**
+ *    invoice. One invoice per rental (21 Jul ruling, unchanged)."* Damage and
+ *    late fees append to lines produced by the return session; there is nothing
+ *    for them to append to on a bill someone typed by hand at creation time.
+ *  · `docs/SPEC-P0-1-INVOICING.md` **§3.1** — *"Then one `invoice_lines` row per
+ *    `booking_lines` row"*, and *"**Lines are a snapshot, not a join.** The rate
+ *    card is pinned per booking; the invoice must not silently re-price when a
+ *    product's rate changes."*
+ *  · `RULINGS-2026-09-04.md` **R-02** — the invoice is Draft for the whole
+ *    rental and *"issued once, at return, when the final figure is known"*. A
+ *    form filled in at creation cannot hold a figure that is not known yet; the
+ *    booking can, because the return session writes back to it.
+ *
+ * So the free-form editor was never one of two ruled options. It was a third
+ * shape both documents exclude. This screen therefore shows the operator the
+ * bill that is about to be raised — the booking's own lines, at the booking's
+ * own rates — and Confirm dispatches the action. Nothing on it is editable,
+ * because nothing on an invoice raised this way is the screen's to choose.
+ *
+ * ## The number is still assigned elsewhere, and now it is not assigned at all
+ *
+ * The header this file used to carry argued at length that a client-side
+ * `INV-…` is known-wrong and that numbering belongs to
+ * `next_document_number('invoice')`. That argument stands and has been
+ * strengthened by **R-15**: *"a Draft carries no `invoice_no`. It is minted by
+ * `next_document_number('invoice')` at the moment of issue, inside the same
+ * transaction."* `createInvoice` omits the column entirely, so this modal shows
+ * "Minted when the invoice is issued" rather than any number at all.
+ *
+ * ## What this screen does NOT compute
+ *
+ * Nothing. `lib/queries/invoicePreview.ts` reads the lines (mirroring the
+ * action's own reads, table for table) and `lib/money.ts`'s `price()` totals
+ * them — PLAN.md §0, pages never implement business logic. The VAT rate is read
+ * from Settings ▸ Finance, never hardcoded, and is re-read on every open so a
+ * rate changed mid-session applies to the next invoice and not to one already
+ * on screen.
+ *
+ * ⚠ The totals shown are the ENGINE's. The invoice's stored figures are the
+ * database's, derived by `recalculate_invoice_totals()`, and the live trigger is
+ * known to disagree with the engine by up to Rs 0.98 per invoice until
+ * `0098_invoice_totals_match_engine` lands (SPEC-P0-1 §2.2). The panel says so
+ * rather than presenting the preview as the receipt.
  */
 
-interface LineItem {
-  id: string
-  desc: string
-  /** **Rupees, as the operator types them.** `rupees()` converts at the boundary. */
-  amount: number
-}
-
-interface CreateInvoiceModalProps {
+export interface CreateInvoiceModalProps {
   isOpen: boolean
   onClose: () => void
   /**
-   * Called only when an invoice has genuinely been written. Nothing calls it
-   * today — see `handleSubmit` — but the contract is stated in the shape the
-   * write will hand back, so the seam does not have to be redesigned later.
+   * The booking to bill, by its `B-…` number.
    *
-   * `id` is the number **the database assigned**, never one this screen chose.
-   *
-   * ⚠ Every money field is `Paisa`. It used to be `amount: string`, built as
-   * `Rs ${grandTotal.toLocaleString('en-IN')}` and read back downstream with
-   * `parseInt(inv.amount.replace(/[^0-9]/g, ''))`. That round trip multiplies a
-   * fractional total by ten: `Rs 1,39,506.5` loses its decimal point and parses
-   * as **13,95,065**. Money crosses this boundary as integer paisa and is
-   * formatted only at render — `lib/money.ts` §2.3.
+   * Supplied by Booking Detail, which knows it. Omitted by Finance, whose
+   * header launcher has no booking in hand — there the operator names one and
+   * the preview loads against it. R-01 makes those the two entry points and
+   * nothing else creates an invoice.
    */
-  onSuccess: (invoice: {
-    id: string
-    client: string
-    booking: string
-    subtotalPaisa: Paisa
-    vatPaisa: Paisa
-    totalPaisa: Paisa
-    due: string
-    status: 'Sent' | 'Draft'
-    lines: Array<{ desc: string; amountPaisa: Paisa }>
-  }) => void
+  bookingNo?: string
+  /**
+   * Called once, after `createInvoice` has resolved — so it fires for an invoice
+   * Postgres has confirmed, never for one this screen hoped for.
+   *
+   * The payload is the ACTION's own result, unchanged: `invoiceId` is the row's
+   * uuid, `status` is always `'Draft'` (R-02), and there is no invoice number
+   * because a Draft has none (R-15). Callers refetch; none of them may prepend
+   * a row, because every finance list is read from the database and a row put on
+   * screen by hand vanishes at the next read with no explanation.
+   */
+  onSuccess: (created: CreateInvoiceResult) => void
 }
 
-/*
- * `onSuccess` is deliberately NOT destructured: nothing in this file may call
- * it while no invoice write exists, and `noUnusedLocals` would flag a binding
- * that is only there to look wired. The prop stays on the interface —
- * `Finance.tsx` already passes a handler, and the contract above is the shape
- * the eventual write hands back — but the only honest number of call sites
- * today is zero. See `handleSubmit`.
- */
-export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps) {
+/** The label for an invoice that has not been issued and so carries no number. */
+export const DRAFT_NO_NUMBER = 'Draft (no number)'
+
+const fieldStyle = {
+  minHeight: 'var(--tap)',
+  padding: '0 12px',
+  borderRadius: 'var(--r-btn)',
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  color: 'var(--text)',
+  fontSize: 'var(--t-meta)',
+} as const
+
+const labelStyle = {
+  fontSize: 'var(--t-meta)',
+  fontWeight: 600,
+  color: 'var(--text)',
+} as const
+
+const panelStyle = {
+  padding: 'var(--sp-md)',
+  borderRadius: 'var(--r-btn)',
+  background: 'var(--card2)',
+  border: '1px solid var(--border)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  fontSize: 'var(--t-meta)',
+} as const
+
+function Row({ label, value, strong }: { label: string; value: ReactNode; strong?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-md)' }}>
+      <span style={{ color: 'var(--muted)' }}>{label}</span>
+      <span style={{ fontWeight: strong ? 700 : 600, textAlign: 'right' }}>{value}</span>
+    </div>
+  )
+}
+
+export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: CreateInvoiceModalProps) {
+  const { user } = useAuth()
   const isOnline = useNetwork()
-  const [client, setClient] = useState('')
-  /*
-   * ── Nothing on this form starts pre-filled ────────────────────────────────
-   *
-   * `booking` was `'B-720'` and `dueDate` was `'15 Aug 2026'`. Neither is data
-   * this modal has: there is no booking picker behind that text box and no
-   * terms rule behind that date, so both were figures the SCREEN chose,
-   * displayed as though the operator had chosen them. `B-720` is a booking
-   * number the form would have attached an invoice to for a client nobody
-   * named, and the date would have gone stale into an invoice's payment terms.
-   * Same defect class as the line items below.
-   *
-   * Both are required at submit, and that is a schema fact rather than a
-   * product decision: `invoices.booking_id` is `uuid NOT NULL` and
-   * `invoices.due_date` is `date NOT NULL` (`0006_finance.sql:73-80`), so an
-   * invoice with neither cannot exist to be written.
-   */
-  const [booking, setBooking] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [includeVat, setIncludeVat] = useState(true)
-  const [status, setStatus] = useState<'Sent' | 'Draft'>('Sent')
-  /*
-   * ── The form opens with ONE EMPTY line, not two invented ones ─────────────
-   *
-   * What stood here:
-   *
-   *     { id: '1', desc: 'Camera Package Rental', amount: 150000 },
-   *     { id: '2', desc: 'Grip & Lighting Gear',  amount: 35000  },
-   *
-   * Rs 1,85,000 of billing nobody entered, pre-typed onto a money form and
-   * carried straight into the Grand Total panel below, which rendered
-   * `Rs 2,09,050` (with VAT) the instant the modal opened. An operator who
-   * filled in the client and pressed `Issue Invoice` would have billed that.
-   * It is the same defect as the Rs 50,000 refund default and the Rs 5,000
-   * payment: an invented figure on a money form, presented as real.
-   *
-   * **Empty, not derived.** Deriving the lines from the booking would be the
-   * better answer and this modal genuinely cannot do it: `booking` is a free
-   * text box holding a booking NUMBER, there is no lookup behind it, and
-   * `booking_lines` is not read anywhere in this file. Inventing a derivation
-   * would put a different fabrication where this one was.
-   *
-   * One blank row rather than zero: the row is where the operator types, and
-   * `handleRemoveLine` keeps at least one so the form can never become a
-   * dead-end with no input and no "+ Add Item" target. It holds no description
-   * and no amount, so it contributes nothing to the total and the submit guard
-   * refuses it — an empty row is not a line item.
-   */
-  const [lines, setLines] = useState<LineItem[]>([{ id: '1', desc: '', amount: 0 }])
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleAddLine = () => {
-    setLines((prev) => [...prev, { id: Date.now().toString(), desc: '', amount: 0 }])
-  }
-
-  const handleRemoveLine = (id: string) => {
-    setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.id !== id)))
-  }
+  const { showSuccessToast } = useToast()
 
   /**
-   * `val` is always `e.target.value`, i.e. a string — it was typed `any`, which
-   * is what let the amount branch put `NaN` into state unchecked.
-   *
-   * ⚠ That was not theoretical. `Number('')` is 0, but `Number('1e')`,
-   * `Number('-')` and `Number('1.2.3')` are all `NaN`, and a `NaN` amount
-   * propagates: `rupees(NaN)` is `NaN`, so `price()` returns a `NaN` subtotal,
-   * `formatMoney` renders **"Rs NaN"** in the totals panel, and — the part that
-   * matters — `NaN <= 0` is `false`, so the "total must be greater than 0"
-   * guard below would have let it through. Non-finite input lands as 0, the
-   * same coercion `RecordPaymentModal.tsx` ~295-301 does at its own field.
+   * What the operator has typed into the booking box, and what the preview is
+   * actually loaded against. They are separate on purpose: typing a booking
+   * number must not fire a read per keystroke, so the reference is COMMITTED —
+   * by the Load button, by Enter, or by the `bookingNo` prop when a caller
+   * already knows it.
    */
-  const handleLineChange = (id: string, field: 'desc' | 'amount', val: string) => {
-    setLines((prev) =>
-      prev.map((l) => {
-        if (l.id !== id) return l
-        if (field === 'amount') {
-          const next = Number(val)
-          return { ...l, amount: Number.isFinite(next) ? next : 0 }
-        }
-        return { ...l, desc: val }
-      }),
-    )
-  }
+  const [bookingRef, setBookingRef] = useState(bookingNo ?? '')
+  const [committedRef, setCommittedRef] = useState(bookingNo ?? '')
+  const [preview, setPreview] = useState<InvoicePreview | null>(null)
+  const [loading, setLoading] = useState(false)
+  /** `invoices.notes` — the one field on this form that is the operator's. */
+  const [notes, setNotes] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  /** Law 12 — inline and persistent. There is no error toast and none is invented. */
+  const [error, setError] = useState<string | null>(null)
 
   /*
-   * ── The VAT rate is configuration, read from Settings ▸ Finance ───────────
-   *
-   * This was `Math.round(taxableSubtotal * 0.13)`: a rate typed into a page and
-   * a rounding rule invented beside it. `lib/money.ts:94` states the rule on
-   * `PriceInput.vatPercent` itself — *"from Settings ▸ Finance, never
-   * hardcoded"* — and `PLAN.md` §0 says pages never implement business logic.
-   * A rate change in Settings then moved every other screen and left this one
-   * billing 13%, silently, on real invoices.
-   *
-   * `lib/settingsStore.ts` is that Settings ▸ Finance: `vatRatePercent`, a
-   * **percent** (13, not 0.13), validated 0-100 on both write and read, so a
-   * hand-edited or stale value falls back to the spec default rather than
-   * reaching an invoice. No `TODO(decision)` is needed — the configured source
-   * genuinely exists.
-   *
-   * Re-read whenever the modal opens, so a rate changed mid-session applies to
-   * the next invoice drafted and not to one already half-typed.
+   * The VAT rate is configuration, read from Settings ▸ Finance and pinned onto
+   * the invoice at creation (SPEC-P0-1 §3.1). `lib/money.ts:94` states the rule
+   * on `PriceInput.vatPercent` itself — "from Settings ▸ Finance, never
+   * hardcoded" — and `lib/settingsStore` validates it 0-100 on both write and
+   * read, so a hand-edited value falls back to the spec default rather than
+   * reaching an invoice.
    */
-  const vatRatePercent = useMemo(() => Number(getSetting('vatRatePercent')), [isOpen])
+  const [vatRatePercent, setVatRatePercent] = useState(() => Number(getSetting('vatRatePercent')))
+
+  /**
+   * **Law 8 — minted when the modal OPENS, not when Confirm is pressed.**
+   *
+   * The key belongs to the ATTEMPT, not to the press. A Confirm pressed again
+   * after a dropped response must carry the SAME uuid so
+   * `invoices_client_uuid_key` rejects the duplicate and the operator gets the
+   * invoice the first attempt already wrote — a key minted per press raises two
+   * invoices for one booking, and R-03 says a rental has one. Re-minted only
+   * after a CONFIRMED success, so a screen that keeps this modal mounted across
+   * two bookings cannot post the second under the first one's key.
+   */
+  const [clientUuid, setClientUuid] = useState<string>(() => newClientUuid())
+
+  useEffect(() => {
+    if (!isOpen) return
+    setClientUuid(newClientUuid())
+    setError(null)
+    setNotes('')
+    setVatRatePercent(Number(getSetting('vatRatePercent')))
+    setBookingRef(bookingNo ?? '')
+    setCommittedRef(bookingNo ?? '')
+  }, [isOpen, bookingNo])
 
   /*
-   * ── The engine computes the totals; this page does not ────────────────────
-   *
-   * `price()` owns §2.1's order and §2.4's half-up-at-each-step rounding, and
-   * its reference case is asserted at module load. Summing per-line *paisa* —
-   * rather than summing rupees and converting once — is what keeps a line typed
-   * as `1234.567` from drifting: each line is rounded to paisa exactly where
-   * the operator's figure enters the system.
-   *
-   * `discountPercent: 0` is not a placeholder. The booking-level discount lives
-   * in `booking_discounts` (0002:575) and is entered against the booking, with
-   * its own cap, reason and approver enforced as table CHECKs. This form offers
-   * no discount control, so there is no discount — writing 0 states that, and
-   * inventing a field here would route round those CHECKs.
-   *
-   * `payments: 0` likewise: an invoice being raised has had nothing paid
-   * against it yet. `outstanding` is therefore the total, and is not displayed.
+   * The preview read. Cancelled on close and on a change of booking so a slow
+   * answer for one booking cannot land on another — a stale bill is the one
+   * thing worse here than no bill.
    */
-  const totals = useMemo(
-    () =>
-      price({
-        equipment: lines.reduce((sum, l) => sum + rupees(l.amount || 0), 0) as Paisa,
-        discountPercent: 0,
-        vatPercent: includeVat ? vatRatePercent : 0,
-        payments: rupees(0),
-      }),
-    [lines, includeVat, vatRatePercent],
-  )
+  useEffect(() => {
+    if (!isOpen || committedRef.trim() === '') {
+      setPreview(null)
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    setPreview(null)
+    // The role is passed for ONE reason: `booking_transport_v` excludes Manager
+    // and Accounts, so an empty transport read means different things to
+    // different sessions. It is not a permission check — the mount already
+    // carries `rbac.canIssueInvoice`. See the module's TRANSPORT block.
+    previewInvoiceForBooking(committedRef, user?.role ?? null)
+      .then((p) => {
+        if (cancelled) return
+        setPreview(p)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setLoading(false)
+        setError(
+          `${committedRef} could not be read, so nothing can be previewed and nothing was created: ` +
+            (err instanceof Error ? err.message : String(err)),
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, committedRef, user?.role])
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
+  /*
+   * The engine, once. Every figure in the totals panel is `price()`'s own
+   * output, already in paisa — never re-derived here and never re-rounded.
+   * `payments: 0` is a statement, not a placeholder: an invoice being raised has
+   * had nothing paid against it, so Outstanding is the total and is not shown.
+   */
+  const totals = useMemo(() => {
+    if (preview?.kind !== 'preview') return null
+    return price({
+      equipment: preview.buckets.equipment,
+      subRental: preview.buckets.subRental,
+      services: preview.buckets.services,
+      crew: preview.buckets.crew,
+      transport: preview.buckets.transport,
+      discountPercent: preview.discountPercent,
+      vatPercent: vatRatePercent,
+      payments: rupees(0),
+    })
+  }, [preview, vatRatePercent])
+
+  const commitRef = useCallback(() => {
+    setError(null)
+    setCommittedRef(bookingRef.trim())
+  }, [bookingRef])
+
+  const handleConfirm = useCallback(async () => {
+    if (!preview || preview.kind !== 'preview') return
+
+    /*
+     * No session, no invoice. An invoice raised under an invented identity is
+     * attributed to somebody who does not exist, and `invoices.created_by` is
+     * the only record of who billed the client.
+     */
+    if (!user) {
+      setError('You are not signed in, so this invoice cannot be attributed to anyone. Sign in and raise it again.')
+      return
+    }
+    /*
+     * Offline is refused here as well as inside the action, and the duplication
+     * is the point: the dispatcher reports every denial as "Your role (Owner)
+     * cannot perform CREATE_INVOICE", which would blame the role for a network
+     * problem. The action's own guard is the backstop for any other caller.
+     */
     if (!isOnline) {
       setError(
-        'This device is offline. Invoices cannot be issued while offline because official VAT/PAN invoice numbers ' +
-          'and ledger records require an active network connection. Issue it once you are back online.',
+        'This device is offline. An invoice is not queued for later — its totals are computed by the database, so a ' +
+          'queued one is a promise of an invoice rather than an invoice. Raise it once you are back online.',
       )
-      return
-    }
-    if (!client.trim()) {
-      setError('Client name is required.')
-      return
-    }
-    /*
-     * `invoices.booking_id` is `uuid NOT NULL` and `invoices.due_date` is
-     * `date NOT NULL` (0006:73, :80). Both boxes used to open with a value the
-     * screen invented, so neither was ever empty and neither was ever checked.
-     */
-    if (!booking.trim()) {
-      setError('Name the booking this invoice bills. An invoice always belongs to a booking.')
-      return
-    }
-    if (!dueDate.trim()) {
-      setError('A due date is required — it is the invoice’s payment term, not an optional note.')
-      return
-    }
-
-    /*
-     * ── An invoice is its lines, so the lines are checked before the total ───
-     *
-     * Only `totals.rentalTotal <= 0` stood here, and while the form opened with
-     * two invented lines it could not fail: the fabrication satisfied the one
-     * guard that existed. With the rows empty it does fail — but "Invoice total
-     * must be greater than 0" describes a symptom, and the operator has to work
-     * out which of five rows is the problem.
-     *
-     * The three checks below are ordered so the most specific one speaks first:
-     *
-     *  1. **No rows at all.** Unreachable today by construction —
-     *     `handleRemoveLine` refuses to drop the last row and there is no other
-     *     path that empties the array — and kept anyway, because it is the one
-     *     the brief names and because a later change to that helper would
-     *     otherwise re-open a silent Rs 0 invoice. Cheap, and it does not
-     *     pretend to be load-bearing.
-     *  2. **An incomplete row**, named by its position. A row with an amount and
-     *     no description is an unexplained charge on a client's bill; a row with
-     *     a description and no amount is a line the total silently ignores.
-     *     Neither is a line item, and neither is silently dropped — dropping a
-     *     row the operator typed into would be this screen editing the invoice.
-     *     `Number.isFinite` is repeated here even though `handleLineChange`
-     *     coerces, because state can also arrive from the initialiser.
-     *  3. **The total**, kept as the backstop it always was.
-     *
-     * A negative amount fails (2) rather than being accepted as a credit line.
-     * That is not a new rule: a reduction on a booking is a discount, it lives
-     * in `booking_discounts` with its own cap, reason and approver enforced as
-     * table CHECKs, and this form deliberately offers no discount control — see
-     * the `discountPercent: 0` note on `totals` below.
-     */
-    if (lines.length === 0) {
-      setError('An invoice needs at least one line item. Add the work or equipment being billed.')
-      return
-    }
-    const incomplete = lines.findIndex(
-      (l) => !l.desc.trim() || !Number.isFinite(l.amount) || l.amount <= 0,
-    )
-    if (incomplete !== -1) {
-      setError(
-        `Line ${incomplete + 1} is incomplete — every line item needs a description and an amount greater than 0. ` +
-          'Fill it in or remove the row; an empty row is not billed and a nameless amount is an unexplained charge.',
-      )
-      return
-    }
-    if (totals.rentalTotal <= 0) {
-      setError('Invoice total must be greater than 0.')
       return
     }
 
     setIsSubmitting(true)
+    setError(null)
+    try {
+      const created = await createInvoice(
+        {
+          bookingNo: preview.bookingNo,
+          vatPercent: vatRatePercent,
+          clientUuid,
+          // `exactOptionalPropertyTypes` — an absent note is an absent KEY, not
+          // an explicit `undefined`.
+          ...(notes.trim() === '' ? {} : { notes: notes.trim() }),
+        },
+        { userId: user.id, role: user.role, isOnline },
+      )
 
-    /*
-     * ── Nothing writes an invoice, so this refuses rather than pretending ────
-     *
-     * What stood here: mint a number, `DomainEvents.emit(INVOICE_CREATED)`,
-     * `onSuccess(...)`, `onClose()`. No action dispatched — so no `implemented`
-     * gate, no permission check and no identity — and yet the modal closed and
-     * handed the caller a fully-formed invoice object. That is the
-     * success-fabrication `actions/core.ts` was rebuilt to make impossible:
-     * *"A UI that reports success for work it did not do is worse than one that
-     * is visibly unbuilt."* The screen-level emit compounded it by announcing
-     * `invoice.created` for an invoice that does not exist — and events follow
-     * the write, emitted by the dispatcher after `execute` returns, never by a
-     * page ahead of it.
-     *
-     * There is nothing to dispatch: `src/actions/finance/` holds only
-     * `recordPayment.ts`, and a repo-wide search finds no `createInvoice` /
-     * `CREATE_INVOICE` anywhere. Inventing a stub here would only move the
-     * refusal one file along.
-     *
-     * So the refusal is stated inline and persistently (Law 12 — and
-     * `useToast()` exposes only `showSuccessToast`, which is the wrong shape for
-     * this by definition). The modal deliberately does NOT close and does NOT
-     * clear the form: everything the operator typed is still on screen to copy
-     * out or correct.
-     *
-     * TODO(decision) — two things are needed before this can be wired, and
-     * neither is this screen's to rule:
-     *   · the write itself (an `invoices` insert that takes its number from
-     *     `next_document_number('invoice')`, the way `recordPayment` takes
-     *     `payment_no`), and
-     *   · the capability. `actions/core.ts:109-125` maps capability strings to
-     *     `lib/rbac`, and there is no `invoice.create` rule — only
-     *     `invoice.void` (`canVoidInvoice`). An unmapped capability is denied,
-     *     fail-closed, so even a finished action would refuse until who may
-     *     raise an invoice is ruled and recorded in `PLAN.md` §4.
-     */
-    setError(
-      'Invoice creation is not connected to the database, so nothing was saved. No invoice number was issued and no ' +
-        'client has been billed — the number is assigned on save, by the database, not by this form. Everything you ' +
-        'typed is still here; report this rather than retrying.',
-    )
-    setIsSubmitting(false)
-  }
+      // A new key for the next attempt. Only a completed write ends an attempt,
+      // so this is re-minted here and not in `finally`, where a failed Confirm
+      // would lose its own retry protection.
+      setClientUuid(newClientUuid())
+
+      /*
+       * Law 12 — a toast for a success, and only after the action resolved. The
+       * screen does NOT emit `invoice.created`: events follow the write and the
+       * dispatcher emits them after `execute` returns, never a page ahead of it.
+       */
+      showSuccessToast(
+        'Draft invoice created',
+        `${created.bookingNo} — ${created.linesWritten} line${created.linesWritten === 1 ? '' : 's'}, ` +
+          `${formatMoney(created.totalPaisa)}. It stays a Draft until it is issued at return, and takes its number then.`,
+      )
+      onSuccess(created)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : 'The invoice could not be created.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }, [preview, user, isOnline, vatRatePercent, clientUuid, notes, showSuccessToast, onSuccess, onClose])
+
+  /**
+   * Why Confirm is not offered, when it is not. Every branch returns a sentence
+   * an operator can act on — the `Unavailable` pattern this codebase already
+   * applies: grey it out, but say why, and say why on a touch device too.
+   */
+  const unavailableReason: string | null = (() => {
+    if (committedRef.trim() === '') return 'Name the booking to be invoiced, then load it.'
+    if (loading) return 'Reading the booking’s lines.'
+    if (!preview) return 'The booking’s lines have not been read, so there is nothing to raise.'
+    if (preview.kind === 'refused') return preview.reason
+    if (preview.kind === 'already-invoiced') {
+      return (
+        `${preview.bookingNo} already has an invoice, and a rental has one. Damage and late fees append as ` +
+        'lines to that Draft; a correction after issue is Void + Credit Note.'
+      )
+    }
+    if (!user) return 'You are not signed in, so an invoice cannot be attributed to anyone.'
+    if (!isOnline) return 'This device is offline, and an invoice’s totals are computed by the database.'
+    return null
+  })()
+
+  const confirmButton = (
+    <Button variant="primary" onClick={() => void handleConfirm()} disabled={isSubmitting || unavailableReason !== null}>
+      {isSubmitting ? 'Creating…' : 'Create Draft Invoice'}
+    </Button>
+  )
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Create New Invoice"
-      subtitle="Generate an official VAT/PAN invoice for a booking."
+      title="Create Invoice"
+      subtitle="A Draft invoice for this booking’s own lines. Nothing is issued and no number is minted."
       size="lg"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => handleSubmit()} disabled={isSubmitting}>
-            {isSubmitting ? 'Creating...' : 'Issue Invoice'}
-          </Button>
+          {unavailableReason === null ? (
+            confirmButton
+          ) : (
+            <Unavailable reason={unavailableReason}>{confirmButton}</Unavailable>
+          )}
         </>
       }
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         {error && (
           <div
             style={{
               padding: '10px 14px',
               borderRadius: 'var(--r-btn)',
-              background: 'var(--danger-bg, #fee2e2)',
-              color: 'var(--danger-text, #991b1b)',
+              /* The status pair, never a raw hex and never a light-theme
+                 fallback that stays pink in dark mode. */
+              background: 'var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
             }}
           >
@@ -381,244 +388,216 @@ export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps)
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
+        {/* ── Which booking ───────────────────────────────────────────────── */}
+        {bookingNo ? (
+          <div style={panelStyle}>
+            <Row label="Booking" value={bookingNo} strong />
+            {preview && preview.kind !== 'refused' && <Row label="Client" value={preview.clientName} />}
+          </div>
+        ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-              Client Name <span style={{ color: 'var(--danger)' }}>*</span>
+            <label style={labelStyle} htmlFor="create-invoice-booking">
+              Booking <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
-            <input
-              type="text"
-              placeholder="e.g. Manaslu Motion Pictures Pvt. Ltd."
-              value={client}
-              onChange={(e) => setClient(e.target.value)}
-              style={{
-                height: 36,
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-              Associated Booking Ref <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            {/* A placeholder, not a value: the box no longer opens holding
-                `B-720`, a booking this screen had no reason to pick. */}
-            <input
-              type="text"
-              placeholder="Booking number"
-              value={booking}
-              onChange={(e) => setBooking(e.target.value)}
-              style={{
-                height: 36,
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-              }}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-              Due Date <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            {/* A format hint, not a date. It opened holding `15 Aug 2026` — a
-                payment term the screen chose, which would also have gone stale
-                silently as the date passed. */}
-            <input
-              type="text"
-              placeholder="dd Mmm yyyy"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              style={{
-                height: 36,
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Initial Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
-              style={{
-                height: 36,
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-              }}
-            >
-              <option value="Sent">Sent</option>
-              <option value="Draft">Draft</option>
-            </select>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-              Line Items Breakdown
-            </label>
-            <button
-              type="button"
-              onClick={handleAddLine}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--nav-active-accent)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              + Add Item
-            </button>
-          </div>
-
-          {lines.map((line, idx) => (
-            <div key={line.id} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
               <input
+                id="create-invoice-booking"
                 type="text"
-                placeholder={`Item #${idx + 1} Description`}
-                value={line.desc}
-                onChange={(e) => handleLineChange(line.id, 'desc', e.target.value)}
-                style={{
-                  flex: 1,
-                  height: 34,
-                  padding: '0 10px',
-                  borderRadius: 'var(--r-btn)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card)',
-                  color: 'var(--text)',
-                  fontSize: 'var(--t-meta)',
+                placeholder="Booking number"
+                value={bookingRef}
+                onChange={(e) => setBookingRef(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitRef()
+                  }
                 }}
+                style={{ ...fieldStyle, flex: 1 }}
               />
-              <input
-                type="number"
-                min={0}
-                placeholder="Amount (Rs)"
-                value={line.amount || ''}
-                onChange={(e) => handleLineChange(line.id, 'amount', e.target.value)}
-                style={{
-                  width: 130,
-                  height: 34,
-                  padding: '0 10px',
-                  borderRadius: 'var(--r-btn)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card)',
-                  color: 'var(--text)',
-                  fontSize: 'var(--t-meta)',
-                }}
-              />
-              {lines.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => handleRemoveLine(line.id)}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--danger)',
-                    cursor: 'pointer',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 700,
-                  }}
-                >
-                  ✕
-                </button>
-              )}
+              <Button variant="secondary" onClick={commitRef} disabled={bookingRef.trim() === '' || isSubmitting}>
+                Load booking
+              </Button>
             </div>
-          ))}
-        </div>
-
-        <div
-          style={{
-            padding: 'var(--sp-md)',
-            borderRadius: 'var(--r-btn)',
-            background: 'var(--card2)',
-            border: '1px solid var(--border)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            fontSize: 'var(--t-meta)',
-          }}
-        >
-          {/* Every figure below is `price()`'s own output, already in paisa —
-              never re-derived here, and never re-rounded. `rupees()` no longer
-              appears in this panel: it used to wrap page-computed rupee
-              subtotals, which is what let a local VAT rule and a local rounding
-              rule exist at all. */}
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Pre-VAT Subtotal:</span>
-            <span style={{ fontWeight: 600 }}>{formatMoney(totals.subtotal)}</span>
+            <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+              An invoice bills a booking’s own lines, so the booking is the only thing this form asks for. Everything
+              below is read from it.
+            </span>
           </div>
+        )}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={includeVat}
-                onChange={(e) => setIncludeVat(e.target.checked)}
+        {loading && (
+          <div style={{ ...panelStyle, color: 'var(--muted)' }}>Reading {committedRef}’s lines…</div>
+        )}
+
+        {/* ── Already invoiced — show that invoice, do not offer a second ─── */}
+        {preview?.kind === 'already-invoiced' && (
+          <div style={panelStyle}>
+            <Row
+              label="Existing invoice"
+              value={preview.existing.invoiceNo ?? DRAFT_NO_NUMBER}
+              strong
+            />
+            <Row label="Client" value={preview.clientName} />
+            <Row label="Status" value={preview.existing.isVoid ? `${preview.existing.status} · voided` : preview.existing.status} />
+            <Row label="Total" value={formatMoney(preview.existing.totalPaisa)} />
+            <Row label="Received" value={formatMoney(preview.existing.paidPaisa)} />
+            <Row label="Outstanding" value={formatMoney(preview.existing.outstandingPaisa)} strong />
+            <Row label="Due" value={<BsAdDate date={preview.existing.dueDateAd} layout="inline" />} />
+            <p style={{ margin: '6px 0 0', color: 'var(--muted)' }}>
+              One invoice per rental. Damage and late fees append as lines to this Draft, and a correction after it is
+              issued is a Void plus a Credit Note — never a second invoice.
+            </p>
+          </div>
+        )}
+
+        {/* ── Refused — the reason, inline and persistent ──────────────────── */}
+        {preview?.kind === 'refused' && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--st-warn-bg)',
+              color: 'var(--st-warn-fg)',
+              fontSize: 'var(--t-meta)',
+            }}
+          >
+            {preview.reason}
+          </div>
+        )}
+
+        {/* ── The preview itself ───────────────────────────────────────────── */}
+        {preview?.kind === 'preview' && totals && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+              <span style={{ ...labelStyle, fontWeight: 700 }}>
+                What will be billed — {preview.lines.length} line{preview.lines.length === 1 ? '' : 's'} from{' '}
+                {preview.bookingNo}
+              </span>
+              <DataTableShell ariaLabel="Invoice lines preview">
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
+                      <th style={{ padding: '4px 8px 4px 0', fontWeight: 600 }}>Line</th>
+                      <th style={{ padding: '4px 8px', fontWeight: 600 }}>Kind</th>
+                      <th style={{ padding: '4px 8px', fontWeight: 600, textAlign: 'right' }}>Qty</th>
+                      <th style={{ padding: '4px 8px', fontWeight: 600, textAlign: 'right' }}>Days</th>
+                      <th style={{ padding: '4px 8px', fontWeight: 600, textAlign: 'right' }}>Rate</th>
+                      <th style={{ padding: '4px 0 4px 8px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.lines.map((line) => (
+                      <tr key={line.key} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td style={{ padding: '6px 8px 6px 0' }}>{line.description}</td>
+                        <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{line.kind}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{line.qty}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{line.days}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatMoney(line.ratePaisa)}</td>
+                        <td style={{ padding: '6px 0 6px 8px', textAlign: 'right', fontWeight: 600 }}>
+                          {formatMoney(line.netPaisa)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DataTableShell>
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                Read from the booking and copied onto the invoice as a snapshot — a later change to a product’s rate
+                does not re-price this bill. Nothing here is editable from this screen: a charge is added by editing
+                the booking, and damage and late fees append at return.
+                {!preview.transportKnown && ' Transport lines are missing from this list because your role cannot read them.'}
+              </span>
+            </div>
+
+            {/*
+              ⚠ When transport could not be read, NO figure here is the invoice's
+              total, and none of them is labelled as though it were. Manager and
+              Accounts are excluded by `booking_transport_v` (and by the base
+              table's only SELECT policy) while R-05 lets both raise an invoice,
+              so their transport read comes back empty whether or not the booking
+              has any — and `create_invoice`, which is SECURITY DEFINER, bills it
+              regardless. A total short by a delivery charge, presented as the
+              total, is the confidently-wrong number this whole screen exists to
+              stop. The invoice is still correct and can still be raised; it is
+              this preview that is partial, and it says so.
+            */}
+            {!preview.transportKnown && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 'var(--r-btn)',
+                  background: 'var(--st-warn-bg)',
+                  color: 'var(--st-warn-fg)',
+                  fontSize: 'var(--t-meta)',
+                }}
+              >
+                Transport charges are not readable by your role, so the figures below leave them out and none of them
+                is the invoice total. The invoice itself will include any delivery and fuel charges on this booking.
+                Raise it if the equipment and crew above are right, and check the total on Finance afterwards.
+              </div>
+            )}
+
+            <div style={panelStyle}>
+              <Row
+                label={preview.transportKnown ? 'Pre-VAT subtotal' : 'Pre-VAT subtotal, transport excluded'}
+                value={formatMoney(totals.subtotal)}
               />
-              {/* The label states the configured rate. It read "Include 13% IRD
-                  VAT" beside a hardcoded 0.13, so raising the rate in Settings
-                  would have left the checkbox still promising 13% while the
-                  engine charged something else. */}
-              Include {vatRatePercent}% IRD VAT
-            </label>
-            <span style={{ color: 'var(--muted)' }}>{formatMoney(totals.vat)}</span>
-          </div>
+              <Row
+                label={`Booking discount (${preview.discountPercent}%)`}
+                value={`− ${formatMoney(totals.discount)}`}
+              />
+              <Row label="Taxable" value={formatMoney(totals.taxable)} />
+              <Row label={`IRD VAT (${vatRatePercent}%)`} value={formatMoney(totals.vat)} />
+              <div style={{ paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                <Row
+                  label={preview.transportKnown ? 'Invoice total' : 'Total of what is shown — NOT the invoice total'}
+                  value={formatMoney(totals.rentalTotal)}
+                  strong
+                />
+              </div>
+              <span style={{ color: 'var(--muted)' }}>
+                Computed by the money engine. The invoice’s stored figures are the database’s, derived when the lines
+                land, and the two can differ by up to a rupee until a pending totals alignment lands — so the saved
+                invoice is read back from the ledger, never assumed from here.
+              </span>
+            </div>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              paddingTop: 6,
-              borderTop: '1px solid var(--border)',
-              fontWeight: 700,
-              fontSize: 'var(--t-body)',
-            }}
-          >
-            <span>Grand Total:</span>
-            <span style={{ color: 'var(--nav-active-accent)' }}>{formatMoney(totals.rentalTotal)}</span>
-          </div>
+            <div style={panelStyle}>
+              <Row label="Status on creation" value="Draft" strong />
+              <Row label="Invoice number" value="Minted when the invoice is issued" />
+              <Row label="Payment terms" value={preview.paymentTerms} />
+              <Row label="Due" value={<BsAdDate date={preview.dueDateAd} layout="inline" />} />
+              <span style={{ color: 'var(--muted)' }}>
+                An invoice is created as a Draft and stays a Draft for the whole rental, so damage and late fees can
+                still be added to it. A Draft carries no number — it is minted at issue, so the numbering has no gap
+                for a draft that was abandoned.
+              </span>
+            </div>
 
-          {/* The number, stated as an open question rather than guessed. See the
-              header: a client-side prediction here is known to disagree with
-              `next_document_number('invoice')`, and the operator would be the
-              one to discover it, on a payment reference. */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              paddingTop: 6,
-              borderTop: '1px solid var(--border)',
-              color: 'var(--muted)',
-            }}
-          >
-            <span>Invoice number:</span>
-            <span>Assigned by the database on save</span>
-          </div>
-        </div>
-      </form>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={labelStyle} htmlFor="create-invoice-notes">
+                Notes (optional)
+              </label>
+              <textarea
+                id="create-invoice-notes"
+                rows={2}
+                placeholder="Anything that belongs on the invoice itself…"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 'var(--r-btn)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--card)',
+                  color: 'var(--text)',
+                  fontSize: 'var(--t-meta)',
+                  resize: 'vertical',
+                }}
+              />
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   )
 }

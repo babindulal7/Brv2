@@ -1,10 +1,24 @@
 import Icon from '../../../components/ui/Icon'
 import { Field, SectionCard, inputStyle, fieldRow } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { locationLabel } from '../../../data/addEquipment'
-import { WAREHOUSES } from '../../../data/warehouse'
+import { locationLabel } from '../../../lib/queries/addEquipment'
+import { useWarehouses } from '../../../lib/queries/warehouses'
 
 export function SectionLocation() {
+  /*
+   * The warehouse list is READ FROM THE DATABASE, and must be.
+   * `product_units.warehouse_id` is NOT NULL and `createEquipment` resolves the
+   * choice against `warehouses`, so a picker built from `data/warehouse.ts`'s
+   * four seed names offered nothing that existed: every serialised save failed
+   * after this form had already reported "Ready to Rent — all gates clear".
+   *
+   * The BIN list below stays seed, deliberately. `storage_zones` has no room,
+   * rack, shelf or bin column, so there is nothing to read; the chosen bin is
+   * stored as free text on the unit with `storage_zone_id` left null, which is
+   * what `createEquipment` already documents.
+   */
+  const { rows: warehouses, loading: warehousesLoading } = useWarehouses()
+
   const {
     warehouseId,
     setWarehouseId,
@@ -36,10 +50,16 @@ export function SectionLocation() {
                   }}
                   style={inputStyle(Boolean(errors.location))}
                 >
-                  <option value="">Select a warehouse</option>
-                  {WAREHOUSES.map((w) => (
+                  <option value="">
+                    {warehousesLoading
+                      ? 'Loading warehouses…'
+                      : warehouses.length === 0
+                        ? 'No active warehouse exists'
+                        : 'Select a warehouse'}
+                  </option>
+                  {warehouses.map((w) => (
                     <option key={w.id} value={w.id}>
-                      {w.name}
+                      {w.code ? `${w.name} (${w.code})` : w.name}
                     </option>
                   ))}
                 </select>
@@ -48,7 +68,11 @@ export function SectionLocation() {
                 label="Storage bin"
                 required
                 span={2}
-                hint={warehouseId ? undefined : 'Choose a warehouse first — bins belong to one.'}
+                hint={
+                  warehouseId
+                    ? 'Bin labels are a seed list — storage_zones has no rack, shelf or bin column, so the choice is stored as text on the unit.'
+                    : 'Choose a warehouse first.'
+                }
               >
                 <select
                   value={locationId}

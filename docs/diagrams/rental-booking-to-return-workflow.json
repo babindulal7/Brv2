@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Rental booking-to-return workflow",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "desk", "label": "Rental desk" },
+    { "id": "floor", "label": "Operations floor" },
+    { "id": "gates", "label": "System gates", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "booking", "label": "Book", "fromCol": 0, "toCol": 1, "variant": "emphasis" },
+    { "id": "dispatch", "label": "Prepare and dispatch", "fromCol": 2, "toCol": 3 },
+    { "id": "return", "label": "Return and close", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["draft", "confirmed", "packed", "handed-over", "returned", "reset", "closed"],
+  "nodes": [
+    { "id": "draft", "lane": "desk", "col": 0, "type": "frontend", "label": "Draft rental", "sublabel": "Client, dates and lines", "width": 132 },
+    { "id": "confirmed", "lane": "desk", "col": 1, "type": "backend", "label": "Confirm rental", "sublabel": "Commit booking", "width": 132 },
+    { "id": "packed", "lane": "floor", "col": 2, "type": "backend", "label": "Pack equipment", "sublabel": "Verify items", "width": 132 },
+    { "id": "handed-over", "lane": "floor", "col": 3, "type": "frontend", "label": "Handover", "sublabel": "Release to client", "width": 132 },
+    { "id": "returned", "lane": "floor", "col": 4, "type": "frontend", "label": "Return intake", "sublabel": "Check returned items", "width": 132 },
+    { "id": "reset", "lane": "floor", "col": 5, "type": "backend", "label": "Reset equipment", "sublabel": "Ready for next rental", "width": 132 },
+    { "id": "closed", "lane": "desk", "col": 5, "type": "database", "label": "Close rental", "sublabel": "Terminal booking state", "width": 132 },
+    { "id": "confirm-gate", "lane": "gates", "col": 1, "type": "security", "label": "Capability gate", "sublabel": "Booking desk role", "width": 132 },
+    { "id": "close-gate", "lane": "gates", "col": 4, "type": "security", "label": "Close gates", "sublabel": "Balance and deposit gates", "width": 132 }
+  ],
+  "edges": [
+    { "id": "draft-confirm", "from": "draft", "to": "confirmed", "label": "confirm", "variant": "emphasis", "role": "main" },
+    { "id": "confirm-packed", "from": "confirmed", "to": "packed", "label": "schedule packing", "role": "main" },
+    { "id": "packed-handover", "from": "packed", "to": "handed-over", "label": "all items verified", "variant": "emphasis", "role": "main" },
+    { "id": "handover-return", "from": "handed-over", "to": "returned", "label": "rental period ends", "role": "main" },
+    { "id": "return-reset", "from": "returned", "to": "reset", "label": "complete intake", "role": "main" },
+    { "id": "reset-close", "from": "reset", "to": "closed", "label": "close after gates", "variant": "emphasis", "role": "main" },
+    { "id": "check-confirm", "from": "confirmed", "to": "confirm-gate", "label": "authorize", "variant": "security", "role": "branch" },
+    { "id": "check-close", "from": "returned", "to": "close-gate", "label": "evaluate", "variant": "security", "role": "branch" },
+    { "id": "gate-close", "from": "close-gate", "to": "closed", "label": "all gates pass", "variant": "security", "role": "branch", "fromSide": "right", "toSide": "right", "route": "outside-right" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Main path", "items": ["A confirmed booking moves through packing, handover, return and reset.", "The diagram describes operational stages, not a client invoice workflow."] },
+    { "dot": "rose", "title": "Gates", "items": ["Confirmation requires a permitted booking-desk role.", "Closing is checked separately after return rather than inferred from equipment reset."] }
+  ]
+}

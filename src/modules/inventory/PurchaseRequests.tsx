@@ -1,21 +1,35 @@
-import { useState, useMemo } from 'react'
+import { formatAd } from '../../lib/bs'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { Button } from '../../components/ui/Button'
+import { TouchTarget } from '../../components/ui/TouchTarget'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { Badge } from '../../components/ui/Badge'
+import { DataTableShell } from '../../components/ui/DataTable'
+import type { StatusKey } from '../../lib/status'
 import {
-  PURCHASE_REQUESTS,
-  PURCHASE_REQUEST_KPIS,
+  usePurchaseRequests,
   type PRStatus,
   type PRPriority,
-} from '../../data/purchaseRequests'
+  type PurchaseRequest,
+} from '../../lib/queries/purchaseRequests'
+import { PageBody } from '../../components/ui/PageBody'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { captureError } from '../../lib/monitoring'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
+import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
+import { CreatePurchaseRequestModal } from './modals/CreatePurchaseRequestModal'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
+import './inventory.css'
 
 /**
  * The three decisions this screen can take on a purchase request.
@@ -44,6 +58,71 @@ const inlineErrorStyle = {
   color: 'var(--danger-text)',
   lineHeight: 1.4,
 } as const
+
+/* ── The two §4 hue maps this screen paints from ─────────────────────────────
+ *
+ * These replace `PRIORITY_COLORS` and `STATUS_COLORS`, two hand-built
+ * `{ bg, text }` tables that were rebuilt inside the component on every render
+ * and that got the pairing wrong three times over. Because they held raw
+ * values rather than a `StatusKey`, nothing could tell them that the ink they
+ * chose did not belong to the fill they chose:
+ *
+ *  - **`High`** was `--danger-text` (RED ink) on `--st-out-bg` (the ORANGE
+ *    fill). Red on orange, and doubly wrong: the hue said "out with the
+ *    client" about a purchase request that has not been raised yet.
+ *  - **`Rejected`** was the same red-on-orange pair.
+ *  - **`Ordered`** was `--orange-text` on `--st-out-bg` — and `--orange-text`
+ *    is not orange: theme.css:367 aliases it to `--ready-text`, YELLOW, as
+ *    part of spec §11's legacy remap. So the one chip whose author explicitly
+ *    reached for "orange ink" got yellow ink on an orange fill.
+ *
+ * All three were unreadable, and all three came from the same root cause —
+ * §3.2 makes the on-colour "part of the token, not a screen choice", and a
+ * `{ bg, text }` table is precisely the shape that hands the screen that
+ * choice. Naming the HUE and letting `<Badge>` resolve the pair removes it.
+ *
+ * The hues, per §4's meanings:
+ *
+ *  Priority is the money traffic light §4 already uses (green settled · yellow
+ *  partway · red decide now): **High red** ("problem · decide now" — the whole
+ *  point of a High PR is that somebody must act), Medium yellow, Low green.
+ *
+ *  Status follows the lifecycle: **Draft gray** ("not started yet" — it was
+ *  `--hover`, which is a HOVER surface and not a status colour at all),
+ *  **Submitted yellow** (waiting on a decision), **Approved blue**
+ *  ("committed · scheduled" — it was green, which reads as *settled*, and an
+ *  approved PR is a commitment, not a delivery: the gear has not arrived and
+ *  painting it the same green as Received made the two ends of the chain
+ *  identical at a glance), **Ordered yellow** (waiting again, now on the
+ *  supplier), **Received green** (home & ready — the one green this list has
+ *  earned), **Rejected red**, **Cancelled dim** ("finished · inactive").
+ */
+const PRIORITY_TONE: Record<PRPriority, StatusKey> = {
+  High: 'danger',
+  Medium: 'progress',
+  Low: 'in',
+}
+
+/**
+ * Priority as **ink on a surface**, for the one place the detail panel prints
+ * the priority score as a figure rather than a block. A block's `-fg` is its
+ * on-colour and would be white on `--card`; these are the text-safe hues.
+ */
+const PRIORITY_INK: Record<PRPriority, string> = {
+  High: 'var(--danger-text)',
+  Medium: 'var(--progress-text)',
+  Low: 'var(--success-text)',
+}
+
+const STATUS_TONE: Record<PRStatus, StatusKey> = {
+  Draft: 'neutral',
+  Submitted: 'progress',
+  Approved: 'primary',
+  Ordered: 'progress',
+  Received: 'in',
+  Rejected: 'danger',
+  Cancelled: 'dim',
+}
 
 /**
  * ⛔ Law 6 — **this screen had no money gate at all.** It imported `formatMoney`
@@ -90,8 +169,45 @@ export default function PurchaseRequests() {
   const online = useNetwork()
   const [activeTab, setActiveTab] = useState<'All' | 'Draft' | 'Submitted' | 'Approved' | 'Ordered' | 'Received'>('All')
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
-  const [requestsList, setRequestsList] = useState(PURCHASE_REQUESTS)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [isCreatePrOpen, setIsCreatePrOpen] = useState(false)
+
+  /*
+   * The rows, from the database.
+   *
+   * `requestsList` stays local state rather than being read straight off the
+   * query, because two things write to it optimistically: the decision flow
+   * below, and the `PURCHASE_REQUEST_UPDATED` event a sibling screen emits. Both
+   * predate this wiring and both are correct — a decision that has already come
+   * back from Postgres should show immediately. The effect re-seeds from the
+   * query whenever it resolves, so a refetch is the source of truth and the
+   * optimistic copy is only ever ahead of it, never instead of it.
+   */
+  const requests = usePurchaseRequests()
+  const [requestsList, setRequestsList] = useState<PurchaseRequest[]>([])
+  useEffect(() => {
+    setRequestsList(requests.rows)
+  }, [requests.rows])
+
+  /*
+   * §1 — derived at render from the rows on screen, never a stored figure. The
+   * seeded `PURCHASE_REQUEST_KPIS` counted a literal array; these count what the
+   * database actually returned, so an approval moves the tiles.
+   */
+  const kpis = useMemo(() => {
+    const countByStatus = (status: PRStatus) => String(requestsList.filter((r) => r.status === status).length)
+    return [
+      { label: 'Draft Requests', value: countByStatus('Draft'), change: 'Accumulating evidence', icon: 'file' as IconName, accent: 'blue' as const },
+      { label: 'Pending Approval', value: countByStatus('Submitted'), change: 'Awaiting a decision', icon: 'queues' as IconName, accent: 'amber' as const },
+      { label: 'Approved / In Flight', value: countByStatus('Approved'), change: 'Cleared to purchase', icon: 'check' as IconName, accent: 'green' as const },
+    ]
+  }, [requestsList])
+
+  useDomainEvent<PurchaseRequest>(EVENT_TYPES.PURCHASE_REQUEST_UPDATED, (payload) => {
+    if (payload?.id && payload?.fleetItemName) {
+      setRequestsList((prev) => [payload, ...prev.filter((p) => p.id !== payload.id)])
+    }
+  })
 
   const activePR = useMemo(() => {
     return requestsList.find((pr) => pr.id === selectedPrId) ?? null
@@ -123,6 +239,15 @@ export default function PurchaseRequests() {
     user ? { userId: user.id, role: user.role, isOnline: online } : null
 
   /**
+   * Law 8 — one idempotency key per decision-on-a-request, minted on the first
+   * press and reused across every retry of it (`blockKeys` ref pattern,
+   * `clients/ClientsDirectory.tsx:325`), so a replayed Approve records once.
+   * Cleared when the decision lands; a later, different decision (Approve →
+   * Mark as Ordered) keys separately.
+   */
+  const decisionKeys = useRef(new Map<string, string>())
+
+  /**
    * ⛔ This used to write `newStatus` into `requestsList` **first**, then fire
    * `approvePurchaseRequest` with no `ActionContext`, no `.catch()` and no
    * rollback. A manager approving a Rs 1,200,000 request watched the row turn
@@ -130,21 +255,21 @@ export default function PurchaseRequests() {
    * never saw the decision, the manager considered it made and communicated,
    * and there was no error left behind to find later.
    *
-   * The row now moves **only** on the resolved path, and a failure lands in the
-   * inline error line beside the buttons. `approvePurchaseRequest` does not set
-   * `implemented: true`, so `actions/core.ts` refuses it before `execute` and
-   * the operator reads why instead of a green row. That refusal is the correct
-   * outcome today, not a regression to be papered over with a toast.
+   * The row still moves **only** on the resolved path, and a failure lands in
+   * the inline error line beside the buttons. `approvePurchaseRequest` now
+   * UPDATEs `purchase_requests` by `pr_no` — but this register is a seed array
+   * (`data/purchaseRequests.ts`) whose PR numbers exist in no database, so on
+   * today's data the action resolves nothing and refuses with a sentence
+   * saying exactly that. Honest refusal until a PR intake writes real rows;
+   * the moment the register reads `purchase_requests`, these buttons record
+   * real decisions with no further change here.
    *
-   * TODO(decision) — **the permission**. The action declares
-   * `permissions: ['purchase.approve']` and `lib/rbac` has no rule for it:
-   * `canApproveDiscount`, `canOverrideCreditLimit`, `canVoidInvoice` and
-   * `canRecordPayment` each carry a different authority, and mapping one of
-   * them onto purchase approval here would be inventing the rule. `core.ts`
-   * denies an unknown capability by name, so the dispatch already fails closed;
-   * the buttons are deliberately not gated on a rule that does not exist yet.
-   * Which roles may approve a purchase request — and above what value a second
-   * approval is required — is still unruled.
+   * The permission is mapped and finance-tier: `purchase.approve` →
+   * `canApprovePurchase` (Owner, Admin, Manager, Coordinator, Accounts),
+   * mirroring `purchase_requests_approval_rank` since 0064 went live on
+   * 23 Aug 2026 — the dispatcher refuses Driver/Technician/Warehouse before
+   * anything observable, and the database refuses them independently. The
+   * §4.29 breadth this comment used to document is closed.
    */
   const handleStatusChange = (id: string, newStatus: PRDecision) => {
     const verb = newStatus.toLowerCase()
@@ -155,62 +280,49 @@ export default function PurchaseRequests() {
       )
       return
     }
+    const pr = requestsList.find((r) => r.id === id)
+    if (!pr) {
+      setActionError(`Not ${verb} — this request is no longer on the list.`)
+      return
+    }
+    const keyId = `${id}:${newStatus}`
+    const clientUuid = decisionKeys.current.get(keyId) ?? newClientUuid()
+    decisionKeys.current.set(keyId, clientUuid)
     setActionError(null)
     void import('../../actions/inventory/approvePurchaseRequest')
-      .then((m) => m.approvePurchaseRequest({ prId: id, status: newStatus }, ctx))
-      .then(() => {
-        setRequestsList((prev) => prev.map((pr) => (pr.id === id ? { ...pr, status: newStatus } : pr)))
+      .then((m) => m.approvePurchaseRequest({ prNo: pr.prNo, decision: newStatus, clientUuid }, ctx))
+      .then((res) => {
+        decisionKeys.current.delete(keyId)
+        setRequestsList((prev) => prev.map((r) => (r.id === id ? { ...r, status: res.status } : r)))
+        /* The optimistic line above is what the operator sees immediately; this
+           is what makes it true. Without it the row keeps a status this screen
+           decided rather than one Postgres confirmed. */
+        requests.refetch()
       })
       .catch((err: unknown) => {
-        console.error('purchase request decision failed:', err)
+        captureError(err, { where: 'PurchaseRequests.decide', verb })
         setActionError(`Not ${verb} — ${err instanceof Error ? err.message : String(err)}`)
       })
   }
 
-  const PRIORITY_COLORS: Record<PRPriority, { bg: string; text: string }> = {
-    High: { bg: 'var(--st-out-bg, rgba(239, 68, 68, 0.1))', text: 'var(--danger-text)' },
-    Medium: { bg: 'var(--st-progress-bg)', text: 'var(--progress-text)' },
-    Low: { bg: 'var(--st-in-bg)', text: 'var(--success-text)' },
-  }
-
-  const STATUS_COLORS: Record<PRStatus, { bg: string; text: string }> = {
-    Draft: { bg: 'var(--hover)', text: 'var(--text2)' },
-    Submitted: { bg: 'var(--st-progress-bg)', text: 'var(--progress-text)' },
-    Approved: { bg: 'var(--st-in-bg, rgba(16, 185, 129, 0.15))', text: 'var(--success-text)' },
-    Ordered: { bg: 'var(--st-out-bg)', text: 'var(--orange-text)' },
-    Received: { bg: 'var(--st-in-bg)', text: 'var(--success-text)' },
-    Rejected: { bg: 'var(--st-out-bg, rgba(239, 68, 68, 0.15))', text: 'var(--danger-text)' },
-    Cancelled: { bg: 'var(--hover)', text: 'var(--muted)' },
-  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 60 }}>
+    <PageShell width="full">
+      <div className="inventory-v2">
       {/* Header & Metrics */}
       <PageHeader
         title="Purchase Requests"
         description="Data-driven equipment acquisition workflows based on turnaways and sub-rental evidence."
         actions={
-          /*
-           * Both of these had no `onClick`, no destination and nothing behind
-           * them — a primary button with a plus icon that did nothing when
-           * pressed. Kept and stated as unavailable, in the same
-           * `Unavailable`-with-a-reason idiom `inventory/Warehouses.tsx` uses
-           * for Add Warehouse / Print Labels / Refresh, rather than removed:
-           * the reason is the useful part (there is no PR intake route in
-           * `App.tsx`, and the status tabs below are the filtering this screen
-           * actually has), and a silently missing control teaches nothing.
-           */
-          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
             <Unavailable reason="Filter is not built — the status tabs below are the only filter on this screen.">
               <Button variant="secondary" icon={<Icon name="file" size={14} />} disabled>
                 Filter
               </Button>
             </Unavailable>
-            <Unavailable reason="New Draft PR is not built — there is no purchase-request intake screen or route in this release, and no action that raises one.">
-              <Button variant="primary" icon={<Icon name="plus" size={14} />} disabled>
-                New Draft PR
-              </Button>
-            </Unavailable>
+            <Button variant="primary" icon={<Icon name="plus" size={14} />} onClick={() => setIsCreatePrOpen(true)}>
+              New Draft PR
+            </Button>
           </div>
         }
       />
@@ -220,60 +332,57 @@ export default function PurchaseRequests() {
           one whose sub-line alone carries money keeps its count and loses the
           sub-line (Pending Approval stays "2", without "NPR 845,000 total").
           The grid is auto-fit, so the row closes up rather than leaving a hole. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-        {PURCHASE_REQUEST_KPIS.filter((kpi) => money || !isMoneyText(kpi.value)).map((kpi) => (
-          <div key={kpi.label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+        {kpis.filter((kpi) => money || !isMoneyText(kpi.value)).map((kpi) => (
+          <div key={kpi.label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-card, 12px)', padding: '16px 18px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <span
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 'var(--r-xs)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  background: 'var(--hover)',
-                  color: 'var(--nav-active-accent)',
-                }}
+                className="inventory-thumb-sm"
+                style={{ display: 'inline-grid', placeItems: 'center' }}
               >
                 <Icon name={kpi.icon} size={15} />
               </span>
               <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{kpi.label}</span>
             </div>
-            <div className="figure" style={{ fontSize: '1.45rem', fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-sm)' }}>
+            <div className="figure" style={{ fontSize: '1.65rem', fontWeight: 700, color: 'var(--text)', marginTop: 8 }}>
               {kpi.value}
             </div>
             {(money || !isMoneyText(kpi.change)) && (
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{kpi.change}</div>
+              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 4 }}>{kpi.change}</div>
             )}
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)' }}>
+      <div className="rsp-chip-scroll inventory-chip-track">
         {(['All', 'Draft', 'Submitted', 'Approved', 'Ordered', 'Received'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 'var(--r-xs)',
-              background: activeTab === t ? 'var(--hover)' : 'transparent',
-              color: activeTab === t ? 'var(--text)' : 'var(--text2)',
-              border: `1px solid ${activeTab === t ? 'var(--nav-active-accent)' : 'transparent'}`,
-              fontWeight: activeTab === t ? 700 : 500,
-              fontSize: 'var(--t-meta)',
-              cursor: 'pointer',
-            }}
+            className={`inventory-filter-chip ${activeTab === t ? 'is-active' : ''}`}
           >
             {t}
+            <span className="figure" style={{ color: activeTab === t ? 'var(--nav-active-accent)' : 'var(--muted)', fontWeight: 600 }}>
+              {t === 'All' ? requestsList.length : requestsList.filter((r) => r.status === t).length}
+            </span>
           </button>
         ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: activePR ? '1fr 420px' : '1fr', gap: 'var(--sp-lg)', alignItems: 'start' }}>
         {/* Table View */}
-        <Card title={`${activeTab} Purchase Requests (${filteredPRs.length})`}>
+        <Card title={`${activeTab} Purchase Requests (${filteredPRs.length})`} bodyStyle={{ padding: 0 }}>
+          <PageBody
+            loading={requests.loading}
+            error={requests.error}
+            onRetry={requests.refetch}
+            hasRows={requests.rows.length > 0}
+            empty={requests.isEmpty}
+            noun="purchase requests"
+            emptyTitle="No purchase requests yet"
+            emptyMessage="Nothing has been requested. Raise one and it appears here."
+          >
           {filteredPRs.length === 0 ? (
             <EmptyState
               icon={<Icon name="receipt" size={22} />}
@@ -282,20 +391,20 @@ export default function PurchaseRequests() {
               {...(activeTab !== 'All' ? { actionLabel: 'Show all', onAction: () => setActiveTab('All') } : {})}
             />
           ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
+          <DataTableShell ariaLabel="Purchase requests directory" style={{ borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
+            <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
-                  <th style={{ padding: '8px' }}>PR Number</th>
-                  <th style={{ padding: '8px' }}>Equipment Item</th>
-                  <th style={{ padding: '8px' }}>Qty</th>
-                  <th style={{ padding: '8px' }}>Priority</th>
+                <tr style={{ background: 'var(--th-bg)' }}>
+                  <th style={{ padding: '10px 12px' }}>PR Number</th>
+                  <th style={{ padding: '10px 12px' }}>Equipment Item</th>
+                  <th style={{ padding: '10px 12px' }}>Qty</th>
+                  <th style={{ padding: '10px 12px' }}>Priority</th>
                   {/* Law 6 — the column is nothing but money, so it is dropped
                       entirely for a money-blind session rather than left as an
                       empty or masked column. */}
-                  {money && <th style={{ padding: '8px' }}>Total Cost (Est)</th>}
-                  <th style={{ padding: '8px' }}>Status</th>
-                  <th style={{ padding: '8px' }}>Requested By</th>
+                  {money && <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total Cost (Est)</th>}
+                  <th style={{ padding: '10px 12px' }}>Status</th>
+                  <th style={{ padding: '10px 12px' }}>Requested By</th>
                 </tr>
               </thead>
               <tbody>
@@ -305,71 +414,72 @@ export default function PurchaseRequests() {
                     <tr
                       key={pr.id}
                       onClick={() => selectPr(pr.id)}
-                      style={{
-                        borderBottom: '1px solid var(--border)',
-                        background: isSel ? 'var(--hover)' : 'transparent',
-                        cursor: 'pointer',
-                        transition: 'background 0.1s ease',
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          selectPr(pr.id)
+                        }
                       }}
+                      tabIndex={0}
+                      role="row"
+                      aria-selected={isSel}
+                      aria-label={`Purchase request ${pr.prNo} for ${pr.fleetItemName}`}
+                      className={`inventory-parent-row ${isSel ? 'is-selected' : ''}`}
                     >
-                      <td style={{ padding: '10px 8px' }}>
-                        <span className="identifier" style={{ color: 'var(--nav-active-accent)', fontWeight: 600 }}>
+                      <td style={{ padding: '12px' }}>
+                        <span className="inventory-asset-code identifier">
                           {pr.prNo}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 8px' }}>
+                      <td style={{ padding: '12px' }}>
                         <div style={{ fontWeight: 600, color: 'var(--text)' }}>{pr.fleetItemName}</div>
-                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>
                           {pr.reason}
                         </div>
                       </td>
-                      <td style={{ padding: '10px 8px', fontWeight: 600 }}>{pr.requestedQty}</td>
-                      <td style={{ padding: '10px 8px' }}>
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            background: PRIORITY_COLORS[pr.priority].bg,
-                            color: PRIORITY_COLORS[pr.priority].text,
-                            fontSize: 'var(--t-th)',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {pr.priority}
-                        </span>
+                      <td style={{ padding: '12px', fontWeight: 600 }} className="figure">{pr.requestedQty}</td>
+                      <td style={{ padding: '12px' }}>
+                        {/* §8 step 2 — <Badge> is the one thing that paints a
+                            status. The hand-built span here carried radius 4,
+                            weight 700 and sentence case against §4's block
+                            anatomy, and picked its own ink; see PRIORITY_TONE. */}
+                        {/* Unscored is a real state, not a missing render: §6's
+                            formula needs refused-booking and sub-rental evidence
+                            that no table holds, so a live request has no score.
+                            Saying so beats painting every one of them `Low`. */}
+                        {pr.priority === null ? (
+                          <span
+                            title={/* Not scored — §6 needs refused-booking and sub-rental evidence, which nothing in this build records. */ "Not scored yet."}
+                            style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
+                          >
+                            Not scored
+                          </span>
+                        ) : (
+                          <Badge tone={PRIORITY_TONE[pr.priority]} label={pr.priority} size="sm" />
+                        )}
                       </td>
                       {money && (
-                        <td style={{ padding: '10px 8px' }}>
-                          <span className="figure" style={{ fontWeight: 600 }}>
+                        <td style={{ padding: '12px', textAlign: 'right' }}>
+                          <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>
                             {formatMoney(pr.totalEstimatedCost)}
                           </span>
                         </td>
                       )}
-                      <td style={{ padding: '10px 8px' }}>
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            background: STATUS_COLORS[pr.status].bg,
-                            color: STATUS_COLORS[pr.status].text,
-                            fontSize: 'var(--t-th)',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {pr.status}
-                        </span>
+                      <td style={{ padding: '12px' }}>
+                        <Badge tone={STATUS_TONE[pr.status]} label={pr.status} size="sm" />
                       </td>
-                      <td style={{ padding: '10px 8px' }}>
-                        <div style={{ color: 'var(--text2)' }}>{pr.requestedBy.split(' ')[0]}</div>
-                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{pr.dateCreatedAD}</div>
+                      <td style={{ padding: '12px' }}>
+                        <div style={{ color: 'var(--text2)', fontWeight: 500 }}>{pr.requestedBy.split(' ')[0]}</div>
+                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }} className="figure">{formatAd(new Date(pr.dateCreatedAD))}</div>
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
           )}
+          </PageBody>
         </Card>
 
         {/* PR Detail Flyout / Side Panel */}
@@ -378,8 +488,14 @@ export default function PurchaseRequests() {
             <Card
               title={`PR Overview — ${activePR.prNo}`}
               action={
-                <button onClick={() => selectPr(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}>
+                <button
+                  type="button"
+                  onClick={() => selectPr(null)}
+                  aria-label={`Close purchase request ${activePR.prNo}`}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', position: 'relative' }}
+                >
                   <Icon name="close" size={14} />
+                  <TouchTarget />
                 </button>
               }
             >
@@ -415,9 +531,15 @@ export default function PurchaseRequests() {
                   </div>
                   <div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Priority Score</div>
-                    <div className="figure" style={{ fontWeight: 700, color: PRIORITY_COLORS[activePR.priority].text }}>
-                      {activePR.priorityScore} ({activePR.priority})
-                    </div>
+                    {activePR.priority === null ? (
+                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        Not scored — no refused-booking or sub-rental evidence is recorded
+                      </div>
+                    ) : (
+                      <div className="figure" style={{ fontWeight: 700, color: PRIORITY_INK[activePR.priority] }}>
+                        {activePR.priorityScore} ({activePR.priority})
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -446,12 +568,43 @@ export default function PurchaseRequests() {
 
             <Card title="Acquisition Evidence (Data Room)">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+                {/*
+                  Stated once, above the two tables, because otherwise this panel
+                  prints `0 Events` and `Rs 0` — which reads as "we looked and
+                  there were none" when the truth is that nothing records it.
+                  §6's priority formula wants refused bookings, sub-rental events
+                  and sub-rental cost; no table or column in this build holds any
+                  of the three, which is also why Priority reads `Not scored`.
+                  A confident zero is the same defect as a confident `Available`.
+                */}
+                {activePR.priority === null && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 'var(--sp-sm)',
+                      alignItems: 'flex-start',
+                      padding: 'var(--sp-md)',
+                      borderRadius: 'var(--r-xs)',
+                      background: 'var(--card2)',
+                      border: '1px solid var(--border)',
+                      fontSize: 'var(--t-th)',
+                      color: 'var(--text2)',
+                    }}
+                  >
+                    <Icon name="info" size={14} />
+                    <span>
+                      No refused booking or sub-rental is recorded anywhere in this build, so the
+                      counts below are <strong>not measured</strong> — they are not a finding of
+                      zero. This is why the request is not scored.
+                    </span>
+                  </div>
+                )}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Refused Bookings (Losses)</div>
                     <div className="figure" style={{ color: 'var(--danger-text)', fontWeight: 700 }}>{activePR.refusedCount} Events</div>
                   </div>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+                  <DataTableShell ariaLabel="Refused bookings due to shortage" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-th)' }}>
                       <thead style={{ background: 'var(--hover)' }}>
                         <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
@@ -474,7 +627,7 @@ export default function PurchaseRequests() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 </div>
 
                 <div>
@@ -494,7 +647,7 @@ export default function PurchaseRequests() {
                         : `${activePR.subRentals.length} ${activePR.subRentals.length === 1 ? 'Event' : 'Events'}`}
                     </div>
                   </div>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+                  <DataTableShell ariaLabel="Sub-rentals used" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-th)' }}>
                       <thead style={{ background: 'var(--hover)' }}>
                         <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
@@ -515,7 +668,7 @@ export default function PurchaseRequests() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 </div>
               </div>
             </Card>
@@ -551,6 +704,15 @@ export default function PurchaseRequests() {
           </div>
         )}
       </div>
-    </div>
+
+      <CreatePurchaseRequestModal
+        isOpen={isCreatePrOpen}
+        onClose={() => setIsCreatePrOpen(false)}
+        onSuccess={(newPr: PurchaseRequest) => {
+          setRequestsList((prev) => [newPr, ...prev])
+        }}
+      />
+      </div>
+    </PageShell>
   )
 }

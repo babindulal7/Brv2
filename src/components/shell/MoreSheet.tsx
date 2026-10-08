@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import { moreNav } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
+import { usePwaInstall } from '../../lib/usePwaInstall'
+import { toggleScanner } from './ScannerFab'
 
 // Matches --dur in theme.css (the app's generic transition-duration token),
 // the same constant and the same reason as `components/ui/Modal.tsx`: the
@@ -42,7 +44,9 @@ const FOCUSABLE =
  */
 export default function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth()
+  const { canInstall, isInstalled, hasPrompt, isIos, promptInstall } = usePwaInstall()
   const items = moreNav(user?.role)
+  const [iosTip, setIosTip] = useState(false)
 
   const sheetRef = useRef<HTMLDivElement>(null)
   /* Where focus came from, so closing puts it back on the More button rather
@@ -90,13 +94,14 @@ export default function MoreSheet({ open, onClose }: { open: boolean; onClose: (
       }
     }
 
+    const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     window.addEventListener('keydown', onKeyDown)
     /* After the mount, so the row exists to receive it. */
     const focusTimer = window.setTimeout(() => focusables()[0]?.focus(), 0)
 
     return () => {
-      document.body.style.overflow = ''
+      document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
       window.clearTimeout(focusTimer)
       if (opener.current instanceof HTMLElement) opener.current.focus()
@@ -179,6 +184,7 @@ export default function MoreSheet({ open, onClose }: { open: boolean; onClose: (
         </div>
 
         <nav aria-label="More" style={{ flex: 1, overflowY: 'auto', padding: '6px 8px 12px' }}>
+          <button type="button" data-scanner onClick={() => { onClose(); toggleScanner() }} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: ROW_H, width: '100%', padding: '0 10px', border: 'none', borderRadius: 'var(--r-sm)', background: 'transparent', color: 'var(--text)', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}><Icon name="search" size={20} /><span>Scan equipment</span></button>
           {items.map((s) => (
             <Link
               key={s.to}
@@ -204,6 +210,91 @@ export default function MoreSheet({ open, onClose }: { open: boolean; onClose: (
               <Icon name="chevron_right" size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
             </Link>
           ))}
+
+          {canInstall && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (isIos && !hasPrompt) {
+                    setIosTip((prev) => !prev)
+                  } else {
+                    const outcome = await promptInstall()
+                    if (outcome === 'accepted') {
+                      onClose()
+                    }
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  width: '100%',
+                  minHeight: ROW_H,
+                  padding: '0 10px',
+                  borderRadius: 'var(--r-sm)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--card2)',
+                  color: 'var(--text)',
+                  fontSize: 'var(--t-ui)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <Icon name="download" size={20} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Install Babin Rentals OS
+                </span>
+                <span
+                  style={{
+                    fontSize: 'var(--t-th)',
+                    padding: '2px 8px',
+                    borderRadius: 999, // RULING 2026-09-23: --r-full never existed; a pill is 999px here, --r-badge is reserved for numeric count badges
+                    background: 'var(--primary)',
+                    color: '#fff',
+                    fontWeight: 600,
+                  }}
+                >
+                  PWA
+                </span>
+              </button>
+              {isIos && !hasPrompt && iosTip && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 'var(--t-meta)',
+                    color: 'var(--text2)',
+                    background: 'var(--card)',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  On iOS Safari: tap the Share button <span style={{ fontWeight: 600 }}>⎋</span> and select{' '}
+                  <span style={{ fontWeight: 600 }}>&quot;Add to Home Screen&quot;</span>.
+                </div>
+              )}
+            </div>
+          )}
+
+          {isInstalled && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: '6px 10px',
+                borderTop: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 'var(--t-meta)',
+                color: 'var(--muted)',
+              }}
+            >
+              <Icon name="check" size={16} style={{ color: 'var(--success-text, #15803d)' }} />
+              <span>Babin Rentals OS (Standalone)</span>
+            </div>
+          )}
         </nav>
       </div>
     </div>

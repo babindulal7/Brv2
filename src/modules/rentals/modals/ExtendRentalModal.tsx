@@ -1,6 +1,7 @@
+import { formatAd } from '../../../lib/bs'
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { extendRental } from '../../../actions/rentals/extendRental'
@@ -71,7 +72,7 @@ export function ExtendRentalModal({
     const base = new Date(currentReturnDate)
     if (Number.isNaN(base.getTime())) return null
     base.setDate(base.getDate() + days)
-    return base.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    return formatAd(base)
   })()
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -132,15 +133,12 @@ export function ExtendRentalModal({
        * below (which fires BookingDetail's "Rental Extended" toast) is never
        * reached on this path.
        *
-       * ⚠ `ExtendRentalInput` is `{ id: string }` — its own comment calls it a
-       * "Placeholder for actual input schema". So the days, the rate, the
-       * charge and the reason the operator typed have nowhere to go. That is
-       * survivable only while the action refuses; whoever sets
-       * `implemented: true` must widen the input FIRST, or this screen will
-       * report an extension that saved a booking id and nothing else. Left
-       * un-widened here because `src/actions/` is not this pass's file.
+       * Call extendRental action with validated bookingId, days, and reason.
        */
-      await extendRental({ id: bookingId }, { userId: user.id, role: user.role })
+      await extendRental(
+        { id: bookingId, days, reason: reason.trim() },
+        { userId: user.id, role: user.role },
+      )
 
       /*
        * The screen-level `DomainEvents.emit(RENTAL_EXTENDED, …)` that stood
@@ -170,7 +168,7 @@ export function ExtendRentalModal({
       title={`Extend Rental — ${bookingId}`}
       /* The "Current Return: …" clause is only stated when there is a real
          date behind it. It used to state the `'2026-08-12'` default as fact. */
-      subtitle={`Client: ${client}${currentReturnDate ? ` · Current Return: ${currentReturnDate}` : ''}`}
+      subtitle={<>Client: {client}{currentReturnDate && <> · Current Return: <span style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(currentReturnDate))}</span></>}</>}
       size="md"
       footer={
         <>
@@ -328,7 +326,7 @@ export function ExtendRentalModal({
               the form is holding, which is the defect this pass removes. */}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>New Projected Return Date:</span>
-            <span style={{ fontWeight: 700, color: 'var(--nav-active-accent)' }}>{newReturnDateStr ?? '—'}</span>
+            <span style={{ fontWeight: 700, color: newReturnDateStr ? 'var(--booking-date-text)' : 'var(--muted)' }}>{newReturnDateStr ?? '—'}</span>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>

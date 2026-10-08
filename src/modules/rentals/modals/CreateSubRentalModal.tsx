@@ -1,10 +1,12 @@
+import { DateField } from '../../../components/ui/DateField'
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { createSubRental } from '../../../actions/subrentals/createSubRental'
 import { useAuth } from '../../../lib/auth'
+import { formatGateError } from '../../../lib/gates'
 
 interface CreateSubRentalModalProps {
   isOpen: boolean
@@ -45,6 +47,7 @@ export function CreateSubRentalModal({
   const [itemName, setItemName] = useState('')
   const [vendorCost, setVendorCost] = useState<number>(0)
   const [clientCharge, setClientCharge] = useState<number>(0)
+  const [returnByDate, setReturnByDate] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,6 +58,10 @@ export function CreateSubRentalModal({
     if (e) e.preventDefault()
     if (!itemName.trim() || !vendor.trim()) {
       setError('Vendor and Item Name are required.')
+      return
+    }
+    if (!returnByDate) {
+      setError('Vendor return-by date is required.')
       return
     }
     if (!Number.isFinite(vendorCost) || vendorCost <= 0 || !Number.isFinite(clientCharge) || clientCharge <= 0) {
@@ -76,34 +83,17 @@ export function CreateSubRentalModal({
     setError(null)
 
     try {
-      /*
-       * The real dispatch, replacing the screen-level `DomainEvents.emit`.
-       * `createSubRental` is still a stub (`implemented` unset in
-       * `actions/subrentals/createSubRental.ts`), so `createAction` refuses it
-       * before validate/execute/events and the operator reads "CREATE_SUBRENTAL
-       * is not connected to the database yet, so nothing was saved."
-       * `onSuccess` — and therefore the "Sub-Rental Created" toast — is
-       * unreachable on that path.
-       *
-       * The emit is NOT repeated here: `createAction` emits `SUBRENTAL_CREATED`
-       * itself after `execute` returns. Events follow the write; a screen-level
-       * emit would double-count the moment the action lands.
-       *
-       * `vendorId` is deliberately not sent. `CreateSubRentalInput.vendorId` is
-       * an id, this field is a typed vendor NAME, and there is no vendor master
-       * in this build to resolve one against — passing the name as an id would
-       * be exactly the fabricated-identity defect this pass removes. Omitted,
-       * not guessed.
-       *
-       * ⚠ `CreateSubRentalInput` has no client-charge field, so the charge and
-       * the margin below reach nothing — the figure that is supposed to land on
-       * the client's invoice stops at this screen. Harmless while the action
-       * refuses; whoever sets `implemented: true` must widen the input FIRST,
-       * or this modal will report a sub-rental whose client charge was never
-       * billed. Left un-widened because `src/actions/` is not this pass's file.
-       */
+      /* The action writes the booking line and emits SUBRENTAL_CREATED only after
+         persistence. Vendor text is not passed as a supplier UUID. */
       await createSubRental(
-        { itemDescription: itemName.trim(), costPaisa: rupees(vendorCost) },
+        {
+          bookingId,
+          vendorName: vendor.trim(),
+          itemDescription: itemName.trim(),
+          returnByDate,
+          costPaisa: rupees(vendorCost),
+          chargePaisa: rupees(clientCharge),
+        },
         { userId: user.id, role: user.role },
       )
 
@@ -116,7 +106,7 @@ export function CreateSubRentalModal({
       })
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create sub-rental')
+      setError(formatGateError(err))
     } finally {
       setIsSubmitting(false)
     }
@@ -127,7 +117,7 @@ export function CreateSubRentalModal({
       isOpen={isOpen}
       onClose={onClose}
       title={`Create External Sub-Rental — ${bookingId}`}
-      subtitle="Source unstocked gear from external rental partners."
+      subtitle="Source unstocked equipment from external rental partners."
       size="md"
       footer={
         <>
@@ -215,15 +205,24 @@ export function CreateSubRentalModal({
           </div>
         </div>
 
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label htmlFor="subrental-return-by" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            Vendor Return-By Date <span style={{ color: 'var(--danger)' }}>*</span>
+          </label>
+          <DateField id="subrental-return-by" bookingDate required ariaLabel="Vendor Return-By Date" value={returnByDate} onChange={setReturnByDate} style={{ minHeight: 44 }} />
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            <label htmlFor="sub-rental-vendor-cost" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
               Vendor Sub-Rental Cost (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             {/* 0 renders as an empty box, never a typed-looking "0": the state
                 must be a number for the guards and `rupees()`, but the operator
                 has to see a field they are required to fill. */}
             <input
+              id="sub-rental-vendor-cost"
+              aria-label="Vendor Sub-Rental Cost in Rupees"
               type="number"
               min={1}
               value={vendorCost === 0 ? '' : vendorCost}

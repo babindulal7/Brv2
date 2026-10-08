@@ -2,6 +2,7 @@ import type { Kpi } from '../components/ui/Page'
 import type { IconName } from '../components/ui/Icon'
 import type { Slice } from '../components/ui/Charts'
 import type { StatusKey } from '../lib/status'
+import { grouped } from '../lib/money'
 
 /**
  * Documents seed data.
@@ -43,14 +44,14 @@ export interface CategoryMeta {
 
 /** The render's ninth entry is `Recycle Bin`; see `ARCHIVED_NOT_RECYCLE_BIN`. */
 export const CATEGORIES: CategoryMeta[] = [
-  { key: 'Rental', tab: 'Rental', rail: 'Rental Documents', icon: 'file', count: 542 },
-  { key: 'Finance', tab: 'Finance', rail: 'Finance Documents', icon: 'receipt', count: 312, finance: true },
-  { key: 'Operations', tab: 'Operations', rail: 'Operations Documents', icon: 'queues', count: 126 },
-  { key: 'Maintenance', tab: 'Maintenance', rail: 'Maintenance Documents', icon: 'tool', count: 88 },
-  { key: 'Cases', tab: 'Cases', rail: 'Case Documents', icon: 'alert_triangle', count: 54 },
-  { key: 'Inventory', tab: 'Inventory', rail: 'Inventory Documents', icon: 'box', count: 72 },
-  { key: 'Templates', tab: 'Templates', rail: 'Templates', icon: 'checklist', count: 36 },
-  { key: 'Archived', tab: 'Archived', rail: 'Archived', icon: 'folder', count: 18 },
+  { key: 'Rental', tab: 'Rental', rail: 'Rental Documents', icon: 'file', count: 4 },
+  { key: 'Finance', tab: 'Finance', rail: 'Finance Documents', icon: 'receipt', count: 5, finance: true },
+  { key: 'Operations', tab: 'Operations', rail: 'Operations Documents', icon: 'queues', count: 6 },
+  { key: 'Maintenance', tab: 'Maintenance', rail: 'Maintenance Documents', icon: 'tool', count: 3 },
+  { key: 'Cases', tab: 'Cases', rail: 'Case Documents', icon: 'alert_triangle', count: 3 },
+  { key: 'Inventory', tab: 'Inventory', rail: 'Inventory Documents', icon: 'box', count: 2 },
+  { key: 'Templates', tab: 'Templates', rail: 'Templates', icon: 'checklist', count: 2 },
+  { key: 'Archived', tab: 'Archived', rail: 'Archived', icon: 'folder', count: 2 },
 ]
 
 /**
@@ -265,7 +266,7 @@ export type SortKey = (typeof SORTS)[number]
  * The render's footer reads `10 / page`. §11 asks for 25. The render's density
  * is what this pass is matching, so 10 leads and 25 is one click away.
  */
-export const PER_PAGE = [10, 25, 50, 100]
+export const PER_PAGE = [25, 50, 100]
 
 /* ── role filtering — §14 ───────────────────────────────────────────────── */
 
@@ -280,12 +281,19 @@ export function documentsFor(money: boolean): DocRow[] {
   return money ? DOCUMENTS : DOCUMENTS.filter((d) => !d.finance)
 }
 
-export function categoriesFor(money: boolean): CategoryMeta[] {
-  return money ? CATEGORIES : CATEGORIES.filter((c) => !c.finance)
+export function categoriesFor(money: boolean, rows?: DocRow[]): CategoryMeta[] {
+  const base = money ? CATEGORIES : CATEGORIES.filter((c) => !c.finance)
+  const docList = rows ?? documentsFor(money)
+  return base.map((c) => ({
+    ...c,
+    count: c.key === 'Archived'
+      ? docList.filter((d) => d.archived).length
+      : docList.filter((d) => !d.archived && d.category === c.key).length,
+  }))
 }
 
-export function totalDocuments(money: boolean): number {
-  return categoriesFor(money).reduce((a, c) => a + c.count, 0)
+export function totalDocuments(money: boolean, rows?: DocRow[]): number {
+  return categoriesFor(money, rows).reduce((a, c) => a + c.count, 0)
 }
 
 /* ── donut ─────────────────────────────────────────────────────────────── */
@@ -296,7 +304,7 @@ export function summarySlices(cats: CategoryMeta[]): Slice[] {
   return cats.map((c) => ({
     label: c.tab,
     value: c.count,
-    display: c.count.toLocaleString('en-IN'),
+    display: grouped(c.count),
     percent: `${((c.count / total) * 100).toFixed(1)}%`,
   }))
 }
@@ -312,11 +320,16 @@ export function summarySlices(cats: CategoryMeta[]): Slice[] {
  * outright, so it takes the neutral tile; the other four keep the render's
  * colours, which are all inside the five-colour law already.
  */
-export function kpisFor(money: boolean): Kpi[] {
+export function kpisFor(money: boolean, rows?: DocRow[]): Kpi[] {
+  const docList = rows ?? documentsFor(money)
+  const pendingSig = docList.filter((d) => d.status === 'Pending Signature').length
+  const expiring = docList.filter((d) => d.status === 'Pending Approval' || d.status === 'Draft').length
+  const missing = docList.filter((d) => d.status === 'Draft').length
+
   return [
     {
       label: 'Total Documents',
-      value: totalDocuments(money).toLocaleString('en-IN'),
+      value: grouped(totalDocuments(money, rows)),
       icon: 'file',
       accent: 'neutral',
       // §6 — Total counts everything not deleted, **including archived**, and says so.
@@ -324,15 +337,15 @@ export function kpisFor(money: boolean): Kpi[] {
     },
     {
       label: 'This Month Created',
-      value: '132',
+      value: String(docList.length),
       icon: 'calendar_stats',
       accent: 'primary',
       delta: { direction: 'up', text: '18%', good: true },
       note: 'vs last month',
     },
-    { label: 'Pending Signatures', value: '18', icon: 'crew', accent: 'success', note: 'Require client or staff signature' },
-    { label: 'Expiring / Due Soon', value: '24', icon: 'timer', accent: 'progress', note: 'Within the next 7 days' },
-    { label: 'Missing Documents', value: '16', icon: 'alert_triangle', accent: 'danger', note: 'Across active rentals' },
+    { label: 'Pending Signatures', value: String(pendingSig), icon: 'crew', accent: 'success', note: 'Require client or staff signature' },
+    { label: 'Expiring / Due Soon', value: String(expiring), icon: 'timer', accent: 'progress', note: 'Within the next 7 days' },
+    { label: 'Missing Documents', value: String(missing), icon: 'alert_triangle', accent: 'danger', note: 'Across active rentals' },
   ]
 }
 

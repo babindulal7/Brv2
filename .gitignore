@@ -4,6 +4,8 @@ dist-ssr
 *.local
 .env
 .env.local
+.env.staging
+.env.production
 .env.*.local
 
 .DS_Store
@@ -24,3 +26,59 @@ supabase/.branches
 
 # scratch
 typecheck_output.txt
+coverage/
+docs/docs.zip
+
+# Per-session agent scratch space — dev-server and tunnel logs, throwaway HTML.
+# Regenerable runtime noise, not project history.
+.codex-temp/
+
+# Claude Code local config and worktrees
+.claude/
+
+# Unpacked documentation archive
+md2/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# Plugin receipt telemetry — append-only, unsigned, written into whichever
+# directory a tool happened to run in. Regenerable noise, not project history.
+receipts/
+review-receipts/
+
+# The impeccable design hook's cache — per-session edit counts and "clean"
+# acknowledgements, keyed by session id. Every concurrent session rewrites it,
+# so a tracked copy turns each commit into a snapshot of whatever OTHER sessions
+# happened to be editing at the time. Regenerable bookkeeping, not project history.
+/.impeccable/
+
+# `npm run check:lifecycle` writes this for `npm run completion` (R-29) to read
+# and for the CI job to upload. It is a measurement of one run, not history.
+.lifecycle-result.json
+
+# The Docker-free local database and object store — `npm run db:local` and
+# `npm run storage:local`. Postgres 18 (PGlite) on disk plus the bytes under
+# .localdb/storage/. Rebuildable from supabase/migrations in one command, and
+# it holds a copy of the seed corpus, so it is regenerable state, not history.
+.localdb/
+
+# Concurrent-session UI scratch (parse dumps, probe logs) and local packing archives
+.tmp-ui-*/
+tsc_check.txt
+/babin-rentals-os md.rar
+.backups/
+__pycache__/
+*.pyc
+
+# Agent teamwork scratch space
+.agents/teamwork/
+files.zip
+*.zip
+.opencode/
+.specify/
+
+
+
+# local data backups (contain client PII)
+backups/

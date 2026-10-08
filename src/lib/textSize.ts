@@ -15,6 +15,8 @@
  * alongside this (WCAG 1.4.4).
  */
 
+import { readLocal, writeLocal } from './safeStorage'
+
 export type TextSize = 'compact' | 'default' | 'large'
 
 export const TEXT_SIZES: Array<{ key: TextSize; label: string; scale: number; who: string }> = [
@@ -30,7 +32,9 @@ export function scaleOf(size: TextSize): number {
 }
 
 export function readTextSize(): TextSize {
-  const v = localStorage.getItem(TEXT_SIZE_KEY)
+  /* Guarded — WebKit throws SecurityError on this access under Lockdown Mode
+     or "Block All Cookies", where Chrome returns null. See `safeStorage.ts`. */
+  const v = readLocal(TEXT_SIZE_KEY)
   return v === 'compact' || v === 'large' || v === 'default' ? v : 'default'
 }
 
@@ -41,5 +45,6 @@ export function readTextSize(): TextSize {
  */
 export function applyTextSize(size: TextSize): void {
   document.documentElement.style.setProperty('--ui-scale', String(scaleOf(size)))
-  localStorage.setItem(TEXT_SIZE_KEY, size)
+  /* The scale is applied above regardless; only remembering it can fail. */
+  writeLocal(TEXT_SIZE_KEY, size)
 }

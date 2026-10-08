@@ -1,92 +1,63 @@
-import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import Icon from '../../components/ui/Icon'
+import { formatAd } from '../../lib/bs'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Button } from '../../components/ui/Page'
 import type { IconName } from '../../components/ui/Icon'
-import { Unavailable } from '../../components/ui/Unavailable'
-import { JOBS, JOB_ORDER, type BookingStatus, type JobName } from '../../lib/workflow'
-import { stepDotState, stepWriteGate, type StepDotState } from '../../data/operationsShell'
-import { jobRoute } from '../../data/operations'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { Modal } from '../../components/ui/Modal'
+import { LoadingSkeleton } from '../../components/ui/StateViews'
+import { JOB_ORDER, BOOKING_STATUS, JOBS, type BookingStatus, type JobName } from '../../lib/workflow'
+import { stepWriteGate, stepDotState } from '../../lib/operationsShell'
+import { fetchFloorBooking, type FloorBooking } from '../../lib/queries/bookings'
+import { DomainEvents, EVENT_TYPES } from '../../events/eventBus'
 
-/**
- * **Operations launcher.**
- *
- * ⭐ RULED 12 Aug 2026 (`WIREFRAME_RULINGS_2026-08-12.md` §3, from spec 03
- * §3.2–§3.5): *operations are ROUTES, not a modal.* `/rentals/:br/packing`,
- * `…/handover`, `…/return`, `…/reset` are canonical — which is what
- * `App.tsx`'s own route-block comment has said since it was written ("§4.3 —
- * operations are full-screen routes, never modals") while this file did the
- * opposite.
- *
- * So this is no longer a container that mounts four workspace pages inside a
- * `role="dialog"`. It is a **launcher**: four rows that navigate to the four
- * routes, and nothing else. What it keeps is the part that was genuinely its
- * own — the step gating ported in on 11 Aug (`stepWriteGate` /
- * `stepDotState`), so a step that is not open yet is visible-but-unclickable
- * with the reason attached, rather than hidden or silently dead.
- *
- * ## What went with the modal
- *
- * - The `embedded` prop on `PackingWorkspace` / `HandoverWorkspace` /
- *   `ResetWorkspace`. It existed only so a page could suppress its own header
- *   when this shell drew one above it. There is no shell above them any more,
- *   so the prop is gone from all three rather than left as a parameter no
- *   caller passes.
- * - `ResetWorkspace`'s `readOnly` prop, for the same reason. The Closed-booking
- *   case it served is not lost: `ResetWorkspace` now asks `stepWriteGate`
- *   itself, which is the same canonical answer this file used to pass down.
- * - The `<main>` bounds measurement, the scrim, and the body scroll lock —
- *   all of which existed to position a full-height panel over the content
- *   region.
- *
- * ## Why a dialog at all, rather than a menu on the button
- *
- * Booking Workflow §4.2 requires disabled entries to stay **visible** with
- * their reason reachable by hover, focus *and* long-press. That is the
- * `Unavailable` pattern, which needs room for a reason line per row. A native
- * menu cannot carry it. The launcher is small, centred, and closes on Escape,
- * on backdrop click and on navigation.
- *
- * No query is added here (Law 2): booking status arrives as a prop, read from
- * the query `BookingDetail` already made.
- */
+const PackingWorkspace = lazy(() => import('../rentals/PackingWorkspace'))
+const HandoverWorkspace = lazy(() => import('../rentals/HandoverWorkspace'))
+const ReturnWorkspace = lazy(() => import('../rentals/ReturnWorkspace'))
+const ResetWorkspace = lazy(() => import('../rentals/ResetWorkspace'))
 
-const STEP_LABEL: Record<JobName, string> = {
+const LABEL: Record<JobName, string> = {
   Pack: 'Packing',
   Handover: 'Handover',
   Return: 'Return & Inspection',
-  Reset: 'Reset',
+  Reset: 'Cleaning & Reset',
 }
 
+/* One icon per stage (8 Oct 2026, RULINGS-2026-10-08.md). A stage that is not
+   open yet shows a single lock instead — the label used to carry a 🔒 emoji
+   beside the lock icon, so locked stages showed two padlocks. */
 const STEP_ICON: Record<JobName, IconName> = {
-  Pack: 'box',
+  Pack: 'package',
   Handover: 'truck',
   Return: 'return_arrow',
-  Reset: 'refresh',
+  Reset: 'sparkles',
 }
 
-/**
- * Law 11 — never colour alone. Each dot state carries an icon and a word as
- * well as a tone, so the rail reads the same to a screen reader and in
- * greyscale.
- */
-const DOT_META: Record<StepDotState, { icon: IconName; label: string; tone: string }> = {
-  'not-started': { icon: 'dot', label: 'Not started', tone: 'var(--muted)' },
-  'in-progress': { icon: 'refresh', label: 'In progress', tone: 'var(--progress-text)' },
-  done: { icon: 'checklist', label: 'Done', tone: 'var(--success-text)' },
-  blocked: { icon: 'lock', label: 'Not open yet', tone: 'var(--muted)' },
+const PREV_JOB: Partial<Record<JobName, JobName>> = {
+  Handover: 'Pack',
+  Return: 'Handover',
+  Reset: 'Return',
 }
 
-/**
- * The step a booking at this status is *at*. A lookup against the existing
- * `JOBS` table, not a new rule. `Closed` has no job of its own; Reset is the
- * last one that ran, so it is the sensible landing row — and `stepWriteGate`
- * independently reports it as read-only, which is what the row shows.
- */
-function entryStepFor(status: BookingStatus): JobName {
-  const found = JOB_ORDER.find((j) => JOBS[j].runsAt === status)
-  if (found) return found
-  if (status === 'Closed') return 'Reset'
-  return 'Pack'
+const NEXT_JOB: Partial<Record<JobName, JobName>> = {
+  Pack: 'Handover',
+  Handover: 'Return',
+  Return: 'Reset',
+}
+
+const STATUS_AFTER: Record<JobName, BookingStatus> = {
+  Pack: 'Packed',
+  Handover: 'On Rent',
+  Return: 'Returned',
+  Reset: 'Returned',
+}
+
+export interface WorkspaceActions {
+  canComplete: boolean
+  dispatching: boolean
+  complete: () => void
+  isDirty: boolean
+  label?: string
+  error?: string | null
 }
 
 export interface OperationsShellProps {
@@ -94,184 +65,412 @@ export interface OperationsShellProps {
   bookingStatus: BookingStatus
   isOpen: boolean
   onClose: () => void
+  initialJob?: JobName
+  progress?: Partial<Record<JobName, { done: number; total: number }>>
 }
 
-export default function OperationsShell({ bookingNo, bookingStatus, isOpen, onClose }: OperationsShellProps) {
-  const navigate = useNavigate()
+/** Global modal chrome around the existing, backend-powered workspaces. */
+export default function OperationsShell({
+  bookingNo,
+  bookingStatus,
+  isOpen,
+  onClose,
+  initialJob = 'Pack',
+  progress,
+}: OperationsShellProps) {
+  const [job, setJob] = useState<JobName>(initialJob)
+  const [liveStatus, setLiveStatus] = useState<BookingStatus>(bookingStatus)
+  const [floor, setFloor] = useState<FloorBooking | null>(null)
+  const [actions, setActions] = useState<WorkspaceActions | null>(null)
+  const [pending, setPending] = useState<
+    | { type: 'close' }
+    | { type: 'prev'; job: JobName }
+    | { type: 'switch'; job: JobName }
+    | null
+  >(null)
+
+  const refreshFloor = useCallback(async () => {
+    try {
+      const data = await fetchFloorBooking(bookingNo)
+      if (data) {
+        setFloor(data)
+      }
+    } catch {
+      // Fallback silently if floor cannot be read (e.g. in headless unit test)
+    }
+  }, [bookingNo])
 
   useEffect(() => {
     if (!isOpen) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+    setJob(initialJob)
+    setLiveStatus(bookingStatus)
+    void refreshFloor()
+  }, [bookingNo, bookingStatus, initialJob, isOpen, refreshFloor])
+
+  useEffect(() => {
+    if (!isOpen || !actions?.isDirty) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [actions?.isDirty, isOpen])
+
+
+
+  // Universal close action (top-right X, Esc, or Stage 1 Close button)
+  const requestClose = useCallback(() => {
+    if (actions?.isDirty) {
+      setPending({ type: 'close' })
+    } else {
+      onClose()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isOpen, onClose])
+  }, [actions?.isDirty, onClose])
 
-  if (!isOpen) return null
+  // Navigation back to previous operation
+  const requestPrev = useCallback(() => {
+    const prev = PREV_JOB[job]
+    if (!prev) {
+      requestClose()
+      return
+    }
+    if (actions?.isDirty) {
+      setPending({ type: 'prev', job: prev })
+    } else {
+      setActions(null)
+      setJob(prev)
+    }
+  }, [actions?.isDirty, job, requestClose])
 
-  const entryStep = entryStepFor(bookingStatus)
+  // Switching stages via tab click
+  const requestJob = useCallback(
+    (nextJob: JobName) => {
+      if (nextJob === job) return
+      if (actions?.isDirty) {
+        setPending({ type: 'switch', job: nextJob })
+      } else {
+        setActions(null)
+        setJob(nextJob)
+      }
+    },
+    [actions?.isDirty, job],
+  )
 
-  const open = (job: JobName) => {
-    onClose()
-    navigate(jobRoute(bookingNo, job))
-  }
+  // Keyboard navigation: 1-4 jumps between unlocked stages
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const tagName = target?.tagName?.toLowerCase()
+      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable) {
+        return
+      }
+
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        const stageIndex = parseInt(e.key, 10) - 1
+        const candidate = JOB_ORDER[stageIndex]
+        if (candidate) {
+          const currentOrder = BOOKING_STATUS[liveStatus]?.order ?? 0
+          const candidateOrder = BOOKING_STATUS[JOBS[candidate].runsAt]?.order ?? 0
+          const isBlocked = currentOrder < candidateOrder
+          if (!isBlocked) {
+            e.preventDefault()
+            requestJob(candidate)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, liveStatus, requestJob])
+
+  // Progression upon successful confirmation
+  const completed = useCallback(async () => {
+    const next = NEXT_JOB[job]
+    const targetStatus = STATUS_AFTER[job]
+
+    // Emit domain event for the completed stage
+    if (job === 'Pack') {
+      void DomainEvents.emit(EVENT_TYPES.RENTAL_PACKED, { bookingNo })
+      void DomainEvents.emit(EVENT_TYPES.INVENTORY_PACKED, { bookingNo })
+    } else if (job === 'Handover') {
+      void DomainEvents.emit(EVENT_TYPES.RENTAL_HANDED_OVER, { bookingNo })
+      void DomainEvents.emit(EVENT_TYPES.RENTAL_PICKED_UP, { bookingNo })
+    } else if (job === 'Return') {
+      void DomainEvents.emit(EVENT_TYPES.RENTAL_RETURNED, { bookingNo })
+      void DomainEvents.emit(EVENT_TYPES.INVENTORY_RETURNED, { bookingNo })
+    } else if (job === 'Reset') {
+      void DomainEvents.emit(EVENT_TYPES.RENTAL_RESET_COMPLETED, { bookingNo })
+    }
+
+    // Refresh state from database
+    await refreshFloor()
+
+    setActions(null)
+    setLiveStatus(targetStatus)
+
+    if (next) {
+      setJob(next)
+    } else {
+      onClose()
+    }
+  }, [job, bookingNo, refreshFloor, onClose])
+
+  const currentGate = stepWriteGate(job, liveStatus)
+  const currentJobOrder = BOOKING_STATUS[liveStatus]?.order ?? 0
+  const jobRunsAtOrder = BOOKING_STATUS[JOBS[job].runsAt]?.order ?? 0
+  const isCurrentJobCompleted = currentJobOrder > jobRunsAtOrder
+
+  // Left and Right footer button labels
+  const leftLabel = job === 'Pack' ? 'Close' : `← ${LABEL[PREV_JOB[job]!]}`
+  const rightLabel = actions?.dispatching
+    ? 'Saving…'
+    : isCurrentJobCompleted
+      ? 'Completed ✓'
+      : job === 'Pack'
+        ? 'Confirm Packing & Next'
+        : job === 'Handover'
+          ? 'Confirm Handover & Next'
+          : job === 'Return'
+            ? 'Confirm Return & Next'
+            : 'Confirm Reset'
+
+  const workspaceProps = useMemo(
+    () => ({
+      bookingNo,
+      embedded: true,
+      onCancel: requestClose,
+      onConfirmSuccess: completed,
+      onRegisterActions: setActions,
+    }),
+    [bookingNo, completed, requestClose],
+  )
+
+  const workspace =
+    job === 'Pack' ? (
+      <PackingWorkspace key={`${bookingNo}:Pack`} {...workspaceProps} />
+    ) : job === 'Handover' ? (
+      <HandoverWorkspace key={`${bookingNo}:Handover`} {...workspaceProps} />
+    ) : job === 'Return' ? (
+      <ReturnWorkspace key={`${bookingNo}:Return`} {...workspaceProps} />
+    ) : (
+      <ResetWorkspace key={`${bookingNo}:Reset`} {...workspaceProps} />
+    )
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 70,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--sp-md)',
-      }}
-    >
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.6)' }} onClick={onClose} aria-hidden="true" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Operations — ${bookingNo}`}
-        style={{
-          position: 'relative',
-          width: '100%',
-          maxWidth: 460,
-          maxHeight: '100%',
-          overflowY: 'auto',
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--r-card)',
-          boxShadow: 'var(--shadow-modal)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-          <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-            Operations <span className="identifier" style={{ color: 'var(--muted)', fontWeight: 500 }}>· {bookingNo}</span>
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close operations"
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={requestClose}
+        size="full"
+        title={`Operations · ${bookingNo}${floor?.clientName ? ` · ${floor.clientName}` : ''}`}
+        subtitle={`${LABEL[job]} · Status: ${liveStatus}`}
+        footer={
+          <div
             style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-              width: 44,
-              height: 44,
-              borderRadius: 'var(--r-sm)',
-              display: 'grid',
-              placeItems: 'center',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
             }}
           >
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-
-        <p style={{ margin: 0, padding: '10px 16px 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-          Each step is its own full-screen workspace. Opening one leaves this booking page.
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-md)' }}>
-          {JOB_ORDER.map((job) => {
-            /*
-             * The canonical gate. `stepDotState` only reads `progress` on the
-             * branch that distinguishes not-started / in-progress / done for a
-             * step whose writes are ALLOWED — this launcher tracks no item
-             * state, so a placeholder goes in and the blocked/done answer,
-             * which does not read it, is what gets used.
-             */
-            const gate = stepWriteGate(job, bookingStatus)
-            const dot = stepDotState(job, bookingStatus, { done: 0, total: 1 })
-            const meta = DOT_META[dot]
-            const blocked = dot === 'blocked'
-            const isEntry = job === entryStep
-
-            const row = (
-              <button
-                type="button"
-                disabled={blocked}
-                onClick={() => open(job)}
-                aria-current={isEntry ? 'step' : undefined}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--sp-md)',
-                  width: '100%',
-                  minHeight: 44,
-                  padding: '10px 12px',
-                  textAlign: 'left',
-                  borderRadius: 'var(--r-btn)',
-                  border: `1px solid ${isEntry && !blocked ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                  background: isEntry && !blocked ? 'var(--nav-active-bg)' : 'var(--card2)',
-                  color: blocked ? 'var(--muted)' : 'var(--text)',
-                  fontFamily: 'inherit',
-                  fontSize: 'var(--t-ui)',
-                  fontWeight: 600,
-                  cursor: blocked ? 'not-allowed' : 'pointer',
-                  opacity: blocked ? 0.62 : 1,
-                }}
+            <div
+              style={{
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Button
+                variant="secondary"
+                onClick={requestPrev}
+                disabled={actions?.dispatching}
+                style={{ minHeight: 'var(--tap)' }}
               >
-                <Icon name={STEP_ICON[job]} size={17} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  {STEP_LABEL[job]}
-                  {!gate.allowed && gate.reason && (
-                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 500, color: 'var(--muted)', lineHeight: 1.4, marginTop: 2 }}>
-                      {gate.reason}
-                    </span>
-                  )}
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: meta.tone, fontSize: 'var(--t-meta)', fontWeight: 600, flexShrink: 0 }}>
-                  <Icon name={meta.icon} size={13} />
-                  {meta.label}
-                </span>
-              </button>
-            )
+                {leftLabel}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => actions?.complete()}
+                disabled={isCurrentJobCompleted || !actions?.canComplete || actions?.dispatching}
+                style={{ minHeight: 'var(--tap)' }}
+              >
+                {rightLabel}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <nav
+          aria-label="Operation stage"
+          style={{
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            paddingBottom: 12,
+            marginBottom: 16,
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          {JOB_ORDER.map((candidate) => {
+            const gate = stepWriteGate(candidate, liveStatus)
+            const selected = candidate === job
+            const currentOrder = BOOKING_STATUS[liveStatus]?.order ?? 0
+            const candidateOrder = BOOKING_STATUS[JOBS[candidate].runsAt]?.order ?? 0
+            const isCompleted = currentOrder > candidateOrder
+            const isBlocked = currentOrder < candidateOrder
+            const measured = progress?.[candidate]
+            const state = stepDotState(candidate, liveStatus, measured ?? { done: 0, total: 1 })
+            const stateLabel =
+              gate.allowed && !measured
+                ? 'Open'
+                : state === 'not-started'
+                  ? 'Not started'
+                  : state === 'in-progress'
+                    ? 'In progress'
+                    : state === 'done'
+                      ? 'Done'
+                      : 'Not open yet'
+
+            const countStr = measured ? ` ${measured.done}/${measured.total}` : ''
+            const displayLabel = `${LABEL[candidate]} · ${stateLabel}${countStr}`
 
             return (
-              <div key={job}>
-                {blocked ? <Unavailable reason={gate.reason ?? `${STEP_LABEL[job]} isn't open yet.`}>{row}</Unavailable> : row}
-              </div>
+              <Button
+                key={candidate}
+                size="sm"
+                variant={selected ? 'primary' : 'secondary'}
+                aria-current={selected ? 'step' : undefined}
+                disabled={isBlocked}
+                title={!gate.allowed ? gate.reason ?? undefined : undefined}
+                onClick={() => requestJob(candidate)}
+                icon={isCompleted ? 'check' : isBlocked ? 'lock' : STEP_ICON[candidate]}
+                style={{
+                  minHeight: 'var(--tap)',
+                  opacity: isBlocked ? 0.6 : 1,
+                }}
+              >
+                {displayLabel}
+              </Button>
             )
           })}
-        </div>
+        </nav>
 
-        {/*
-          Evidence is deliberately not one of the four rows — spec 03 line 4,
-          "Evidence is a viewer, not a verb". It is still reachable, from here
-          and from inside Packing and Return, because a photo review belongs
-          next to the step that took the photos.
-        */}
-        <div style={{ padding: '0 var(--sp-md) var(--sp-md)' }}>
-          <button
-            type="button"
-            onClick={() => {
-              onClose()
-              navigate(`/rentals/${bookingNo}/evidence`)
-            }}
+        {floor && (
+          <div
             style={{
-              display: 'inline-flex',
+              display: 'flex',
               alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              minHeight: 44,
-              padding: '0 12px',
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--btn-secondary-border)',
-              background: 'var(--btn-secondary-bg)',
-              color: 'var(--text)',
-              fontFamily: 'inherit',
+              gap: 'var(--sp-md)',
+              flexWrap: 'wrap',
+              padding: '8px 14px',
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--surface-2, rgba(255, 255, 255, 0.04))',
+              border: '1px solid var(--border)',
+              marginBottom: 14,
               fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              cursor: 'pointer',
+              color: 'var(--text2)',
             }}
           >
-            <Icon name="eye" size={15} />
-            Evidence — viewer, not a step
-          </button>
-        </div>
-      </div>
-    </div>
+            <div>
+              <span style={{ color: 'var(--muted)', marginRight: 4 }}>Booking:</span>
+              <strong style={{ color: 'var(--text)' }}>{bookingNo}</strong>
+            </div>
+            {floor.clientName && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Client:</span>
+                <strong style={{ color: 'var(--text)' }}>{floor.clientName}</strong>
+              </div>
+            )}
+            {floor.project && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Project:</span>
+                <strong style={{ color: 'var(--text)' }}>{floor.project}</strong>
+              </div>
+            )}
+            {floor.pickupAtAd && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Pickup:</span>
+                <span style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(floor.pickupAtAd))}</span>
+              </div>
+            )}
+            {floor.returnAtAd && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Return:</span>
+                <span style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(floor.returnAtAd))}</span>
+              </div>
+            )}
+            {floor.deliveryType && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Delivery:</span>
+                <span style={{ color: 'var(--text)', textTransform: 'capitalize' }}>{floor.deliveryType}</span>
+              </div>
+            )}
+            {floor.lines && floor.lines.length > 0 && (
+              <div style={{ marginLeft: 'auto' }}>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Lines:</span>
+                <strong style={{ color: 'var(--text)' }}>{floor.lines.length}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!currentGate.allowed && (
+          <p
+            role="status"
+            style={{
+              margin: '0 0 12px',
+              color: 'var(--muted)',
+              fontSize: 'var(--t-meta)',
+            }}
+          >
+            {currentGate.reason}
+          </p>
+        )}
+
+        <Suspense fallback={<LoadingSkeleton type="card" label={`Loading ${LABEL[job]}…`} />}>
+          {workspace}
+        </Suspense>
+      </Modal>
+
+      {/* Discard confirmation dialog */}
+      <ConfirmDialog
+        isOpen={pending !== null}
+        onClose={() => setPending(null)}
+        onConfirm={() => {
+          const choice = pending
+          setPending(null)
+          setActions(null)
+          if (choice?.type === 'switch') setJob(choice.job)
+          else if (choice?.type === 'prev') setJob(choice.job)
+          else if (choice?.type === 'close') onClose()
+        }}
+        title={
+          pending?.type === 'close'
+            ? 'Discard unsaved operations work?'
+            : 'You have unsaved changes.'
+        }
+        description={
+          pending?.type === 'close'
+            ? 'You have changes that have not been saved.'
+            : pending?.type === 'prev'
+              ? `Discard changes and go back to ${LABEL[pending.job]}?`
+              : 'Discard them and switch operations?'
+        }
+        cancelLabel={pending?.type === 'close' ? 'Keep Editing' : 'Stay Here'}
+        confirmLabel={
+          pending?.type === 'close'
+            ? 'Discard Changes'
+            : pending?.type === 'prev'
+              ? 'Discard & Go Back'
+              : 'Discard & Switch'
+        }
+        variant="danger"
+      />
+    </>
   )
 }
+

@@ -2,34 +2,52 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
+import { InfoTooltip } from '../../../components/ui/InfoTooltip'
 import { useToast } from '../../../components/ui/Toast'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
-import { formatMoney, parseMoney, rupees } from '../../../lib/money'
-import type { Paisa } from '../../../lib/money'
 import { createClient } from '../../../actions/clients/createClient'
 import type { ActionContext } from '../../../actions/core'
 import { useAuth } from '../../../lib/auth'
 import { useNetwork } from '../../../lib/network'
 import { newClientUuid } from '../../../lib/supabase'
 import {
-  CLIENTS_DATA,
   PAYMENT_TERMS_OPTIONS,
-  normalizedPhone,
   type ClientRecord,
   type ClientType,
-  type MembershipTier,
-} from '../../../data/clients'
+  type OrganisationType,
+} from '../../../lib/queries/clients'
 import { PHONE_LOCAL_RE, PHONE_REJECTION, canonicalPhone, phoneLocalDigits } from '../../../lib/phone'
+import {
+  DEFAULT_CLIENT_TYPE,
+  DEFAULT_ORGANISATION_TYPE,
+  ORGANISATION_TYPES,
+  clientRecordFrom,
+  confirmedClients,
+  createClientInputFrom,
+  findPhoneDuplicate,
+  type NewClientDraft,
+} from './newClientDraft'
 import { clientHealth } from './clientHealth'
 import { ClientHealthChip, ClientHealthReasons, TOUCH } from './ClientHealthChip'
 
 /**
  * **Add Client — New Booking spec §15-19.**
  *
- * §15: opens from a **+ New Client** control sitting beside the Client search
- * on the booking workspace, and must *not* navigate away. Today that control
- * does `navigate('/clients/new')`, which abandons a half-built booking; this
- * modal replaces that trip.
+ * §15: opens from an add-client control on the booking workspace, and must
+ * *not* navigate away. The control that once did `navigate('/clients/new')`
+ * abandoned a half-built booking; this modal replaced that trip.
+ *
+ * That control is no longer a **+ New Client** button standing beside the
+ * Client search. Babin, 4 Sep 2026 — "for costumer the eye button inside search
+ * box appears when we add costumer, before that there will be +client icon to
+ * add client" — so it now lives *inside* the field's trailing slot
+ * (`NewRental.tsx`'s `AddClientButton`), where the §11 health eye replaces it
+ * the moment a client is selected. §10's "Create New Client" row at the foot of
+ * the combobox list opens this same modal and is unchanged.
+ *
+ * Both entry points focus the combobox input before opening this modal, so the
+ * `restoreFocusTo` capture below lands on the input rather than on a control
+ * that is about to unmount.
  *
  * ## §17 — "use the existing Client database fields, do not create a separate
  * duplicate Client model"
@@ -41,12 +59,13 @@ import { ClientHealthChip, ClientHealthReasons, TOUCH } from './ClientHealthChip
  *
  * So the shared pieces are taken from where AddClient itself takes them —
  * `src/data/clients.ts` (the `ClientRecord` shape, `ClientType`,
- * `MembershipTier`, `PAYMENT_TERMS_OPTIONS`, `normalizedPhone`) and
+ * `OrganisationType`, `PAYMENT_TERMS_OPTIONS`) and
  * `src/actions/clients/createClient.ts` (the create action, permissions and
- * domain event). **No client shape is redeclared in this file.** What this
- * modal produces is a real `ClientRecord`, the same record `ClientDetail`,
- * `ClientsDirectory` and `NewRental` already read, so nothing downstream has
- * to learn a second shape.
+ * domain event), with `./newClientDraft` holding the mapping between the two
+ * (and taking `MembershipTier` and the shared `normalizedPhone` with it).
+ * **No client shape is redeclared in this file.** What this modal produces is a
+ * real `ClientRecord`, the same record `ClientDetail`, `ClientsDirectory` and
+ * `NewRental` already read, so nothing downstream has to learn a second shape.
  *
  * ## Why the dialog shell is local rather than `components/ui/Modal`
  *
@@ -65,16 +84,34 @@ import { ClientHealthChip, ClientHealthReasons, TOUCH } from './ClientHealthChip
  * Folding these back into `components/ui/Modal` is the right follow-up; it is
  * a shared-component change and deliberately out of this pass's scope.
  *
+ * ## What this dialog can and cannot save
+ *
+ * Three of the fields on the form have nowhere to go — Contact Person (a
+ * `client_contacts` row, a table `createClient` does not write), Credit Limit
+ * and Payment Terms (`0005_clients.sql`: writable only through an Approved
+ * `client_commercial_overrides` row, "no direct UPDATE path, for any role
+ * including Owner"). They were collected, validated and dropped while the
+ * confirmation reported "Credit limit Rs X" and "Payment terms" as stored
+ * facts. Law 12: the confirmation now states what was *not* saved, the form
+ * says so beside each field before it is typed into, and the `ClientRecord`
+ * handed to the booking page carries none of the three.
+ *
+ * Whether they should still be collected at all is a ruling, not a refactor —
+ * see the `TODO(decision)` on `NOT_SAVED_HERE` below. `./newClientDraft` owns
+ * what *is* saved, and has no slot for the three so they cannot drift back in.
+ *
  * ## Laws observed
  * - Law 17 — every label, prop and identifier reads "Client"; the banned
  *   synonym appears in no copy and no identifier here.
  * - Never colour alone — client health is icon + label + colour + reasons.
  * - 44px minimum touch target on every control, desktop included.
- * - Money is integer `Paisa` via `parseMoney`/`formatMoney`, never a float,
- *   never `toLocaleString`; every figure carries `className="figure"`.
+ * - Money: this dialog no longer parses or renders any. The one money field it
+ *   still shows (Credit Limit) is not saved and therefore not echoed back as a
+ *   figure; it stays gated on `useCanViewMoney` all the same (Law 6).
  * - Errors are inline, beside the field, and persistent. Toasts carry the
  *   success only. No `alert()`.
- * - AD stored in UTC (`clientSinceAd`); BS is never stored.
+ * - Law 7 — no date is stamped here at all. `clients.client_since` is the
+ *   server's `current_date`; see `clientRecordFrom`.
  */
 
 /* ── phone ───────────────────────────────────────────────────────────────
@@ -103,18 +140,31 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  * meaning depending on which control you happened to look at.
  */
 
-/* ── defaults for a freshly created record ───────────────────────────────
- *
- * Both match what `modules/clients/AddClient.tsx` already defaults to, so a
- * client created from a booking and a client created from the Clients module
- * come out identical. Neither is a new product decision made here.
- */
-const DEFAULT_MEMBERSHIP: MembershipTier = 'Creator'
-const DEFAULT_CLIENT_TYPE: ClientType = 'Organisation'
-
 const CLIENT_TYPE_OPTIONS: ReadonlyArray<{ value: ClientType; label: string; icon: IconName }> = [
   { value: 'Organisation', label: 'Organisation', icon: 'company' },
   { value: 'Individual', label: 'Individual', icon: 'person' },
+]
+
+/**
+ * ⚠ **TODO(decision) — should this dialog keep collecting the three fields it
+ * cannot save?**
+ *
+ * Dropping the inputs would be the tidier answer, but §16 lists Contact Person
+ * and Credit Limit in the field set and this file's own §18 note argues Payment
+ * Terms in, so removing them is a product ruling and not one to make here.
+ * They are kept and labelled instead — the same choice `modules/clients/AddClient.tsx`
+ * made with its `NOT_SAVED_YET` list, so the two create screens say the same
+ * thing about the same columns.
+ *
+ * The alternative ruling — give this dialog a real contact write and route
+ * credit through `client_commercial_overrides` — is a much larger change than
+ * either screen.
+ */
+const NOT_SAVED_HERE: ReadonlyArray<{ label: string; because: string }> = [
+  { label: 'Contact person', because: 'a contact is a separate record on the client, not a field on it' },
+  { label: 'Credit limit', because: 'set by an approved commercial override, never typed on a client form' },
+  { label: 'Payment terms', because: 'same approval as a credit limit' },
+  { label: 'Membership tier', because: 'held on a separate membership record' },
 ]
 
 /* ── styling — mirrors components/ui/Modal + modules/rentals/modals ──────── */
@@ -261,17 +311,20 @@ function Field({
   const labelStyle: CSSProperties = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-      {group ? (
-        <span id={`${id}-label`} style={labelStyle}>
-          {labelContent}
-        </span>
-      ) : (
-        <label htmlFor={id} style={labelStyle}>
-          {labelContent}
-        </label>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {group ? (
+          <span id={`${id}-label`} style={labelStyle}>
+            {labelContent}
+          </span>
+        ) : (
+          <label htmlFor={id} style={labelStyle}>
+            {labelContent}
+          </label>
+        )}
+        {help && <InfoTooltip content={help} />}
+      </div>
       {children}
-      {error ? (
+      {error && (
         <span
           id={`${id}-error`}
           role="alert"
@@ -287,12 +340,6 @@ function Field({
           <Icon name="error" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
           {error}
         </span>
-      ) : (
-        help && (
-          <span id={`${id}-help`} style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-            {help}
-          </span>
-        )
       )}
     </div>
   )
@@ -307,9 +354,13 @@ export interface AddClientModalProps {
   /**
    * §18 — fires the moment the client is saved, *before* the operator dismisses
    * the dialog, so the booking behind it already has the new client selected.
-   * Hands back a complete `ClientRecord`: selecting it loads client health,
-   * pricing rules (membership tier + any standing discount) and payment terms
-   * from one object, with no follow-up lookup.
+   * Hands back the `ClientRecord` the create actually wrote, so selecting it
+   * needs no follow-up lookup.
+   *
+   * (This used to promise pricing rules and payment terms "from one object".
+   * NR-17 stopped sending those fields — `0005_clients.sql` makes tier and
+   * payment terms writable only through an Approved change, not at create — so
+   * the record hands back what was stored and nothing more.)
    *
    * **Do not close the modal from this handler** — the modal shows its own
    * success confirmation and calls `onClose` when the operator continues.
@@ -323,8 +374,22 @@ export interface AddClientModalProps {
   onUseExisting?: ((client: ClientRecord) => void) | undefined
   /** Seeds the name field from whatever was typed in the client search. */
   initialName?: string | undefined
-  /** Existing clients, for duplicate detection. Defaults to the live store. */
-  clients?: ClientRecord[] | undefined
+  /**
+   * The caller's client pool, for duplicate detection.
+   *
+   * **No longer defaults to `CLIENTS_DATA`.** That default made the check read
+   * the seed array in `data/clients.ts` — demo records, none of which is a
+   * client the business has — so a real duplicate went unreported while a seed
+   * row could raise "this phone number is already on file" about a client that
+   * does not exist. Law 12.
+   *
+   * `confirmedClients()` filters whatever arrives down to rows the database
+   * confirmed (`dbId`), so passing a pool that is still seeded finds nothing
+   * rather than finding the wrong thing. A number that really is taken is still
+   * refused at save: `clients.phone` is UNIQUE and `createClient`'s
+   * `describeInsertFailure` turns `clients_phone_key` into a sentence naming it.
+   */
+  clients?: readonly ClientRecord[] | undefined
 }
 
 export function AddClientModal({
@@ -333,7 +398,7 @@ export function AddClientModal({
   onCreated,
   onUseExisting,
   initialName,
-  clients = CLIENTS_DATA,
+  clients,
 }: AddClientModalProps) {
   const { showSuccessToast } = useToast()
   const canSeeMoney = useCanViewMoney()
@@ -349,6 +414,13 @@ export function AddClientModal({
      existing `ClientRecord` field, not a new one, and without capturing it the
      last step of that chain could only ever resolve to nothing. */
   const [clientType, setClientType] = useState<ClientType>(DEFAULT_CLIENT_TYPE)
+  /* Not an extra field bolted on: CHECK `clients_org_subtype_pairing` requires
+     `org_subtype` whenever `type_parent` is Organisation and forbids it when it
+     is Individual, and `createClient.validate` refuses the pair separately. The
+     type was being collected and never sent at all — sending it without this
+     would simply move the failure from the record to the save. Same seven
+     options and same default as `modules/clients/AddClient.tsx`. */
+  const [orgType, setOrgType] = useState<OrganisationType>(DEFAULT_ORGANISATION_TYPE)
   const [name, setName] = useState('')
   const [contactPerson, setContactPerson] = useState('')
   const [phone, setPhone] = useState('')
@@ -385,7 +457,6 @@ export function AddClientModal({
 
   const localDigits = phoneLocalDigits(phone)
   const phoneWillSave = phone.trim() ? canonicalPhone(phone) : ''
-  const creditLimitPaisa: Paisa | null = creditLimit.trim() ? parseMoney(creditLimit) : null
 
   /* The name the field was seeded with from the search box. Dirtiness is
      measured against it, not against empty, so Esc immediately after opening
@@ -403,7 +474,8 @@ export function AddClientModal({
         notes.trim() ||
         creditLimit.trim() ||
         paymentTerms ||
-        clientType !== DEFAULT_CLIENT_TYPE,
+        clientType !== DEFAULT_CLIENT_TYPE ||
+        (clientType === 'Organisation' && orgType !== DEFAULT_ORGANISATION_TYPE),
     )
 
   /* `initialName` tracks the booking page's live search box, so it is read
@@ -419,6 +491,7 @@ export function AddClientModal({
     if (!isOpen) return
     const seed = initialNameRef.current?.trim() ?? ''
     setClientType(DEFAULT_CLIENT_TYPE)
+    setOrgType(DEFAULT_ORGANISATION_TYPE)
     setSeededName(seed)
     setName(seed)
     setContactPerson('')
@@ -524,12 +597,18 @@ export function AddClientModal({
   const clearError = (key: string) =>
     setErrors((prev) => (prev[key] === undefined ? prev : { ...prev, [key]: undefined }))
 
-  /** Phone match against clients already on file — a duplicate client is worse than a re-search. */
+  /**
+   * Phone match against clients already on file — a duplicate client is worse
+   * than a re-search.
+   *
+   * Searched over `confirmedClients(clients)`, never the seed array: a match
+   * has to be a client the database holds before this dialog will tell the
+   * operator one exists. See the `clients` prop.
+   */
   const duplicate = useMemo<ClientRecord | null>(() => {
     if (dismissedDuplicate || created) return null
     if (!PHONE_LOCAL_RE.test(localDigits)) return null
-    const digits = normalizedPhone(canonicalPhone(phone))
-    return clients.find((c) => !c.mergedIntoId && normalizedPhone(c.phone) === digits) ?? null
+    return findPhoneDuplicate(confirmedClients(clients), canonicalPhone(phone))
   }, [dismissedDuplicate, created, localDigits, phone, clients])
 
   /** §19 — every miss reports beside its own field, and the dialog stays open. */
@@ -550,17 +629,15 @@ export function AddClientModal({
       next.email = 'Enter a valid email address, or leave it blank.'
     }
 
-    if (creditLimit.trim()) {
-      if (creditLimitPaisa === null) {
-        next.creditLimit = 'Enter an amount in rupees — for example 1,00,000.'
-      } else if (creditLimitPaisa < 0) {
-        next.creditLimit = 'Credit limit cannot be negative.'
-      }
-    }
+    /* Credit Limit is deliberately NOT validated. It is not sent anywhere — see
+       `NOT_SAVED_HERE` — so refusing a save over the format of a value the
+       database never sees would block a booking for nothing. The money parse
+       and the "Rs 1,00,000" echo that used to sit under the field went with it:
+       both dressed a discarded string up as a stored figure. */
 
     setErrors(next)
 
-    const firstBad = (['name', 'phone', 'email', 'creditLimit'] as const).find((k) => next[k])
+    const firstBad = (['name', 'phone', 'email'] as const).find((k) => next[k])
     if (firstBad === 'name') nameRef.current?.focus()
     else if (firstBad === 'phone') phoneRef.current?.focus()
 
@@ -613,82 +690,54 @@ export function AddClientModal({
     // Minted at the press, not per attempt: a retry of THIS save reuses it.
     if (!saveKey.current) saveKey.current = newClientUuid()
     try {
-      const savedPhone = canonicalPhone(phone)
-      const res = await createClient(
-        {
-          name: name.trim(),
-          phone: savedPhone,
-          email: email.trim(),
-          isDraft: false,
-          clientUuid: saveKey.current,
-        },
-        ctx,
-      )
-
-      const record: ClientRecord = {
-        id: res.clientId,
-        name: name.trim(),
+      /* Everything the database can take, and nothing it cannot. `clientType`,
+         the organisation subtype it requires, PAN/VAT and Notes were all being
+         gathered and then left out of this call; they are columns on `clients`
+         and `CreateClientInput` names every one of them. */
+      const draft: NewClientDraft = {
         clientType,
-        membership: DEFAULT_MEMBERSHIP,
-        phone: savedPhone,
-        email: email.trim(),
-        currentRentalsCount: 0,
-        activeBookings: [],
-        outstandingPaisa: rupees(0),
-        depositHeldPaisa: rupees(0),
-        creditLimitPaisa: creditLimitPaisa ?? rupees(0),
-        creditUsedPaisa: rupees(0),
-        lastRentalAd: '—',
-        lastRentalBs: '—',
-        address: '',
-        contactPerson: { name: contactPerson.trim(), designation: '', phone: savedPhone },
-        kycStatus: 'Not Submitted',
-        kycDocsCount: 0,
-        totalRentalsCount: 0,
-        totalSpentPaisa: rupees(0),
-        // Law: AD stored in UTC, BS rendered and never stored.
-        clientSinceAd: new Date().toISOString().slice(0, 10),
-        ...(pan.trim() ? { pan: pan.trim() } : {}),
-        ...(paymentTerms ? { paymentTerms } : {}),
-        ...(notes.trim() ? { notes: notes.trim() } : {}),
+        organisationType: orgType,
+        name,
+        phone: canonicalPhone(phone),
+        email,
+        pan,
+        notes,
       }
+      const res = await createClient(createClientInputFrom(draft, saveKey.current), ctx)
 
-      /* Phase 1 has no data layer — `CLIENTS_DATA` *is* the store every client
-         screen reads, including the booking page's own selector, which
-         resolves the selected client with `CLIENTS_DATA.find(...)`. Without
-         this the new client would be selected against a record that does not
-         exist and §18's "never have to search for it" would not hold. Replace
-         with the real insert + refetch when the query layer lands.
+      /* `record.id` is `res.clientCode`, the client CODE every other
+         `ClientRecord.id` in this app uses; `record.dbId` is `res.clientId`,
+         the uuid `createRental` writes. `./newClientDraft` owns the rest. */
+      const record: ClientRecord = clientRecordFrom(draft, res)
 
-         ⚠ THIS COMMENT WAS STALE and is corrected here, not rewritten from
-         guesswork. It described `createClient` minting ids as
-         `issue('CL', Number(Date.now().toString().slice(-4)))` off the clock.
-         That implementation is gone: the action now takes `client_code` from
-         the database's `next_document_number('client')` allocator and returns
-         BOTH `clientId` (the `clients.id` uuid Postgres generated) and
-         `clientCode` (`CL-2026-NNNN`).
+      /* ⛔ **`CLIENTS_DATA.push(record)` stood here, and a collision guard over
+         `CLIENTS_DATA` above it.** Both are gone.
 
-         ⚠ TODO — `record.id` below is set from `res.clientId`, the uuid, while
-         every other `ClientRecord.id` in this app is the client CODE (see
-         `data/clients.ts`, and `AddClient.tsx`, which reports
-         `created.clientCode`). So a landed create would hand the booking a
-         record keyed differently from every other client on screen. Left as
-         found: nothing reaches this line today — `actions/core.ts` maps no rule
-         for the `client.create` capability, so the dispatch is denied for every
-         role before `execute` — and switching a record's identifier is a
-         change to what downstream screens match on, not a dispatch fix.
-         The collision check is kept for the same reason it existed: silently
-         skipping the push would leave the booking pointing at somebody else's
-         record. */
-      const collision = CLIENTS_DATA.find((c) => c.id === record.id)
-      if (collision && collision !== record) {
-        setSubmitError(
-          `The client was saved but its generated id (${record.id}) already belongs to “${collision.name}”. ` +
-            'Open the Clients module and confirm the record before booking against it.',
-        )
-        return
-      }
-      CLIENTS_DATA.push(record)
+         The push wrote into an array imported from `data/clients.ts` — module
+         state, shared by every screen in the process and never written back
+         anywhere. The comment defending it said "Phase 1 has no data layer,
+         `CLIENTS_DATA` *is* the store … the booking page's own selector
+         resolves the selected client with `CLIENTS_DATA.find(...)`". **That is
+         no longer true of either half.** `NewRental.tsx` reads the database
+         (`listClientRecords()` into `clientPool`), resolves the selection with
+         `clientPool.find(...)`, and its `onClientCreated` — the `onCreated`
+         prop this dialog calls two lines below — already does
+         `setClientPool((prev) => [created, ...prev])`. It is the only site in
+         `src/` that renders this dialog. So §18's "never have to search for
+         it" is held by the caller, and the push was adding a row to the seed
+         array on top of it.
+
+         The guard went with it. It compared the code the database allocated
+         against that same seed array — 26 demo records with ids `C-1`…`C-26`,
+         not one of them a client the business has — so the only thing it could
+         ever have reported is a demo record owning a real code (Law 12). Today
+         it cannot report even that: `next_document_number('client')` yields the
+         `^CL-[0-9]{4}-[0-9]{4}$` the live `clients_client_code_format` CHECK
+         requires, which no `C-n` can equal. A code that really is taken
+         conflicts on
+         `clients_client_code_key`, and `createClient`'s `describeInsertFailure`
+         already turns that into a sentence saying the sequence is behind the
+         table and needs correcting rather than a retry. */
 
       setCreated(record)
       onCreated(record)
@@ -715,7 +764,7 @@ export function AddClientModal({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 60,
+        zIndex: 'var(--z-modal)' as unknown as number,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -738,7 +787,7 @@ export function AddClientModal({
           zIndex: 1,
           width: '100%',
           maxWidth: 580,
-          maxHeight: '88vh',
+          maxHeight: '85dvh',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--card)',
@@ -747,8 +796,8 @@ export function AddClientModal({
           boxShadow: 'var(--shadow-modal)',
           overflow: 'hidden',
           opacity: isOpen ? 1 : 0,
-          transform: isOpen ? 'scale(1)' : 'scale(0.97)',
-          transition: 'opacity var(--dur) ease, transform var(--dur) ease',
+          transform: 'none',
+          transition: 'opacity var(--dur) ease',
         }}
       >
         {/* Header */}
@@ -815,7 +864,8 @@ export function AddClientModal({
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>{created.name}</div>
                   <div style={{ fontSize: 'var(--t-meta)', marginTop: 2 }}>
-                    <span className="figure">{created.id}</span> · {created.clientType} ·{' '}
+                    <span className="figure">{created.id}</span> · {created.clientType}
+                    {created.organisationType ? ` · ${created.organisationType}` : ''} ·{' '}
                     <span className="figure">{created.phone}</span>
                   </div>
                 </div>
@@ -842,7 +892,20 @@ export function AddClientModal({
 
                 <div style={{ height: 1, background: 'var(--divider)' }} />
 
-                <SummaryRow label="Pricing rule" value={`Membership tier — ${created.membership}`} />
+                {/* ⛔ **This block used to end "Payment terms — Net 15" and
+                    "Credit limit — Rs 1,00,000" off the two inputs above.**
+                    Neither had been sent anywhere: `CreateClientInput` has no
+                    parameter for either, because `0005_clients.sql` makes both
+                    columns writable only through an Approved
+                    `client_commercial_overrides` row. The dialog was reading
+                    its own form state back to the operator as a saved fact.
+
+                    "Pricing rule — Membership tier — Creator" went the same
+                    way: no `client_memberships` row is written by any path this
+                    dialog has, and nothing else in the booking flow reads
+                    `client.membership`, so the tier was a placeholder being
+                    presented as the rule the booking would price on. */}
+                <SummaryRow label="Pricing rule" value="Not set — membership is a separate record" />
                 <SummaryRow
                   label="Standing discount"
                   value={
@@ -850,10 +913,31 @@ export function AddClientModal({
                   }
                   mono={created.standingDiscountPercent !== undefined}
                 />
-                <SummaryRow label="Payment terms" value={created.paymentTerms ?? 'Not set'} />
-                {canSeeMoney && (
-                  <SummaryRow label="Credit limit" value={formatMoney(created.creditLimitPaisa)} mono />
-                )}
+              </div>
+
+              <div
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-card)',
+                  padding: 14,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon name="info" size={14} style={{ flexShrink: 0, color: 'var(--muted)' }} />
+                  <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+                    Not saved with this client
+                  </span>
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  {NOT_SAVED_HERE.map((n) => (
+                    <li key={n.label}>
+                      {n.label} — {n.because}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
@@ -959,6 +1043,34 @@ export function AddClientModal({
                 </div>
               </Field>
 
+              {/* The database will not take an Organisation without one —
+                  CHECK `clients_org_subtype_pairing` — and will not take one
+                  from an Individual, so the field appears with the type it
+                  belongs to. Same seven options as the Clients module's own
+                  Add Client screen. */}
+              {clientType === 'Organisation' && (
+                <Field
+                  id={`${uid}-orgtype`}
+                  label="Organisation Type"
+                  required
+                  help="Stored on the client. It decides the identity document, VAT and deposit rules."
+                >
+                  <select
+                    id={`${uid}-orgtype`}
+                    value={orgType}
+                    onChange={(e) => setOrgType(e.target.value as OrganisationType)}
+                    aria-describedby={`${uid}-orgtype-help`}
+                    style={controlStyle(false)}
+                  >
+                    {ORGANISATION_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
               <div style={rowStyle}>
                 <Field
                   id={`${uid}-name`}
@@ -982,7 +1094,14 @@ export function AddClientModal({
                   />
                 </Field>
 
-                <Field id={`${uid}-contact`} label="Contact Person" help="Who to call on the day of pickup.">
+                {/* Honest before it is typed into, not after. A contact person
+                    is a `client_contacts` row and this create writes `clients`
+                    alone — see `NOT_SAVED_HERE`. */}
+                <Field
+                  id={`${uid}-contact`}
+                  label="Contact Person"
+                  help="Who to call on the day of pickup. Not saved on the client record yet — add it from the client afterwards."
+                >
                   <input
                     id={`${uid}-contact`}
                     value={contactPerson}
@@ -1036,8 +1155,9 @@ export function AddClientModal({
                     <input
                       id={`${uid}-phone`}
                       ref={phoneRef}
+                      type="tel"
                       value={phone}
-                      inputMode="numeric"
+                      inputMode="tel"
                       autoComplete="tel-national"
                       onChange={(e) => {
                         setPhone(e.target.value)
@@ -1072,16 +1192,27 @@ export function AddClientModal({
               </div>
 
               <div style={rowStyle}>
+                {/* TODO(decision) — this one field is labelled for two different
+                    columns. It is sent as `pan_vat`, whose CHECK is exactly nine
+                    digits; an Individual's citizenship or licence number belongs
+                    in `government_id_kind` / `government_id_number`, which
+                    `CreateClientInput` does not carry and which CHECK
+                    `clients_gov_id_null_for_organisation` keeps apart from PAN.
+                    The help below states the rule that is actually enforced
+                    rather than leaving the operator to discover it on Save; a
+                    malformed value is refused by `createClient.validate` with
+                    the one wording, in the banner above, and nothing is sent. */}
                 <Field
                   id={`${uid}-pan`}
                   label="Government ID / PAN"
-                  help="Needed before this booking can be confirmed."
+                  help="PAN or VAT — exactly nine digits. Needed before this booking can be confirmed."
                 >
                   <input
                     id={`${uid}-pan`}
                     value={pan}
                     onChange={(e) => setPan(e.target.value)}
                     placeholder="e.g. 600123456"
+                    inputMode="numeric"
                     aria-describedby={`${uid}-pan-help`}
                     className="figure"
                     style={controlStyle(false)}
@@ -1092,43 +1223,33 @@ export function AddClientModal({
                   <Field
                     id={`${uid}-credit`}
                     label="Credit Limit"
-                    error={errors.creditLimit}
-                    help={
-                      creditLimitPaisa !== null && creditLimitPaisa >= 0 ? (
-                        <>
-                          <span className="figure">{formatMoney(creditLimitPaisa)}</span>
-                        </>
-                      ) : (
-                        <>
-                          Rupees. Leave blank for <span className="figure">Rs 0</span> — pay-later off.
-                        </>
-                      )
-                    }
+                    help="Not saved here — a credit limit is set by an approved commercial override."
                   >
                     <input
                       id={`${uid}-credit`}
                       value={creditLimit}
                       inputMode="numeric"
-                      onChange={(e) => {
-                        setCreditLimit(e.target.value)
-                        clearError('creditLimit')
-                      }}
+                      onChange={(e) => setCreditLimit(e.target.value)}
                       placeholder="e.g. 1,00,000"
-                      aria-invalid={errors.creditLimit ? true : undefined}
-                      aria-describedby={errors.creditLimit ? `${uid}-credit-error` : `${uid}-credit-help`}
+                      aria-describedby={`${uid}-credit-help`}
                       className="figure"
-                      style={controlStyle(Boolean(errors.creditLimit))}
+                      style={controlStyle(false)}
                     />
                   </Field>
                 )}
               </div>
 
               {canSeeMoney && (
-                <Field id={`${uid}-terms`} label="Payment Terms">
+                <Field
+                  id={`${uid}-terms`}
+                  label="Payment Terms"
+                  help="Not saved here — anything past immediate payment takes the same approval as a credit limit."
+                >
                   <select
                     id={`${uid}-terms`}
                     value={paymentTerms}
                     onChange={(e) => setPaymentTerms(e.target.value)}
+                    aria-describedby={`${uid}-terms-help`}
                     style={controlStyle(false)}
                   >
                     <option value="">Not set</option>
@@ -1217,7 +1338,7 @@ export function AddClientModal({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <Icon name="alert_triangle" size={20} style={{ color: 'var(--warning-text)', flexShrink: 0, marginTop: 1 }} />
+                <Icon name="alert_triangle" size={20} style={{ color: 'var(--ready-text)', flexShrink: 0, marginTop: 1 }} />
                 <div style={{ minWidth: 0 }}>
                   <h3
                     id={confirmHeadingId}

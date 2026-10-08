@@ -27,11 +27,13 @@ vi.mock('../../../lib/supabase', () => ({
   newClientUuid: () => '00000000-0000-4000-8000-000000000000',
 }))
 
-import { NPT_OFFSET_MIN } from '../../../lib/bs'
+import { NPT_OFFSET_MIN, getBusinessToday } from '../../../lib/bs'
 import {
   FILTER_SUPPORT,
   MORE_FILTERS,
-  NOW_AD,
+  businessDayAd,
+  businessNowAd,
+  clockNowMinutes,
   TODAY_DAY_AD,
   avatarToneFor,
   civilDaysBetween,
@@ -47,11 +49,31 @@ import {
   returnsQuery,
   toMovementRow,
 } from '../../../data/today'
-import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
+import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
+
+/*
+ * The anchor these mapping tests pass in.
+ *
+ * It was `data/today.ts`'s exported `NOW_AD`, which X-06 removed: that constant
+ * held midnight UTC of the operating day — a DAY MARKER, and 05:45 in Kathmandu
+ * — where every consumer needed an instant. The tests below that use it are
+ * asserting field mappings (`at`, `kind`, `due`, `atDayAd`) that do not depend
+ * on the anchor at all, so they keep the same shape with the real instant; the
+ * ones that DO depend on it already state their own (`NOW_5_AUG`, `NOW_1_AUG`),
+ * which is the pattern the rest of this file follows.
+ */
+const NOW_AD = businessNowAd()
 
 type Raw = BookingListRow
 
 /** A booking that leaves 31 Jul at 09:00 NPT and is due back 2 Aug at 06:00 NPT. */
+/**
+ * A Kathmandu calendar day, `n` days from the operating day, as `YYYY-MM-DD`.
+ * The period chips promise a relationship to today, not a fixed date; written
+ * as literals these expectations only held while the operating day was frozen.
+ */
+const day = (n: number) => new Date(getBusinessToday().getTime() + n * 86_400_000).toISOString().slice(0, 10)
+
 function raw(over: Partial<Raw> = {}): Raw {
   return {
     id: 'b1',
@@ -59,13 +81,15 @@ function raw(over: Partial<Raw> = {}): Raw {
     clientId: 'c-abc',
     clientName: 'ABC Films',
     project: 'Daraz Dashain TVC',
+    projectType: 'Commercial / Advertisement',
+    projectTypeOther: null,
     stage: 'Packed',
     // 03:15Z + 05:45 = 09:00 in Kathmandu.
     pickupAtAd: '2026-07-31T03:15:00.000Z',
     // 00:15Z + 05:45 = 06:00 in Kathmandu.
     returnAtAd: '2026-08-02T00:15:00.000Z',
     actualReturnAtAd: null,
-    deliveryType: 'Customer Pickup',
+    deliveryType: 'Client Pickup',
     pickupLocation: 'Boudha',
     returnLocation: null,
     quoteExpiresAtAd: null,
@@ -112,7 +136,7 @@ describe('toMovementRow · which instant the row sits at', () => {
 
 describe('toMovementRow · kind', () => {
   it('separates Pickup from Delivery on delivery_type', () => {
-    expect(toMovementRow(raw({ deliveryType: 'Customer Pickup' }), 'outgoing', NOW_AD).kind).toBe('Pickup')
+    expect(toMovementRow(raw({ deliveryType: 'Client Pickup' }), 'outgoing', NOW_AD).kind).toBe('Pickup')
     expect(toMovementRow(raw({ deliveryType: 'Babin Delivery' }), 'outgoing', NOW_AD).kind).toBe('Delivery')
     expect(toMovementRow(raw({ deliveryType: 'Courier' }), 'outgoing', NOW_AD).kind).toBe('Delivery')
     expect(toMovementRow(raw({ deliveryType: 'Third Party' }), 'outgoing', NOW_AD).kind).toBe('Delivery')
@@ -140,7 +164,12 @@ describe('toMovementRow · Overdue, and the flags that are not derived', () => {
   })
 
   it('does not flag one still in the future', () => {
-    expect(toMovementRow(raw(), 'incoming', NOW_AD).flags).toEqual([])
+    /* An instant BEFORE the fixture's 2 Aug return, stated here rather than
+       taken from the clock: `businessNowAd()` is the real instant, so on any day
+       after 2 Aug 2026 this fixture is overdue and the test would be asserting
+       the opposite of what it says. */
+    const NOW_1_AUG = '2026-08-01T00:00:00.000Z'
+    expect(toMovementRow(raw(), 'incoming', NOW_1_AUG).flags).toEqual([])
   })
 
   it('says "Late today" rather than "0 days late"', () => {
@@ -164,6 +193,21 @@ describe('toMovementRow · Overdue, and the flags that are not derived', () => {
   })
 })
 
+describe('toMovementRow · returnDueAtAd, the instant the Returns column counts down to', () => {
+  it('carries return_at on a Return row whose gear is still out', () => {
+    expect(toMovementRow(raw(), 'incoming', NOW_AD).returnDueAtAd).toBe('2026-08-02T00:15:00.000Z')
+  })
+
+  it('drops it once the gear is back — nothing left to count down to', () => {
+    const row = toMovementRow(raw({ actualReturnAtAd: '2026-08-02T01:00:00.000Z' }), 'incoming', NOW_AD)
+    expect(row.returnDueAtAd).toBeUndefined()
+  })
+
+  it('never puts it on an outgoing row — a pickup is not a return', () => {
+    expect(toMovementRow(raw(), 'outgoing', NOW_AD).returnDueAtAd).toBeUndefined()
+  })
+})
+
 describe('toMovementRow · the fields that survived, and the shapes of the ones that changed', () => {
   it('carries the booking through unaltered where a column exists', () => {
     const row = toMovementRow(raw(), 'outgoing', NOW_AD)
@@ -182,13 +226,13 @@ describe('toMovementRow · the fields that survived, and the shapes of the ones 
   })
 
   it('formats the due stamp in Kathmandu', () => {
-    expect(toMovementRow(raw(), 'outgoing', NOW_AD).due).toBe('Due 2 Aug 2026 · 06:00 AM')
+    expect(toMovementRow(raw(), 'outgoing', NOW_AD).due).toBe('Due 2/8/2026 · 06:00 AM')
   })
 
   it('states the duration as two dates and does NOT count rental days', () => {
     // Law 1 — a rental-day count is the Financial Engine's figure, not a page's.
     const { duration } = toMovementRow(raw(), 'outgoing', NOW_AD)
-    expect(duration).toBe('31 Jul 2026 → 2 Aug 2026')
+    expect(duration).toBe('31/7/2026 → 2/8/2026')
     expect(duration).not.toMatch(/day/)
   })
 
@@ -331,14 +375,16 @@ describe('pickupsQuery / returnsQuery · the filter set that reaches Postgres', 
     const range = pickupsQuery('Next 7 Days', []).filters.dateRange
     expect(range?.column).toBe('pickup_at')
     // Both bounds carry Nepal's offset, taken from the named set rather than
-    // rebuilt here — a UTC-bounded "today" runs 05:45 to 05:45.
-    expect(range?.fromAd).toBe('2026-07-31T00:00:00.000+05:45')
-    expect(range?.toAd).toBe('2026-08-06T23:59:59.999+05:45')
+    // rebuilt here — a UTC-bounded "today" runs 05:45 to 05:45. Since D4 the
+    // day is the OPERATIONAL day (default 06:00 → 06:00), so a 7-day chip runs
+    // 06:00 on day 0 to 05:59:59.999 on the morning AFTER day 6.
+    expect(range?.fromAd).toBe(`${day(0)}T06:00:00.000+05:45`)
+    expect(range?.toAd).toBe(`${day(7)}T05:59:59.999+05:45`)
   })
 
   it('returns are ranged on return_at, pickups on pickup_at', () => {
     expect(returnsQuery('Tomorrow', []).filters.dateRange?.column).toBe('return_at')
-    expect(returnsQuery('Tomorrow', []).filters.dateRange?.fromAd).toBe('2026-08-01T00:00:00.000+05:45')
+    expect(returnsQuery('Tomorrow', []).filters.dateRange?.fromAd).toBe(`${day(1)}T06:00:00.000+05:45`)
   })
 
   it('All drops the date range and keeps everything else', () => {
@@ -390,7 +436,7 @@ describe('Status chips · intersection, never replacement', () => {
   })
 
   it('does not disturb the period range', () => {
-    expect(pickupsQuery('Tomorrow', ['Packed']).filters.dateRange?.fromAd).toBe('2026-08-01T00:00:00.000+05:45')
+    expect(pickupsQuery('Tomorrow', ['Packed']).filters.dateRange?.fromAd).toBe(`${day(1)}T06:00:00.000+05:45`)
   })
 })
 
@@ -469,12 +515,52 @@ describe('alerts · built from rows, never typed', () => {
   it('states a quote date rather than ruling the quote dead', () => {
     const alert = quoteLapsedAlert(raw({ stage: 'Quote', quoteExpiresAtAd: '2026-07-28T04:00:00.000Z' }))
     expect(alert.priority).toBe('High')
-    expect(alert.right).toBe('28 Jul 2026')
+    expect(alert.right).toBe('28/7/2026')
     // 0002:37 leaves "does a quote lapse" unresolved; the row must not answer it.
     expect(alert.title).not.toMatch(/expired|lapsed|dead/i)
   })
 
   it('renders an explicit non-value when the date is missing', () => {
     expect(quoteLapsedAlert(raw({ quoteExpiresAtAd: null })).right).toBe('—')
+  })
+})
+
+/* ── X-06 / AR-03 · the anchor ───────────────────────────────────────────── */
+
+/**
+ * The register's X-06: `NOW_AD` was `getBusinessToday().toISOString()`, which is
+ * midnight **UTC** of the Kathmandu civil date — 05:45 that morning in
+ * Kathmandu, and a DAY MARKER where `overdue()` documents that it needs an
+ * INSTANT. Everything fed from it (the Rentals Overdue chip and KPI, the
+ * Dashboard's Overdue count, Operations' Critical alerts) therefore stopped
+ * seeing anything that fell due after 05:45 today.
+ *
+ * These pin the difference in both directions, so a day marker cannot creep
+ * back in under a name that reads like an instant.
+ */
+describe('the Overdue anchor is an INSTANT, not the operating day', () => {
+  /** 5 Aug 2026, 16:00 in Kathmandu. */
+  const at4pm = new Date('2026-08-05T10:15:00.000Z')
+  /** A booking that fell due at 09:00 that same morning — seven hours late. */
+  const dueThisMorning = Date.parse('2026-08-05T03:15:00.000Z')
+
+  it('sweeps in a booking that fell due earlier the same day', () => {
+    const toAd = overdue(businessNowAd(at4pm)).dateRange?.toAd
+    expect(toAd).toBeDefined()
+    expect(dueThisMorning).toBeLessThan(Date.parse(toAd as string))
+  })
+
+  it('⛔ the old day-marker anchor did not — this is the defect, stated', () => {
+    /* Exactly what `NOW_AD` held: midnight UTC of the operating day. */
+    const dayMarker = `${businessDayAd(at4pm)}T00:00:00.000Z`
+    const toAd = overdue(dayMarker).dateRange?.toAd
+    expect(dueThisMorning).toBeGreaterThan(Date.parse(toAd as string))
+  })
+
+  it('AR-03 — the Timeline clock reads the clock, and not 05:45 forever', () => {
+    expect(clockNowMinutes(at4pm)).toBe(16 * 60)
+    /* What the old `NOW = kathmanduMinutes(NOW_AD)` produced, at every hour of
+       every day: the offset itself, mistaken for a time of day. */
+    expect(kathmanduMinutes(`${businessDayAd(at4pm)}T00:00:00.000Z`)).toBe(5 * 60 + 45)
   })
 })

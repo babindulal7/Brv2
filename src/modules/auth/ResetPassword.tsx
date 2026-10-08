@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Button, Input } from '../../components/ui'
+import { Button } from '../../components/ui'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
 import { AuthCard } from './AuthCard'
+import { PasswordInput } from './PasswordInput'
+import './auth.css'
 
 /**
  * **Set a new password.** Where the emailed reset link lands. Built 15 Aug 2026.
@@ -101,7 +103,7 @@ export default function ResetPassword() {
     }
 
     // The recovery session is a real session — they are signed in as themselves.
-    navigate('/today', { replace: true })
+    navigate('/dashboard', { replace: true })
   }
 
   if (!isPasswordRecovery) {
@@ -112,20 +114,7 @@ export default function ResetPassword() {
         footer={
           <Link
             to="/forgot-password"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              minHeight: 44,
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
+            className="auth-footer-link"
           >
             Request a new link
           </Link>
@@ -144,23 +133,16 @@ export default function ResetPassword() {
 
   return (
     <AuthCard title="Set a new password" subtitle="Choose a password you have not used here before.">
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-        <div style={{ textAlign: 'left' }}>
+      <form onSubmit={handleSubmit} className="auth-form">
+        <div className="auth-field">
           <label
             htmlFor="new-password"
-            style={{
-              display: 'block',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              color: 'var(--text2)',
-              marginBottom: 6,
-            }}
+            className="auth-label"
           >
             New Password
           </label>
-          <Input
+          <PasswordInput
             id="new-password"
-            type="password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -171,22 +153,15 @@ export default function ResetPassword() {
           />
         </div>
 
-        <div style={{ textAlign: 'left' }}>
+        <div className="auth-field">
           <label
             htmlFor="confirm-password"
-            style={{
-              display: 'block',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              color: 'var(--text2)',
-              marginBottom: 6,
-            }}
+            className="auth-label"
           >
             Confirm New Password
           </label>
-          <Input
+          <PasswordInput
             id="confirm-password"
-            type="password"
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
@@ -202,7 +177,7 @@ export default function ResetPassword() {
           </div>
         )}
 
-        <Button type="submit" variant="primary" disabled={busy} style={{ height: 44, fontSize: 16 }}>
+        <Button type="submit" variant="primary" disabled={busy} style={{ minHeight: 44, fontSize: 16 }}>
           {busy ? 'Saving…' : 'Set password and sign in'}
         </Button>
       </form>

@@ -89,15 +89,35 @@ export type RecordPaymentInput = {
    * NOT a booking number: a caller that passes `B-715` gets a named refusal,
    * not a payment posted against nothing.
    */
-  invoiceNo: string
+  invoiceNo?: string
+  /**
+   * `invoices.id`. The way to settle a **Draft**, which by R-15 has no
+   * `invoice_no` at all — `createInvoice` omits the column entirely.
+   *
+   * Resolving only by number made every invoice this application creates
+   * unpayable: R-02 keeps an invoice in Draft for the whole rental and issues it
+   * once at return, so for a rental's entire life there was no number to pass and
+   * no other way in. Pass exactly one of `invoiceId` or `invoiceNo`.
+   */
+  invoiceId?: string
   /** Integer paisa, from `lib/money`'s `rupees()`. Converted to rupees once, below. */
   amountPaisa: Paisa | number
   /**
-   * What the operator selected in the modal's picker. **TODO(decision): this
-   * has no column of its own.** See `METHOD` below before assuming it is stored
-   * as structured data.
+   * What the operator selected in the modal's method picker. This label has no
+   * column of its own and is written into `notes` — see `METHOD` below. The
+   * STRUCTURED half of "how was this paid" is `bankAccountId`.
    */
   paymentMethod?: string | undefined
+  /**
+   * `bank_accounts.id` — the real account the money landed in, chosen by the
+   * operator from `queries/bankAccounts.listBankAccounts()`. Optional because
+   * `payments.bank_account_id` is nullable (0006:188) and "no account
+   * recorded" is an ordinary state (a cash payment with no cash account row,
+   * a desk whose accounts are not entered yet). When absent, NOTHING is
+   * guessed: the column is left off the insert entirely, never inferred from
+   * the method label — see METHOD below for why that inference is forbidden.
+   */
+  bankAccountId?: string | undefined
   /** Bank ref / txn id → `payments.transaction_ref` (nullable text). */
   reference?: string | undefined
   /** The operator's free text → `payments.notes` (nullable text). */
@@ -127,31 +147,34 @@ export type RecordPaymentResult = {
   amountPaisa: number
 }
 
-/* ── METHOD · the one field with nowhere to go ────────────────────────────
+/* ── METHOD · label in notes, account in bank_account_id ──────────────────
  *
- * `RecordPaymentModal` offers Bank Transfer / Cash / eSewa / Khalti / Card /
- * Cheque. `payments` has no method column. The nearest thing is
- * `bank_account_id` → `bank_accounts.channel_group`
+ * `RecordPaymentModal` offers Bank Transfer / Cash / Fonepay / eSewa / Khalti /
+ * Card / Cheque. `payments` has no method column. The structured home for "how was
+ * this paid" is `bank_account_id` → `bank_accounts.channel_group`
  * ('Digital wallets' | 'Bank' | 'Cash' | 'Cards' | 'Other', 0001:1028), which
  * names a REAL ACCOUNT the money landed in — the live project has two
  * (`Nabil Bank Ltd.` and `eSewa Digital Wallet`, seeded by 0012).
  *
- * Mapping six UI labels onto those rows would be attributing money to an
- * account nobody chose: 'Cash', 'Card' and 'Cheque' have no account at all,
- * and picking one by `channel_group` would silently credit the bank account
- * for a cash payment. That is a product decision (which accounts exist, and
- * which the desk uses), so `bank_account_id` is left NULL and the method is
- * written into `notes` under an explicit `Method:` label instead.
+ * The modal therefore carries an ACCOUNT picker over
+ * `queries/bankAccounts.listBankAccounts()`, and the chosen row's id arrives
+ * here as `input.bankAccountId` and is written to `payments.bank_account_id`.
+ * That is what makes the Payments screen's Method column and the Finance
+ * dashboard's method breakdown (both read `channel_group` through the embed,
+ * `queries/finance.ts:726-730`) see the payment instead of rendering '—'.
  *
- * That is lossy and it is stated rather than hidden — it keeps a fact the
- * operator entered instead of discarding it, but it is text, not structure, so
- * the Finance dashboard's method breakdown (which reads `channel_group`, see
- * `queries/finance.ts:640-650`) still cannot see it.
- *
- * TODO(decision): replace the modal's hardcoded method list with a picker over
- * `bank_accounts`, and write the chosen account's id. That is the shape the
- * schema was built for; it needs a ruling on which accounts the desk offers.
+ * What is STILL never done: mapping the six method labels onto account rows.
+ * 'Cash', 'Card' and 'Cheque' may have no account at all, and picking one by
+ * `channel_group` would silently credit the bank account for a cash payment.
+ * When the operator picks no account, `bank_account_id` is simply absent from
+ * the insert (the column is nullable) and the method label still lands in
+ * `notes` under an explicit `Method:` prefix, so the operator's word survives
+ * either way. A label is a claim; an account id is a fact — only the fact is
+ * stored as structure.
  */
+
+/** `bank_accounts.id` must be a uuid — same shape rule the other actions pin. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** The four uuids `payments` needs, read off the invoice being settled. */
 type PaymentTarget = {
@@ -178,15 +201,25 @@ type PaymentTarget = {
  * uuids: `payments.branch_id` is NOT NULL, `InvoiceListRow` does not carry it,
  * and `AuthUser` has no branch either — the invoice is the only place it is.
  */
-async function resolvePaymentTarget(invoiceNo: string): Promise<PaymentTarget> {
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('id, booking_id, client_id, branch_id, invoice_no, voided_at')
-    .eq('invoice_no', invoiceNo)
-    .maybeSingle()
+async function resolvePaymentTarget(ref: { invoiceId?: string | undefined; invoiceNo?: string | undefined }): Promise<PaymentTarget> {
+  /*
+   * A Draft carries no number (R-15), so the uuid is the only handle that works
+   * for the whole rental. Number lookup stays for issued invoices and for every
+   * caller that already had one.
+   */
+  const byId = typeof ref.invoiceId === 'string' && ref.invoiceId.trim() !== ''
+  // Reads naturally in both refusals below: "No invoice numbered B-715 exists"
+  // and "No invoice with id <uuid> exists".
+  const label = byId ? `with id ${ref.invoiceId}` : `numbered ${ref.invoiceNo}`
+
+  const base = supabase.from('invoices').select('id, booking_id, client_id, branch_id, invoice_no, voided_at')
+  const { data, error } = await (byId
+    ? base.eq('id', (ref.invoiceId as string).trim())
+    : base.eq('invoice_no', (ref.invoiceNo as string).trim())
+  ).maybeSingle()
 
   if (error) {
-    throw new Error(`Could not look up invoice ${invoiceNo}, so nothing was recorded: ${error.message}`)
+    throw new Error(`Could not look up invoice ${label}, so nothing was recorded: ${error.message}`)
   }
   if (!data) {
     // Reached by BookingDetail and UnifiedInbox, which hand this modal a
@@ -194,7 +227,7 @@ async function resolvePaymentTarget(invoiceNo: string): Promise<PaymentTarget> {
     // payment may be taken before an invoice exists is unruled). Saying which
     // number was not found is what makes that diagnosable instead of "failed".
     throw new Error(
-      `No invoice numbered ${invoiceNo} exists, so this payment has nothing to settle and nothing was recorded.`,
+      `No invoice ${label} exists, so this payment has nothing to settle and nothing was recorded.`,
     )
   }
 
@@ -252,8 +285,10 @@ export const recordPayment = createAction<RecordPaymentInput, RecordPaymentResul
   implemented: true,
 
   validate: (input) => {
-    if (!input.invoiceNo || input.invoiceNo.trim() === '') {
-      throw new Error('A payment must name the invoice it settles.')
+    const hasNo = typeof input.invoiceNo === 'string' && input.invoiceNo.trim() !== ''
+    const hasId = typeof input.invoiceId === 'string' && input.invoiceId.trim() !== ''
+    if (!hasNo && !hasId) {
+      throw new Error('A payment must name the invoice it settles, by number or by id.')
     }
     if (!input.clientUuid || input.clientUuid.trim() === '') {
       // Law 8. Not defaulted here: a generated-at-send-time key gives a
@@ -270,6 +305,15 @@ export const recordPayment = createAction<RecordPaymentInput, RecordPaymentResul
     // paisa. A fractional paisa would be silently rounded by Postgres.
     if (!Number.isInteger(input.amountPaisa)) {
       throw new Error('Payment amount must be a whole number of paisa.')
+    }
+    // Optional, but when present it must be a real row id. A non-uuid here is
+    // a caller passing a label ('eSewa') where an account id belongs — the
+    // exact substitution METHOD above forbids — and Postgres would answer it
+    // with a 22P02 the operator cannot read.
+    if (input.bankAccountId !== undefined && !UUID_RE.test(input.bankAccountId)) {
+      throw new Error(
+        'The bank account must be chosen from the account list (a row id), not typed as a label. Nothing was sent.',
+      )
     }
   },
 
@@ -293,7 +337,7 @@ export const recordPayment = createAction<RecordPaymentInput, RecordPaymentResul
       )
     }
 
-    const target = await resolvePaymentTarget(input.invoiceNo.trim())
+    const target = await resolvePaymentTarget({ invoiceId: input.invoiceId, invoiceNo: input.invoiceNo })
 
     /*
      * `payment_no` from the database's allocator, never from the clock.
@@ -334,7 +378,9 @@ export const recordPayment = createAction<RecordPaymentInput, RecordPaymentResul
       // `payment_date` and `created_at` are deliberately omitted: both default
       // to `now()` on the server. Law 7 — AD stored UTC, and the database's
       // clock is the one that cannot be skewed by an operator's device.
-      // `bank_account_id` omitted — see METHOD above.
+      // `bank_account_id` only when the operator actually chose an account —
+      // absent otherwise, never inferred from the method label. See METHOD.
+      ...(input.bankAccountId !== undefined ? { bank_account_id: input.bankAccountId } : {}),
       transaction_ref: input.reference?.trim() || null,
       notes: composeNotes(input.paymentMethod, input.notes),
       received_by: ctx.userId,
@@ -383,6 +429,7 @@ export const recordPayment = createAction<RecordPaymentInput, RecordPaymentResul
           clientId: target.clientId,
           amountPaisa: input.amountPaisa,
           paymentMethod: input.paymentMethod ?? null,
+          bankAccountId: input.bankAccountId ?? null,
           reference: input.reference ?? null,
           userId: ctx.userId,
         },

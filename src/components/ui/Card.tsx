@@ -20,13 +20,17 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   action?: React.ReactNode
   footer?: React.ReactNode
   padding?: 'none' | 'sm' | 'md' | 'lg'
+  as?: 'div' | 'section'
+  headingLevel?: 'h2' | 'h3'
+  bodyStyle?: CSSProperties
+  statusColor?: string
 }
 
 const PADDING: Record<NonNullable<CardProps['padding']>, number | string> = {
   none: 0,
-  sm: 'var(--sp-md)',
-  md: 20,
-  lg: 'var(--sp-xl)',
+  sm: 'var(--space-4)',
+  md: 'var(--space-4)',
+  lg: 'var(--space-6)',
 }
 
 export function Card({
@@ -35,38 +39,46 @@ export function Card({
   action,
   footer,
   padding = 'md',
+  as: Element = 'div',
+  headingLevel: Heading = 'h3',
+  bodyStyle,
+  statusColor,
   children,
   style,
+  className,
   ...props
 }: CardProps) {
   const rootStyle: CSSProperties = {
-    background: 'var(--card)',
+    background: 'var(--surface-card, var(--card))',
     border: '1px solid var(--border)',
+    ...(statusColor ? { borderLeft: `3px solid ${statusColor}` } : {}),
     borderRadius: 'var(--r-card)',
-    boxShadow: 'var(--shadow-card)',
+    boxShadow: 'var(--shadow-card), var(--specular-rim)',
     color: 'var(--text)',
     display: 'flex',
     flexDirection: 'column',
-    transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+    minWidth: 0,
+    transition: 'transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur-theme) var(--ease), border-color var(--dur-theme) var(--ease)',
     ...style,
   }
 
   return (
-    <div style={rootStyle} {...props}>
+    <Element className={['surface-card', className].filter(Boolean).join(' ')} style={rootStyle} {...props}>
       {(title || subtitle || action) && (
         <div
+          className="surface-card__header"
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 'var(--sp-md)',
-            padding: '16px 20px',
+            padding: 'var(--space-3) var(--space-4)',
             borderBottom: '1px solid var(--border)',
           }}
         >
           <div>
             {title && (
-              <h3 style={{ margin: 0, fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
+              <Heading style={{ margin: 0, fontSize: 'var(--t-h3)', fontWeight: 600, color: 'var(--text)' }}>{title}</Heading>
             )}
             {subtitle && (
               <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{subtitle}</p>
@@ -76,7 +88,7 @@ export function Card({
         </div>
       )}
 
-      <div style={{ flex: 1, minWidth: 0, padding: PADDING[padding] }}>{children}</div>
+      <div className="surface-card__body" style={{ flex: 1, minWidth: 0, padding: PADDING[padding], ...bodyStyle }}>{children}</div>
 
       {footer && (
         <div
@@ -91,7 +103,7 @@ export function Card({
           {footer}
         </div>
       )}
-    </div>
+    </Element>
   )
 }
 
@@ -111,34 +123,69 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
   return (
     <div
       onClick={onClick}
+      onKeyDown={onClick ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      } : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? `${label}: ${value}` : undefined}
+      className={['surface-card', 'kpi-card', onClick ? 'lift' : ''].filter(Boolean).join(' ')}
       style={{
         background: 'var(--card)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-card)',
-        boxShadow: 'var(--shadow-card)',
-        padding: 'var(--sp-lg)',
+        boxShadow: 'var(--shadow-card), var(--specular-rim)',
+        padding: '18px 22px',
         display: 'flex',
         flexDirection: 'column',
         gap: 'var(--sp-sm)',
         cursor: onClick ? 'pointer' : undefined,
-        transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--muted)' }}>
-        <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--muted)' }}>
           {label}
         </span>
-        {icon && <span style={{ color: 'var(--muted)' }}>{icon}</span>}
+        {icon && (
+          <span
+            style={{
+              color: 'var(--nav-active-accent)',
+              display: 'grid',
+              placeItems: 'center',
+              width: 28,
+              height: 28,
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--nav-active-bg)',
+            }}
+          >
+            {icon}
+          </span>
+        )}
       </div>
 
-      <div style={{ fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+      <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-display)' }}>
         {value}
       </div>
 
       {(subtext || trend) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
+          {/* *-text tokens, not st-*-fg: the fg pair is ink for a SOLID status
+              fill — white in light theme, invisible on this white card. */}
           {trend && (
-            <span style={{ fontWeight: 700, color: trend.isPositive ? 'var(--st-in-fg)' : 'var(--st-progress-fg)' }}>
+            <span
+              style={{
+                fontWeight: 700,
+                color: trend.isPositive ? 'var(--success-text)' : 'var(--ready-text)',
+                fontVariantNumeric: 'tabular-nums',
+                padding: '1px 6px',
+                borderRadius: 'var(--r-xs)',
+                background: trend.isPositive ? 'rgba(30, 134, 74, 0.1)' : 'rgba(237, 190, 42, 0.12)',
+              }}
+            >
               {trend.value}
             </span>
           )}

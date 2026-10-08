@@ -4,6 +4,7 @@ import {
   IconPhone,
   IconMail,
   IconSun,
+  IconBolt,
   IconX,
   IconChevronRight,
   IconChevronLeft,
@@ -19,9 +20,13 @@ import {
   IconArrowRight,
   IconArrowBackUp,
   IconExternalLink,
+  IconCopy,
+  IconArchive,
+  IconEdit,
   IconDownload,
   IconRefresh,
   IconEye,
+  IconEyeOff,
   IconDotsVertical,
   IconAlertCircle,
   IconAlertTriangle,
@@ -68,8 +73,17 @@ import {
   IconLock,
   IconMinus,
   IconMessage,
+  IconBarcode,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
+  IconFilter,
+  IconBuildingBank,
+  IconCash,
+  IconQrcode,
+  IconWallet,
   type Icon as TablerIconType,
 } from '@tabler/icons-react'
+import { captureError } from '../../lib/monitoring'
 
 /**
  * Tabler icon registry. Keys are stable semantic names used by call sites, so a
@@ -85,13 +99,19 @@ const REGISTRY = {
   settings: IconSettings,
   moon: IconMoon,
   sun: IconSun,
+  zap: IconBolt,
   close: IconX,
+  x: IconX,
   chevron_right: IconChevronRight,
   chevron_left: IconChevronLeft,
   chevron_down: IconChevronDown,
   more_vert: IconDotsVertical,
   arrow_right: IconArrowRight,
   external_link: IconExternalLink,
+  edit: IconEdit,
+  filter: IconFilter,
+  copy: IconCopy,
+  archive: IconArchive,
 
   // sidebar nav
   home: IconHome,
@@ -136,7 +156,11 @@ const REGISTRY = {
   download: IconDownload,
   refresh: IconRefresh,
   eye: IconEye,
+  // Password reveal toggles (modules/auth/PasswordInput) — the pressed state
+  // must read in shape, not colour alone, so hide gets its own glyph.
+  eye_off: IconEyeOff,
   error: IconAlertCircle,
+  alert_circle: IconAlertCircle,
   flag: IconFlag,
   info: IconInfoCircle,
   timer: IconClock,
@@ -163,6 +187,7 @@ const REGISTRY = {
   // Add Client — client type segmented control + document rows
   company: IconBuilding,
   person: IconUser,
+  user: IconUser,
   student: IconSchool,
   id_card: IconId,
 
@@ -170,6 +195,15 @@ const REGISTRY = {
   lock: IconLock,
   minus: IconMinus,
   message: IconMessage,
+  barcode: IconBarcode,
+  panel_left_close: IconLayoutSidebarLeftCollapse,
+  panel_left_open: IconLayoutSidebarLeftExpand,
+
+  // Record Payment — the payment-method tap cards
+  bank: IconBuildingBank,
+  cash: IconCash,
+  qr: IconQrcode,
+  wallet: IconWallet,
 } satisfies Record<string, TablerIconType>
 
 export type IconName = keyof typeof REGISTRY
@@ -183,20 +217,36 @@ interface IconProps {
   label?: string
   className?: string
   style?: CSSProperties
+  color?: string
 }
 
-export default function Icon({ name, fill = false, size = 20, label, className, style }: IconProps) {
+export default function Icon({ name, fill = false, size = 20, label, className, style, color }: IconProps) {
   const Cmp = REGISTRY[name]
   if (!Cmp) {
-    console.error(`Icon "${name}" is undefined in REGISTRY!`);
-    return <span style={{ color: 'red', fontWeight: 'bold' }}>[Icon:{name}]</span>;
+    // BUG-001: this branch used to render `[Icon:name]` in bold red UNCONDITIONALLY,
+    // so three bad names in `lib/status.ts` put 51 pieces of developer text inside
+    // status chips on `/clients` and `/crew` — visible to a client. The marker is
+    // worth keeping for whoever is developing, so it is kept in DEV and dropped in
+    // the build. Rendering nothing is safe: Law 11 (§7.4) guarantees the label
+    // always renders beside the icon, so a missing glyph costs decoration, never
+    // meaning. `name` is typed `IconName`, so reaching here at all now takes a cast.
+    console.error(`Icon "${name}" is not in the REGISTRY — rendering nothing.`)
+    captureError(new Error('Icon not in REGISTRY: ' + name), { where: 'Icon.registry', name })
+    if (import.meta.env.DEV) {
+      return <span style={{ color: 'red', fontWeight: 'bold' }}>[Icon:{name}]</span>
+    }
+    return null
   }
+  const resolvedClass = ['ui-icon', className].filter(Boolean).join(' ') || undefined
+  const resolvedStyle = color ? { color, ...style } : style
+  // Standardized stroke weights per design system: 1.5 regular, 2.0 fill (matches --icon-stroke / --icon-stroke-fill)
+  const strokeWidth = fill ? 2.0 : 1.5
   return (
     <Cmp
       size={size}
-      stroke={fill ? 2.4 : 1.9}
-      className={className}
-      style={style}
+      stroke={strokeWidth}
+      className={resolvedClass}
+      style={resolvedStyle}
       aria-hidden={label ? undefined : true}
       role={label ? 'img' : undefined}
       aria-label={label}

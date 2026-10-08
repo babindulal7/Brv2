@@ -1,5 +1,10 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
-import { supabase } from './supabase'
+import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
+import { supabase, IS_MOCK } from './supabase'
+import { getSetting } from './settingsStore'
+import { hydrateSharedSettings } from './settingsSync'
+import { recordLogin, recordLogout } from './authAudit'
+import { captureError } from './monitoring'
+import { purgeDeviceReadCaches } from './devicePurge'
 
 /**
  * The session role IS the system role. They were separate unions until 8 Aug 2026,
@@ -10,11 +15,51 @@ export type { SystemRole as Role } from '../types/database'
 import type { SystemRole } from '../types/database'
 type Role = SystemRole
 
-interface AuthUser {
+export interface AuthUser {
   id: string
   name: string
   role: Role
   isSharedDevice: boolean
+}
+
+/**
+ * The verdict from `verify_staff_pin` (migration 0066).
+ *
+ * `ok` is the ONLY field that may unlock anything, and it is true only when the
+ * database compared a bcrypt hash and it matched. Every other shape — no
+ * session, no PIN enrolled, locked out, deactivated staff row, malformed input,
+ * or a network failure that never reached Postgres — resolves to `ok: false`.
+ * There is deliberately no third state: a lock that cannot verify must stay
+ * locked, and an `undefined` would eventually be read as falsy-but-fine by
+ * somebody.
+ */
+export type PinRejection =
+  | 'no_session'
+  | 'no_pin'
+  | 'locked'
+  | 'inactive'
+  | 'malformed'
+  | 'incorrect'
+  | 'unavailable'
+
+export interface PinVerdict {
+  ok: boolean
+  // `| undefined` is spelled out on every optional field below because this
+  // project runs `exactOptionalPropertyTypes: true` — "absent" and "present and
+  // undefined" are different types, and the RPC mapper produces the latter.
+  reason?: PinRejection | undefined
+  attemptsRemaining?: number | undefined
+  lockedUntil?: string | null | undefined
+  /** Present only for `unavailable` — the underlying failure, for the screen to show verbatim. */
+  message?: string | undefined
+}
+
+/** What `staff_pin_status` reports about the caller's own PIN. Never a hash. */
+export interface PinStatus {
+  hasPin: boolean
+  setAt?: string | null | undefined
+  lockedUntil?: string | null | undefined
+  lastUsedAt?: string | null | undefined
 }
 
 interface AuthContextType {
@@ -45,6 +90,37 @@ interface AuthContextType {
   logout: () => void
   isLocked: boolean
   setLocked: (locked: boolean) => void
+  /**
+   * Draw the curtain now, without signing out.
+   *
+   * Refuses when this session has no PIN — locking someone behind a credential
+   * they do not hold leaves them with "Sign out instead" as the only way
+   * forward, which is a worse outcome than not locking. `hasPin` is exposed so
+   * a caller can hide the control rather than offer one that declines.
+   */
+  lockNow: () => void
+  /** Whether this session has a PIN enrolled, so a lock can actually be reopened. */
+  hasPin: boolean
+  /**
+   * Enrol or rotate the current session's own PIN.
+   *
+   * There is no `userId` parameter and there is no admin variant here, because
+   * `set_staff_pin` takes none — the subject is `auth_user_id()`. See 0066.
+   */
+  setStaffPin: (pin: string) => Promise<{ error: string | null }>
+  /**
+   * Check a PIN against the current session's enrolled one.
+   *
+   * ⚠ This does NOT sign anyone in and cannot. It re-admits a session that
+   * already holds a JWT. A caller that treats a true verdict as authentication
+   * is rebuilding `VITE_DEV_AUTH_BYPASS` — see the `signIn` comment below for
+   * what that cost.
+   */
+  verifyStaffPin: (pin: string) => Promise<PinVerdict>
+  /** Whether this session has a PIN, for the settings row. Never returns a hash. */
+  staffPinStatus: () => Promise<PinStatus>
+  /** Remove the current session's own PIN. */
+  revokeOwnStaffPin: () => Promise<{ error: string | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -63,9 +139,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
+  /* Latest signed-in id for `logout`, which has no dependency on render state (G6 Logout audit row). */
+  const userIdRef = useRef<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [isLocked, setLocked] = useState(false)
   const [isPasswordRecovery, setPasswordRecovery] = useState(false)
+  const [hasPin, setHasPin] = useState(false)
 
   /**
    * Resolve the staff row for a signed-in identity. The role must come from
@@ -79,11 +158,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', authId)
       .maybeSingle()
 
-    if (error || !data) {
+    /*
+     * ⛔ THE READ FAILED. This is NOT the same fact as "there is no staff row",
+     * and until 16 Aug 2026 this function treated them identically
+     * (`if (error || !data)`), which silently demoted the signed-in Owner to
+     * `Client`.
+     *
+     * Found by driving the app, not by reading it. `loadProfile` runs again on
+     * every `onAuthStateChange` — including `TOKEN_REFRESHED`, roughly hourly.
+     * When that re-read failed, the header changed from "Babin Dulal · Owner" to
+     * "babindulal7@gmail.com · Client" mid-session and `/finance` began saying
+     * *"Access restricted. Your role (Client) does not have access to this
+     * module."* to the owner of the business. A page reload restored Owner,
+     * which is what makes it so hard to report: it looks like a fluke.
+     *
+     * The demotion also explains the shape of the two `PROGRESS.md` incidents on
+     * 12 Aug — "signed in, everything empty" — and migrations 0056/0059 were
+     * both written chasing that symptom at the RLS layer. This is the same
+     * symptom arriving from the client side.
+     *
+     * A failed read tells us NOTHING about who this session is, so it must not
+     * answer the question. Keep whatever identity we had already resolved: the
+     * role is a fact about the staff row, not about the health of one request,
+     * and it cannot have changed because a fetch timed out. If nothing was
+     * resolved yet, stay `null` — `Shell` sends an unresolved session to /login,
+     * which is honest, rather than rendering a Client UI over an Owner account.
+     */
+    if (error) {
+      captureError(error, { where: 'auth.reReadStaffRow', authId })
+      setUser((previous) => previous)
+      return
+    }
+
+    if (!data) {
       // Authenticated against Supabase but carrying no staff row — a real state
-      // (an auth user created outside the staff table). Deliberately NOT
-      // defaulted to a working role: an unknown identity gets `Client`, the
-      // portal-only role every staff policy already excludes.
+      // (an auth user created outside the staff table), and now genuinely
+      // distinguishable from the branch above. Deliberately NOT defaulted to a
+      // working role: an unknown identity gets `Client`, the portal-only role
+      // every staff policy already excludes.
       setUser({
         id: authId,
         // Empty, NOT 'Unknown user'. See the note below.
@@ -162,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        * someone from the screen they are legitimately using.
        */
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+      if (event === 'SIGNED_IN' && session) recordLogin(session.user.id, session.user.last_sign_in_at)
 
       if (!session) {
         setUser(null)
@@ -283,6 +396,146 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? error.message : null }
   }, [])
 
+  /*
+   * ── the staff PIN (migration 0066) ────────────────────────────────────────
+   *
+   * Four thin bindings. Every rule that matters — the 6-digit shape, the weak-PIN
+   * list, the 5-attempt ceiling, the 15-minute lockout, "one live PIN per person"
+   * — lives in the database, not here. That is not tidiness: this file runs in the
+   * browser, so anything it enforces is a suggestion. The RPCs are reachable with
+   * a fetch and no numpad.
+   *
+   * The mock data source implements `rpc()` and answers unimplemented functions
+   * with PostgREST error 42883, so calling straight through would technically
+   * work and would surface `[mock] rpc("verify_staff_pin") is not implemented`.
+   * That is honest but it reads as a bug. Refused by name instead, matching
+   * `requestPasswordReset` above.
+   */
+
+  const setStaffPin = useCallback(async (pin: string) => {
+    if (IS_MOCK) {
+      return {
+        error:
+          'Setting a PIN needs the live Supabase project, and this build is running on the mock data ' +
+          'source (VITE_DATA_SOURCE=mock). The mock store has no staff_auth_pins table to write to.',
+      }
+    }
+
+    // Wrapped for the same reason `verifyStaffPin` is: a thrown fetch must
+    // become a returned error, not a rejected promise. The Settings test suite
+    // caught this shape as an unhandled rejection while every assertion still
+    // passed — a partial auth mock left the RPC undefined and the failure
+    // surfaced nowhere the screen could show it.
+    try {
+      const { error } = await supabase.rpc('set_staff_pin', { p_pin: pin })
+      // The database raises with the operator-facing sentence already written
+      // ("That PIN is six identical digits. Choose another."), so it is passed
+      // through rather than restated — one wording, one place to change it.
+      if (!error) setHasPin(true)
+      return { error: error ? error.message : null }
+    } catch (cause) {
+      return { error: cause instanceof Error ? cause.message : 'The PIN could not be set.' }
+    }
+  }, [])
+
+  const verifyStaffPin = useCallback(async (pin: string): Promise<PinVerdict> => {
+    if (IS_MOCK) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        message:
+          'PIN unlock needs the live Supabase project, and this build is running on the mock data ' +
+          'source (VITE_DATA_SOURCE=mock). Sign in with your password.',
+      }
+    }
+
+    /*
+     * FAILS CLOSED, and the try/catch is the reason this is not a one-liner.
+     *
+     * A thrown fetch — offline tablet, dead Wi-Fi in the warehouse, Kong
+     * restarting — must not escape to the caller as a rejected promise. The
+     * lock overlay awaits this; an unhandled rejection there leaves the numpad
+     * disabled with no message, which an operator reads as "the tablet froze"
+     * and resolves by force-quitting into a still-live session on a shared
+     * device. So every failure becomes an explicit `ok: false`.
+     */
+    try {
+      const { data, error } = await supabase.rpc('verify_staff_pin', { p_pin: pin })
+
+      if (error) {
+        return { ok: false, reason: 'unavailable', message: error.message }
+      }
+
+      const verdict = (data ?? {}) as Record<string, unknown>
+
+      // `ok` is read strictly. A truthy-but-not-true value (a string "false", a
+      // 1, a null) is not a match, and this is the one comparison in the app
+      // where being lenient would open a lock.
+      return {
+        ok: verdict['ok'] === true,
+        reason: verdict['reason'] as PinVerdict['reason'],
+        attemptsRemaining:
+          typeof verdict['attempts_remaining'] === 'number'
+            ? (verdict['attempts_remaining'] as number)
+            : undefined,
+        lockedUntil: (verdict['locked_until'] as string | null) ?? null,
+      }
+    } catch (cause) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        message: cause instanceof Error ? cause.message : 'The PIN could not be checked.',
+      }
+    }
+  }, [])
+
+  const staffPinStatus = useCallback(async (): Promise<PinStatus> => {
+    if (IS_MOCK) return { hasPin: false }
+
+    /*
+     * `hasPin: false` on every failure, and that default is chosen rather than
+     * convenient.
+     *
+     * This drives a settings row that offers either "Set a PIN" or
+     * "Change / Remove". Defaulting the other way — assuming a PIN exists
+     * because the check failed — would offer Remove for something that may not
+     * be there and hide the only action that helps. Under-claiming is the safe
+     * direction for a credential the caller cannot see.
+     *
+     * It does NOT gate the lock screen; `verifyStaffPin` answers that
+     * separately, and it fails closed.
+     */
+    try {
+      const { data, error } = await supabase.rpc('staff_pin_status')
+      if (error || !data) return { hasPin: false }
+
+      const status = data as Record<string, unknown>
+      return {
+        hasPin: status['has_pin'] === true,
+        setAt: (status['set_at'] as string | null) ?? null,
+        lockedUntil: (status['locked_until'] as string | null) ?? null,
+        lastUsedAt: (status['last_used_at'] as string | null) ?? null,
+      }
+    } catch {
+      return { hasPin: false }
+    }
+  }, [])
+
+  const revokeOwnStaffPin = useCallback(async () => {
+    if (IS_MOCK) {
+      return { error: 'Removing a PIN needs the live Supabase project (VITE_DATA_SOURCE=mock).' }
+    }
+    try {
+      const { error } = await supabase.rpc('revoke_own_staff_pin')
+      // Keeps `hasPin` — and therefore the idle branch between lock and
+      // sign-out — correct without waiting for the next status read.
+      if (!error) setHasPin(false)
+      return { error: error ? error.message : null }
+    } catch (cause) {
+      return { error: cause instanceof Error ? cause.message : 'The PIN could not be removed.' }
+    }
+  }, [])
+
   /**
    * Kept synchronous-looking because existing call sites (`Header`,
    * `HandoverSheet`) call it and then navigate in the same tick. Clearing local
@@ -290,11 +543,148 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * follows cannot fail in a way that should keep the session on screen.
    */
   const logout = useCallback(() => {
+    const leavingId = userIdRef.current
     setUser(null)
     setLocked(false)
     setPasswordRecovery(false)
-    void supabase.auth.signOut()
+    setHasPin(false)
+    /* G6: the Logout row is written while the session is still valid, then the sign-out follows (bounded). */
+    void recordLogout(leavingId).finally(() => void supabase.auth.signOut())
+    /*
+     * Law 6 — the identity is leaving the device, so its rows must leave with
+     * it. Workbox keys its two PostgREST caches on URL alone, so without this an
+     * Owner's cached booking bodies (deposit_paisa, total_paisa) are served by
+     * NetworkFirst to the money-blind user who signs in next on the same
+     * warehouse tablet, where RLS can no longer reach them. The outbox is
+     * deliberately spared — see `devicePurge.ts`.
+     *
+     * Fire-and-forget for the same reason `signOut()` is: this function is
+     * called and then navigated away from in the same tick, and a sign-out must
+     * never be blocked by a cache API.
+     */
+    void purgeDeviceReadCaches()
   }, [])
+
+  /*
+   * ── the lock trigger ──────────────────────────────────────────────────────
+   *
+   * Added 24 Aug 2026. Until then NOTHING in the app ever called
+   * `setLocked(true)`: `App.tsx` rendered `ScreenLock` when `isLocked` and
+   * cleared it on unlock, `HandoverSheet` called `logout()` rather than locking,
+   * and `sessionTimeoutMinutes` — an editable, persisted setting reading
+   * "Signed out after this long idle" — was read by no code at all. So the
+   * screen lock was unreachable and the timeout was decoration.
+   *
+   * ## It locks. It never signs out. And it is OFF unless switched on.
+   *
+   * **Ruled by the owner, 25 Aug 2026**, overriding the sign-out fallback this
+   * comment used to argue for. Two rules, both load-bearing:
+   *
+   *   1. **The idle lock is OFF by default.** `sessionTimeoutMinutes` stores `0`
+   *      for off, and an absent/NaN/nonsense value is read as off too. The
+   *      failure direction matters: a misread setting must not start
+   *      interrupting people who never asked for it.
+   *   2. **The PIN re-locks the screen; nothing here ever calls `logout()`.**
+   *      With no PIN there is nothing to unlock with, so the timer does nothing
+   *      at all rather than signing the operator out.
+   *
+   * The earlier reasoning — that a PIN-less session "cannot be reopened, so
+   * locking would strand the operator at a curtain whose only exit is the
+   * sign-out they were going to get anyway" — is sound about the curtain and
+   * wrong about the cost. A packer signed out mid-Handover loses the session's
+   * work; an unlocked screen in a warehouse does not. Given that trade the owner
+   * ruled for the unlocked screen.
+   *
+   * This was not academic. `staffPinStatus()` returns `hasPin: false` whenever
+   * the PIN RPCs are missing, which is the case on the live project today
+   * (`0066`–`0068` are unapplied). Shipping the old branch would have signed
+   * every production user out after 30 idle minutes — a behaviour nobody has
+   * today, arriving with no lock screen and no Lock button.
+   *
+   * ## A timestamp plus one interval, not a timer per event
+   *
+   * Re-arming a `setTimeout` on every `mousemove` is thousands of timer
+   * operations a minute on a page an operator is actively using. Recording a
+   * number is free, and one 15-second interval does the comparison.
+   *
+   * It also behaves correctly when the tab is backgrounded, which the timer
+   * approach does not: browsers throttle timers in hidden tabs, so a 30-minute
+   * `setTimeout` can fire late or not at all. Comparing wall-clock time means a
+   * tablet asleep for an hour locks on the first check after it wakes.
+   */
+  /*
+   * Whether this session holds a PIN, resolved once per identity.
+   *
+   * The lock trigger below has to know BEFORE the timeout fires — asking at
+   * that moment would mean an await between "idle" and "locked", and a failed
+   * lookup there would have to choose between locking someone out of a session
+   * they can reopen and leaving an idle tablet open. Resolving it up front makes
+   * the timeout branch synchronous and certain.
+   */
+  useEffect(() => {
+    if (!user) {
+      setHasPin(false)
+      return
+    }
+    let cancelled = false
+    void staffPinStatus().then((status) => {
+      if (!cancelled) setHasPin(status.hasPin)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user, staffPinStatus])
+
+  const lastActivityAt = useRef(Date.now())
+
+  const lockNow = useCallback(() => {
+    if (!hasPin) return
+    setLocked(true)
+  }, [hasPin])
+
+  /* G1: shared settings load once a staff session exists — before that, RLS would return nothing. */
+  const signedInId = user?.id ?? null
+  userIdRef.current = signedInId
+  useEffect(() => {
+    if (signedInId) void hydrateSharedSettings()
+  }, [signedInId])
+
+  useEffect(() => {
+    // Nothing to lock when signed out, and no point re-arming while the curtain
+    // is already drawn.
+    if (!user || isLocked) return
+
+    const minutes = Number(getSetting('sessionTimeoutMinutes'))
+    // 0 is how the store spells "off", and off is the default (ruled 25 Aug
+    // 2026). Anything unreadable is treated as off for the same reason: this
+    // reads a value a user can edit, and the safe direction for a misread is
+    // "do not start locking people out", not "fall back to 30 minutes".
+    if (!Number.isFinite(minutes) || minutes < 1) return
+    const timeoutMs = minutes * 60_000
+
+    const note = () => {
+      lastActivityAt.current = Date.now()
+    }
+
+    const EVENTS = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'wheel'] as const
+    for (const e of EVENTS) window.addEventListener(e, note, { passive: true })
+
+    const id = window.setInterval(() => {
+      if (Date.now() - lastActivityAt.current < timeoutMs) return
+      // Lock only. No `logout()` branch — see the ruling above. A PIN-less
+      // session simply keeps running; the alternative loses a packer's work.
+      if (hasPin) setLocked(true)
+    }, 15_000)
+
+    // Start the clock from now rather than from whenever the last event was, so
+    // enabling the lock does not immediately fire on a stale timestamp.
+    note()
+
+    return () => {
+      window.clearInterval(id)
+      for (const e of EVENTS) window.removeEventListener(e, note)
+    }
+  }, [user, isLocked, hasPin, logout])
 
   return (
     <AuthContext.Provider
@@ -308,6 +698,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         isLocked,
         setLocked,
+        lockNow,
+        hasPin,
+        setStaffPin,
+        verifyStaffPin,
+        staffPinStatus,
+        revokeOwnStaffPin,
       }}
     >
       {children}
@@ -315,10 +711,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 }
 
+const FALLBACK_AUTH_CONTEXT: AuthContextType = {
+  user: null,
+  loading: true,
+  signIn: async () => ({ error: 'Auth not initialized' }),
+  requestPasswordReset: async () => ({ error: 'Auth not initialized' }),
+  updatePassword: async () => ({ error: 'Auth not initialized' }),
+  isPasswordRecovery: false,
+  logout: () => {},
+  isLocked: false,
+  setLocked: () => {},
+  lockNow: () => {},
+  hasPin: false,
+  setStaffPin: async () => ({ error: 'Auth not initialized' }),
+  verifyStaffPin: async () => ({ ok: false, reason: 'unavailable', message: 'Auth not initialized' }),
+  staffPinStatus: async () => ({ hasPin: false }),
+  revokeOwnStaffPin: async () => ({ error: 'Auth not initialized' }),
+}
+
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
+    if (import.meta.env.DEV) {
+      console.warn('[useAuth] Called outside AuthProvider or during HMR re-evaluation. Returning fallback loading state.')
+    }
+    return FALLBACK_AUTH_CONTEXT
   }
   return context
 }

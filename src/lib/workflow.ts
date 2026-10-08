@@ -1,4 +1,8 @@
 import type { StatusKey } from './status'
+/* §5.6 wants a failing gate to carry the blocking *value*. `money.ts` imports
+   nothing, so the engine stays acyclic and the refusal reads in the same
+   half-up, lakh-grouped rupees as every other figure in the app. */
+import { formatMoney, type Paisa } from './money'
 
 /**
  * **Status Engine — Foundation Specification v2.0 §1.**
@@ -47,7 +51,7 @@ export const BOOKING_STATUS: Record<BookingStatus, StatusMeta> = {
   // §4.2 — green separates these two by fill weight: solid = out, soft = in.
   'On Rent': { order: 3, token: 'out', client: 'With you', means: 'All items with the client.' },
   Returned: { order: 4, token: 'in', client: 'Returned', means: 'All items physically received back.' },
-  Closed: { order: 5, token: 'neutral', client: 'Complete', means: 'Money settled, deposit resolved, nothing open.' },
+  Closed: { order: 5, token: 'dim', client: 'Complete', means: 'Money settled, deposit resolved, nothing open.' },
 }
 
 export const STATUS_ORDER = (Object.keys(BOOKING_STATUS) as BookingStatus[]).sort(
@@ -156,6 +160,17 @@ export function assertItemCounts(c: ItemCounts, total: number): void {
   }
 }
 
+/** Converts a database item_quantity_state to workflow ItemState and Damaged flag */
+export function normalizeItemState(rawState: string): { state: ItemState; isDamaged: boolean } {
+  if (rawState === 'Damaged') {
+    return { state: 'Returned', isDamaged: true }
+  }
+  if (rawState === 'Ready' || rawState === 'Picked Up' || rawState === 'Returned' || rawState === 'Missing') {
+    return { state: rawState as ItemState, isDamaged: false }
+  }
+  return { state: 'Ready', isDamaged: false }
+}
+
 /* ── §1.9 · flags registry ─────────────────────────────────────────────── */
 
 export type FlagType = 'State' | 'Information' | 'Attention' | 'Critical'
@@ -210,7 +225,7 @@ const BLOCKS_CLOSE: readonly BookingStatus[] = ['Closed']
 
 export const FLAGS: Record<Flag, FlagMeta> = {
   Draft: { type: 'State', effect: 'Quote not yet sent', token: 'neutral', blocks: [] },
-  'Partial Pickup': { type: 'State', effect: 'Items remain at status Packed', token: 'progress', blocks: [] },
+  'Partial Pickup': { type: 'State', effect: 'Items remain at status Packed', token: 'out', blocks: [] },
   'Returned Early': { type: 'Information', effect: 'Reporting only', token: 'neutral', blocks: [] },
   'Due Soon': { type: 'Attention', effect: 'Yellow badge, ≤24h to return', token: 'progress', blocks: [] },
   Overdue: { type: 'Critical', effect: 'Red badge, blocks Close, triggers late-fee calculation', token: 'danger', blocks: BLOCKS_CLOSE },
@@ -238,31 +253,123 @@ export const FLAGS: Record<Flag, FlagMeta> = {
 
 /* ── §1.7 · close gates ────────────────────────────────────────────────── */
 
+/**
+ * What the four gates are READ FROM — corrected 7 Sep 2026 (audit MONEY-13,
+ * RL-05, RL-06).
+ *
+ * All three of those defects were the same shape: **a gate that passes because
+ * its predicate is vacuous or measures the wrong column.** A sum over zero
+ * invoices is `0`, which read as "settled"; `pending_amount` was read as "still
+ * held" when it means "not yet collected"; the damage count was a literal `0`.
+ * Each field below therefore says what it is read from, because the previous
+ * shape of this interface is what let three wrong readings look right.
+ */
 export interface CloseGateInput {
+  /**
+   * **MONEY-13.** Whether a bill for this rental exists at all — an invoice
+   * that is neither `Draft` nor `Void`.
+   *
+   * R-01 makes invoicing manual and R-02 issues it at return, so a booking can
+   * reach `Returned` having never been billed. `rentalOutstandingPaisa` is then
+   * a sum over zero rows, which is `0`, which reads as "settled". *Never
+   * billed* and *paid in full* are not the same fact; this field is the only
+   * thing that separates them.
+   */
+  rentalInvoiced: boolean
+  /** Σ `invoices.outstanding_amount` over every non-Void invoice, in paisa. */
   rentalOutstandingPaisa: number
-  depositResolved: boolean
+  /**
+   * **RL-05.** What Cine Sewa still **holds** of the client's money:
+   * `received_amount − refunded_amount − applied_amount`, in paisa.
+   *
+   * Explicitly **not** `security_deposits.pending_amount`, which
+   * `sync_deposit_balances` derives as `greatest(required − received, 0)` and
+   * therefore means "not yet collected" — the opposite liability, and the one
+   * that made a fully-collected, never-returned deposit read as resolved.
+   * Foundation §1.7 gate 2, carried forward by R-00, is "deposit resolved —
+   * refunded, forfeited, or applied", so the question is what is still held and
+   * `0` is the only resolved answer. Law 5: it is the client's money.
+   */
+  depositHeldPaisa: number
+  /** `cases` linked to the booking whose status is still an open one. */
   openCases: number
+  /**
+   * **RL-06.** `damage_findings` in `Pending Approval` and not voided, counted
+   * through **both** parents — `return_lines → operation_sessions.booking_id`
+   * (Return) and `cleaning_queue_entries.booking_id` (Reset). A constant here
+   * is a gate that cannot fail, which is exactly what it was.
+   */
   damageChargesPendingApproval: number
+  /**
+   * **§4.51.** Zero-Value Close Override.
+   * When true and rentalOutstandingPaisa === 0, the invoice gate passes without an issued invoice.
+   */
+  isZeroValueOverride?: boolean
+  /**
+   * RULING 2026-10-06 (migration 0155) — the written reason a Manager-or-above
+   * gave for closing with the deposit unresolved. Only ever lets the deposit gate
+   * pass; it moves no money and the deposit stays a liability (Law 5). The
+   * database re-checks the reason length and the role.
+   */
+  depositSkipReason?: string
 }
 
 /**
  * §1.7 — all four must pass. **Reset is deliberately not a close gate**, and
  * neither is Cleaning; an un-reset item blocks the item, never the booking.
- * §5.6 wants failing gates to carry the blocking *value*, so each returns one.
+ * §5.6 wants failing gates to carry the blocking *value*, so each returns one —
+ * and law 12 wants that value to be the actual figure or finding, in the words
+ * the operator would use, not the word "blocked" and not a raw paisa integer.
  */
 export function closeGates(i: CloseGateInput): Array<{ label: string; passing: boolean; blocking: string | null }> {
+  const rs = (paisa: number): string => formatMoney(paisa as Paisa)
+
+  /* MONEY-13 & §4.51 — "billed AND settled", or genuine zero-value override with 0 outstanding. */
+  const settled =
+    (i.rentalInvoiced && i.rentalOutstandingPaisa === 0) ||
+    (i.isZeroValueOverride === true && i.rentalOutstandingPaisa === 0)
+  const held = i.depositHeldPaisa
+  /* Only an amount still HELD can be skipped; an over-refund does not reconcile
+     and no reason makes it so. */
+  const depositSkipped = held > 0 && (i.depositSkipReason?.trim().length ?? 0) >= 10
+  const pending = i.damageChargesPendingApproval
+
   return [
     {
       label: 'Rental Outstanding settled',
-      passing: i.rentalOutstandingPaisa === 0,
-      blocking: i.rentalOutstandingPaisa === 0 ? null : String(i.rentalOutstandingPaisa),
+      passing: settled,
+      blocking: settled
+        ? null
+        : !i.rentalInvoiced
+          ? 'nothing has been invoiced for this rental, so its outstanding balance is an empty sum rather than a settled account'
+          : i.rentalOutstandingPaisa > 0
+            ? `${rs(i.rentalOutstandingPaisa)} still outstanding`
+            : `${rs(-i.rentalOutstandingPaisa)} overpaid — the invoice does not reconcile`,
     },
-    { label: 'Deposit resolved', passing: i.depositResolved, blocking: i.depositResolved ? null : 'unresolved' },
+    {
+      label: 'Deposit resolved',
+      passing: held === 0 || depositSkipped,
+      blocking:
+        held === 0 || depositSkipped
+          ? null
+          : held > 0
+            /* TODO(MONEY-10): drop the second clause once a screen records a Released or
+               Applied deposit_movement. Nothing in src/actions or src/lib/queries writes one
+               today, so telling the operator to "refund or apply it" names an action the app
+               does not offer — the same dishonesty the floor verbs were just cleared of. */
+            ? `${rs(held)} of the client's deposit is still held, so the rental cannot close — and no screen records a refund or an application yet`
+            : `${rs(-held)} more deposit has been refunded or applied than was ever received`,
+    },
     { label: 'No open Case', passing: i.openCases === 0, blocking: i.openCases === 0 ? null : `${i.openCases} open` },
     {
       label: 'No damage charge pending approval',
-      passing: i.damageChargesPendingApproval === 0,
-      blocking: i.damageChargesPendingApproval === 0 ? null : `${i.damageChargesPendingApproval} pending`,
+      passing: pending === 0,
+      /* TODO(FORMS-05): drop the second clause once approving a finding writes
+         damage_findings.approval_state. floorVerb only inserts findings today. */
+      blocking:
+        pending === 0
+          ? null
+          : `${pending} damage finding${pending === 1 ? '' : 's'} awaiting approval, and approving one is not built yet`,
     },
   ]
 }
@@ -330,7 +437,7 @@ export function planTransition(req: TransitionRequest): TransitionPlan {
     const next = STATUS_ORDER[BOOKING_STATUS[from].order + 1]
     blockers.push({
       rule: 'forward-only',
-      label: `§1.2 is forward-only and stages may not be skipped: ${from} → ${to}`,
+      label: `Stages follow the required order: ${from} → ${to}`,
       blocking: next === undefined ? 'Closed is final — nothing follows it' : `the next stage is ${next}`,
     })
   }
@@ -346,7 +453,7 @@ export function planTransition(req: TransitionRequest): TransitionPlan {
     if (req.gates === undefined) {
       blockers.push({
         rule: 'close-gate',
-        label: '§1.7 — all four close gates must pass',
+        label: /* §1.7 — all four close gates must pass */ "all four close gates must pass",
         blocking: 'not evaluated: no CloseGateInput was supplied',
       })
     } else {

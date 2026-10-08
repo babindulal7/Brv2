@@ -1,10 +1,15 @@
-import { useMemo, useState } from 'react'
+import { Pagination } from '../../components/ui/Pagination'
+import { recordExport } from '../../lib/exportAudit'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select } from '../../components/ui'
+import { Input, Select, SearchInput } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -21,16 +26,18 @@ import type { Slice } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { BrandKey, StatusKey } from '../../lib/status'
 import { grouped } from '../../lib/money'
-import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { captureError } from '../../lib/monitoring'
+import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
-import { gateContext } from '../../lib/fieldGating'
-import { IntelCard } from '../../components/ui/IntelCard'
-import { rackGlance, rackDetailGroups } from '../../data/rackIntel'
+import { newClientUuid } from '../../lib/supabase'
 import {
+  useStockTransfers,
+  useWarehouses,
+  rackGlance,
+  rackDetailGroups,
   WAREHOUSES,
   STORAGE_LOCATIONS,
-  TRANSFERS,
   EQUIPMENT_DISTRIBUTION,
   WAREHOUSE_STATUS_TONE,
   WAREHOUSE_STATUS_ICON,
@@ -51,14 +58,23 @@ import {
   recentActivity,
   transferActivity,
   insightsOf,
-} from '../../data/warehouse'
-import type {
-  Warehouse,
-  StockTransfer,
-  TransferType,
-  AlertKey,
-} from '../../data/warehouse'
+  type Warehouse,
+  type StockTransfer,
+  type TransferType,
+  type AlertKey,
+} from '../../lib/queries/warehouses'
+import { listInventory } from '../../lib/queries/inventory'
+import { gateContext } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
 import type { ActionContext } from '../../actions/core'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Inventory ▸ Warehouse Management** — built against
@@ -131,7 +147,21 @@ const th = {
   borderBottom: '1px solid var(--border)',
 }
 
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is §7.3's row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding is unchanged; rows already taller stay put.
+ *
+ * Not a density preference — a hit-test one. These rows carry the 28px open and
+ * transfer icon buttons, whose 44px targets stand 16px taller than the paint,
+ * and `whiteSpace: nowrap` holds most rows to a single line, so at
+ * 10 + line + 10 the target overhangs the row at both edges. Adjacent rows then
+ * overlap, the later one in the DOM wins the tap, and a warehouse is opened —
+ * or a transfer started — against the wrong warehouse. The floor removes the
+ * overlap rather than shrinking a target a gloved hand on a tablet needs.
+ */
 const td = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',
@@ -139,8 +169,11 @@ const td = {
   verticalAlign: 'middle' as const,
 }
 
+/* Law 15 — the law is the hit area, and it is spelled `--tap` exactly once, in
+   theme.css. `selectStyle` below spreads this, so both field kinds clear the
+   floor from one edit; the notes textarea still overrides `height` to auto. */
 const inputStyle = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',
@@ -425,6 +458,7 @@ function KpiCard({
         >
           {label}
         </div>
+        {note && <InfoTooltip content={note} label={`About ${label}`} size={16} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
       </div>
       <div
         className="figure"
@@ -432,7 +466,6 @@ function KpiCard({
       >
         {value}
       </div>
-      {note && <div style={{ marginTop: 3, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{note}</div>}
       {footer && <div style={{ marginTop: 'auto', paddingTop: 9 }}>{footer}</div>}
     </article>
   )
@@ -457,6 +490,7 @@ function exportCsv(rows: Warehouse[]) {
   const csv = [head, ...body]
     .map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\r\n')
+  recordExport({ list: 'warehouses', module: 'Inventory', rowCount: rows.length, columns: head })
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
   a.href = url
@@ -515,27 +549,112 @@ export default function Warehouses({
   const [alertFilter, setAlertFilter] = useState<AlertKey | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'capacity', dir: 'desc' })
   const [view, setView] = useState<'table' | 'cards'>('table')
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
 
   /* profile */
   const [selectedId, setSelectedId] = useState(WAREHOUSES[0]?.id ?? '')
   const [profileTab, setProfileTab] = useState<'overview' | 'layout' | 'map' | 'capacity' | 'transfers' | 'staff'>('overview')
 
-  /* transfers */
-  const [transfers, setTransfers] = useState<StockTransfer[]>(TRANSFERS)
+  /*
+   * Transfers, from the database.
+   *
+   * `createStockTransfer` has always written real `stock_transfers` and
+   * `stock_transfer_lines` rows; this list read a hand-written array, so a
+   * transfer an operator raised never appeared. Local state is kept rather than
+   * reading `live.rows` directly because the create path below prepends
+   * optimistically — the effect re-seeds from the query, so the optimistic copy
+   * is only ever ahead of the truth, never instead of it.
+   *
+   * The warehouse cards and the rack map above are still seeded, and still say
+   * so: nothing in the schema records a warehouse's capacity, and `storage_zones`
+   * has no room, rack, shelf or bin column at all. See PLAN.md §4.45(c) and this
+   * module's query header — half-wiring them would put live and invented figures
+   * side by side with nothing to tell them apart.
+   */
+  const live = useStockTransfers()
+  const [transfers, setTransfers] = useState<StockTransfer[]>([])
+  useEffect(() => {
+    setTransfers(live.rows)
+  }, [live.rows])
   const [modalOpen, setModalOpen] = useState(false)
   /* Law 12 — a create that did not land says so, in the modal's own existing
      ErrorBanner slot, and persists there until the next attempt. */
   const [transferError, setTransferError] = useState<string | null>(null)
+  /**
+   * Law 8 — the idempotency keys for THIS transfer, minted when the modal
+   * opens and reused across every retry of it (`blockKeys` ref pattern,
+   * `clients/ClientsDirectory.tsx:325`): one for the `stock_transfers` header,
+   * one for its line row. A resubmit after a failure conflicts on
+   * `client_uuid` and resolves to what already landed instead of raising the
+   * transfer twice.
+   */
+  /*
+   * The transfer form's two pickers read the DATABASE. The warehouse CARDS on
+   * this screen stay on `data/warehouse.ts` deliberately — their capacity,
+   * occupancy and rack map have no columns behind them (`storage_zones` has no
+   * room/rack/shelf/bin/capacity), so wiring them would mean deleting most of
+   * what this screen shows, which is a product decision and not this fix.
+   *
+   * The visible consequence, stated rather than hidden: the cards list four
+   * seeded facilities while the transfer form offers the two real ones.
+   */
+  const { rows: liveWarehouses } = useWarehouses()
+  const [transferProducts, setTransferProducts] = useState<Array<{ id: string; name: string; assetCode: string }>>([])
+  const [catalogueError, setCatalogueError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        /* Same read the New Rental screen uses for its equipment picker
+           (`rentals/NewRental.tsx:1731`) — `products_v`, active rows only, no
+           money columns: moving stock between facilities prices nothing, so a
+           money-blind operator must still see the whole catalogue (Law 6). */
+        const inventory = await listInventory({ page: { index: 0, size: 500 } })
+        if (cancelled) return
+        setTransferProducts(
+          inventory.rows
+            .filter((r) => r.isActive)
+            .map((r) => ({ id: r.id, name: r.name, assetCode: r.assetCode })),
+        )
+      } catch (e) {
+        if (cancelled) return
+        captureError(e)
+        setCatalogueError(e instanceof Error ? e.message : String(e))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const transferKeys = useRef<{ header: string; line: string } | null>(null)
   const openTransferModal = () => {
     setTransferError(null)
+    transferKeys.current = { header: newClientUuid(), line: newClientUuid() }
     setModalOpen(true)
   }
 
   const selected = WAREHOUSES.find((w) => w.id === selectedId) ?? WAREHOUSES[0]
 
-  const totals = totalsOf(WAREHOUSES)
+  /*
+   * `totalsOf` sums the SEEDED warehouse cards, so its `transfers` figure is
+   * seeded too — and once the Transfer Center below reads the database, that
+   * number and the pane's own count are two different answers to one question
+   * on one screen. Whichever is right, showing both is wrong.
+   *
+   * So the open-transfer count is overridden with the live one. It is the single
+   * figure in this strip that IS sourceable; capacity, accuracy, assets and
+   * staff stay seeded because nothing records them (§4.45(c)), and they keep
+   * `totalsOf`'s values rather than being blanked, so the seeded half stays
+   * internally consistent instead of becoming half-empty.
+   */
+  const seededTotals = totalsOf(WAREHOUSES)
+  const totals = {
+    ...seededTotals,
+    transfers: transfers.filter((t) => !TRANSFER_TERMINAL.has(t.status)).length,
+  }
   const alerts = alertsOf(WAREHOUSES, transfers)
   const activity = recentActivity(transfers)
   const insights = insightsOf(WAREHOUSES)
@@ -676,20 +795,37 @@ export default function Warehouses({
    * not a create either.
    */
 
+  /*
+   * `source` / `destination` are `warehouses.id`, and `item` is `products.id` —
+   * identifiers, not labels.
+   *
+   * They used to be NAMES defaulted from `data/warehouse.ts`'s seed facilities
+   * (`WAREHOUSES[0].name` / `[1].name`), and `createStockTransfer` resolves a
+   * facility against the `warehouses` table. Not one of the four seed names is a
+   * row there, so **every transfer save failed** on the source lookup. The asset
+   * was free text needing an exact `products.name` match — and even the field's
+   * own placeholder ('Sony FX3 Cinema Camera') matches no product; the catalogue
+   * calls it 'Sony FX3 Full-Frame Camera'. Both are pickers reading the database
+   * now, so an operator cannot choose something that does not exist.
+   */
   const [form, setForm] = useState({
     type: 'Branch Transfer' as TransferType,
-    source: WAREHOUSES[0]?.name ?? '',
-    destination: WAREHOUSES[1]?.name ?? '',
+    source: '',
+    destination: '',
     item: '',
     serial: '',
     notes: '',
   })
   const formError =
-    form.source === form.destination
-      ? 'Source and destination must be different warehouses.'
-      : form.item.trim() === ''
-        ? 'Name the asset being moved.'
-        : null
+    form.source === ''
+      ? 'Choose the facility the stock is leaving.'
+      : form.destination === ''
+        ? 'Choose the facility it is going to.'
+        : form.source === form.destination
+          ? 'Source and destination must be different warehouses.'
+          : form.item === ''
+            ? 'Choose the asset being moved.'
+            : null
 
   /**
    * Create is the one transfer operation this build has a real action for
@@ -704,17 +840,17 @@ export default function Warehouses({
    * resolved path, and it carries the identifier the write itself reports back
    * rather than one this screen guessed.
    *
-   * `createStockTransfer` does not set `implemented: true`, so `actions/core.ts`
-   * refuses it and the modal stays open with the reason — no row, no number, no
-   * navigation. That is the correct outcome today.
+   * `createStockTransfer` writes the `stock_transfers` header and its line
+   * through `lib/dataAccess`, under the Law 8 keys minted when this modal
+   * opened. Everything the form collects is sent: the type, both facilities,
+   * the asset name, the serial and the notes — the old two-field dispatch
+   * that dropped them (the audit's TODO(decision) on this input) is closed.
    *
-   * TODO(decision) — `CreateStockTransferInput` carries source, target and an
-   * item count only. The transfer **type**, the asset's name and serial, the
-   * source/destination zones and the operator's reason/notes are collected by
-   * this form and are not sent, because there is nowhere declared to put them.
-   * Widening that input belongs to whoever owns the actions layer; the fields
-   * are left collected rather than removed so the fix is a schema change, not a
-   * re-collection from the floor.
+   * The action resolves the typed names against the DATABASE — warehouses by
+   * name, the asset against `products`, the serial against `product_units` —
+   * so on a store that does not hold this screen's seed rows the create
+   * refuses with the reason, the modal stays open, and no local row appears.
+   * That refusal is honest: this screen's facility list is still seed data.
    */
   const createTransfer = () => {
     if (formError) return
@@ -730,13 +866,25 @@ export default function Warehouses({
       )
       return
     }
-    const from = WAREHOUSES.find((w) => w.name === form.source)
-    const to = WAREHOUSES.find((w) => w.name === form.destination)
+    const keys = transferKeys.current ?? { header: newClientUuid(), line: newClientUuid() }
+    transferKeys.current = keys
+    const from = liveWarehouses.find((w) => w.id === form.source)
+    const to = liveWarehouses.find((w) => w.id === form.destination)
+    const movedProduct = transferProducts.find((pr) => pr.id === form.item)
     setTransferError(null)
     void import('../../actions/inventory/createStockTransfer')
       .then((m) =>
         m.createStockTransfer(
-          { sourceWarehouse: form.source, targetWarehouse: form.destination, itemCount: 1 },
+          {
+            clientUuid: keys.header,
+            lineClientUuid: keys.line,
+            transferType: form.type,
+            sourceWarehouseId: form.source,
+            destinationWarehouseId: form.destination,
+            productId: form.item,
+            serial: form.serial.trim() || undefined,
+            notes: form.notes.trim() || undefined,
+          },
           ctx,
         ),
       )
@@ -744,40 +892,24 @@ export default function Warehouses({
         const created: StockTransfer = {
           /* A local React key, not an identifier anyone is shown. */
           id: `tr-${Date.now()}`,
-          /*
-           * ⚠ This is the reference the operator reads off the card and quotes
-           * between warehouses, and it is **not yet a real number**. This screen
-           * no longer mints it — that part was fixed — but the write it comes
-           * from does: `actions/inventory/createStockTransfer.ts` returns
-           * `TR-${Date.now().toString().slice(-4)}` when the caller supplies no
-           * id. Four digits off a clock collide (two transfers raised in the
-           * same 10ms window get the same reference, and the series restarts
-           * from wherever the clock happens to be), and nothing reserved it.
-           *
-           * The comment here used to say the reference "is the write's, not
-           * ours" and stop, which read as though something authoritative had
-           * assigned it. It is the write's, and the write is guessing.
-           *
-           * Numbering belongs to the database: `data/numbering.ts` +
-           * `issue()`/`prefixOf()` over the sequence tables. Fixing it is a
-           * change to the action (and its already-logged TODO(decision) on
-           * whether the Stock Transfer series is coded `TR` or `TRF`), not to
-           * this screen — a second numbering scheme built here would be the
-           * thing that guarantees the two disagree. Nothing is displayed today
-           * regardless: `createStockTransfer` is not `implemented`, so this
-           * resolved path does not run.
-           */
-          transferNo: res.transferId,
+          /* The number the DATABASE issued via next_document_number('transfer')
+             — allocated, not guessed. The clock-minted `TR-xxxx` this comment
+             used to warn about is gone with the stub. */
+          transferNo: res.transferNo,
           type: form.type,
-          sourceWarehouse: form.source,
-          sourceZone: zonesOf(from?.id ?? '')[0]?.zone ?? 'Unassigned',
-          destinationWarehouse: form.destination,
-          destinationZone: zonesOf(to?.id ?? '')[0]?.zone ?? 'Unassigned',
+          sourceWarehouse: from?.name ?? 'Unreadable warehouse',
+          /* A dash, not a seeded zone name. `zonesOf` keys off the SEED warehouse
+             ids and the endpoints are real uuids now, so it returns nothing — and
+             the row is honest anyway: this form sends no zone, and
+             `stock_transfers.source_zone_id` is left null. */
+          sourceZone: '—',
+          destinationWarehouse: to?.name ?? 'Unreadable warehouse',
+          destinationZone: '—',
           assetCount: 1,
           items: [
             {
               assetCode: '—',
-              name: form.item.trim(),
+              name: movedProduct?.name ?? 'Unreadable product',
               serial: form.serial.trim() || '—',
               category: '—',
               condition: '—',
@@ -803,14 +935,32 @@ export default function Warehouses({
           notes: form.notes.trim(),
         }
         setTransfers((prev) => [created, ...prev])
+        /* The prepend above is what the operator sees at once; this is what makes
+           it true. `created` is assembled from the form, so only a refetch proves
+           what Postgres actually stored — the transfer_no among other things. */
+        live.refetch()
+        /* This transfer landed — the next modal-open mints fresh Law 8 keys. */
+        transferKeys.current = null
         setModalOpen(false)
-        /* Land on a profile the new row is actually visible in — the Transfer Center
-           lists transfers touching the selected warehouse, so open the source. */
-        if (from) setSelectedId(from.id)
+        /*
+         * ⛔ Was `if (from) setSelectedId(from.id)`, to "land on a profile the new
+         * row is actually visible in". It cannot: `selectedId` indexes the SEED
+         * warehouses, so a real `warehouses.id` matches none and the screen
+         * silently falls back to `WAREHOUSES[0]` — showing a facility the operator
+         * did not choose.
+         *
+         * The row is not visible in the Transfer Center either, and that is a
+         * REAL GAP, not something this line can paper over: `profileTransfers`
+         * filters the live rows by `selected.name`, one of the four seeded
+         * facility names, while a real transfer names 'Central Camera Vault' or
+         * 'Lakeside Equipment Hub'. Scoping that panel to something real means
+         * deciding what a warehouse profile is, which is the same product
+         * decision the seeded cards raise. Filed, not faked.
+         */
         openTransferCentre()
       })
       .catch((err: unknown) => {
-        console.error('create stock transfer failed:', err)
+        captureError(err, { where: 'Warehouses.transfer' })
         setTransferError(`Not created — ${err instanceof Error ? err.message : String(err)}`)
       })
   }
@@ -859,7 +1009,7 @@ export default function Warehouses({
   /* ── render ──────────────────────────────────────────────────────────── */
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       <PageHeader
         icon="home"
         title="Warehouse Management"
@@ -1083,17 +1233,21 @@ export default function Warehouses({
                 <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Warehouse List</h2>
 
                 <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                  <Input
-                    icon={<Icon name="search" size={14} />}
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value)
-                      setPage(1)
-                    }}
-                    placeholder="Search warehouse, code, zone, shelf, asset, staff…"
-                    aria-label="Search warehouses"
-                    style={{ ...inputStyle, width: 258 }}
-                  />
+                  <div style={{ width: 258 }}>
+                    <SearchInput
+                      value={query}
+                      onChange={(val: string) => {
+                        setQuery(val)
+                        setPage(1)
+                      }}
+                      onClear={() => {
+                        setQuery('')
+                        setPage(1)
+                      }}
+                      placeholder="Search warehouse, code, zone, shelf, asset, staff…"
+                      aria-label="Search warehouses"
+                    />
+                  </div>
 
                   <Select
                     value={branch}
@@ -1208,7 +1362,7 @@ export default function Warehouses({
                   ))}
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
+                <DataTableShell ariaLabel="Warehouses list" data-table-scroll style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1010 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
@@ -1326,7 +1480,7 @@ export default function Warehouses({
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               )}
 
               <div
@@ -1341,91 +1495,7 @@ export default function Warehouses({
                   borderTop: '1px solid var(--border)',
                 }}
               >
-                <span>
-                  Showing {filtered.length === 0 ? 0 : start + 1} to {start + visible.length} of {filtered.length} warehouses
-                </span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  Rows per page
-                  <Select
-                    value={rowsPerPage}
-                    onChange={(e) => {
-                      setRowsPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    aria-label="Rows per page"
-                    style={selectStyle}
-                  >
-                    {ROWS_PER_PAGE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setPage(safePage - 1)}
-                    disabled={safePage === 1}
-                    aria-label="Previous page"
-                    style={{
-                      minWidth: 26,
-                      height: 26,
-                      borderRadius: 7,
-                      border: '1px solid var(--border)',
-                      background: 'transparent',
-                      color: safePage === 1 ? 'var(--disabled)' : 'var(--text2)',
-                      cursor: safePage === 1 ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    ‹
-                  </button>
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => {
-                    const on = n === safePage
-                    return (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setPage(n)}
-                        aria-current={on ? 'page' : undefined}
-                        style={{
-                          minWidth: 26,
-                          height: 26,
-                          borderRadius: 7,
-                          border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                          background: on ? 'var(--btn-primary-bg)' : 'transparent',
-                          color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: on ? 700 : 500,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        {n}
-                      </button>
-                    )
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => setPage(safePage + 1)}
-                    disabled={safePage === pageCount}
-                    aria-label="Next page"
-                    style={{
-                      minWidth: 26,
-                      height: 26,
-                      borderRadius: 7,
-                      border: '1px solid var(--border)',
-                      background: 'transparent',
-                      color: safePage === pageCount ? 'var(--disabled)' : 'var(--text2)',
-                      cursor: safePage === pageCount ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    ›
-                  </button>
-                </span>
+                <Pagination page={safePage} total={filtered.length} pageSize={rowsPerPage} onPageChange={setPage} pageSizeOptions={ROWS_PER_PAGE_OPTIONS} onPageSizeChange={(size) => { setRowsPerPage(size); setPage(1) }} />
               </div>
             </Card>
           </div>
@@ -1623,11 +1693,10 @@ export default function Warehouses({
 
                     <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)', paddingTop: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
                       <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      The spec's Description, GPS, Google Maps link, Floor and Building are not fields on a warehouse record
+                      {/* The spec's Description, GPS, Google Maps link, Floor and Building are not fields on a warehouse record
                       in this build, so they are absent rather than estimated — and no per-warehouse category split exists,
                       so §Equipment Summary stays at the whole-set Inventory Distribution card above.
-                      TODO(decision): whether a warehouse carries a geocode and a floor/building line.
-                    </p>
+                      TODO(decision): whether a warehouse carries a geocode and a floor/building line. */}Open a warehouse to see its recorded details. </p>
                   </div>
                 )}
 
@@ -1670,7 +1739,7 @@ export default function Warehouses({
                           })}
                         </div>
 
-                        <div style={{ overflowX: 'auto' }}>
+                        <DataTableShell ariaLabel="Warehouse storage locations" data-table-scroll style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 660 }}>
                             <thead>
                               <tr style={{ background: 'var(--th-bg)' }}>
@@ -1716,7 +1785,7 @@ export default function Warehouses({
                               })}
                             </tbody>
                           </table>
-                        </div>
+                        </DataTableShell>
                       </>
                     )}
                   </div>
@@ -1731,7 +1800,7 @@ export default function Warehouses({
                         disabled-with-a-reason rather than an input that silently
                         does nothing when typed into and submitted (Law 6). */}
                     <Unavailable reason="AI Warehouse Assistant is not built — there is no query engine behind this prompt yet.">
-                      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)', display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+                      <div className="focus-host" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)', display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
                         <span style={{ display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 'var(--r-sm)', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)' }}>
                           <Icon name="message" size={16} />
                         </span>
@@ -1771,16 +1840,33 @@ export default function Warehouses({
 
                     <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                       <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      Reserved and expansion capacity are in the spec but are not fields on a warehouse record in this build,
+                      {/* Reserved and expansion capacity are in the spec but are not fields on a warehouse record in this build,
                       so they are absent rather than estimated. TODO(decision): whether reserved slots are tracked per zone or
-                      per warehouse.
-                    </p>
+                      per warehouse. */}Reserved and expansion capacity are not tracked yet. </p>
                   </div>
                 )}
 
                 {/* Transfer Center */}
                 {profileTab === 'transfers' && (
                   <div style={{ padding: 0 }}>
+                    {/* The transfers pane is the only live-read surface on this
+                        screen, so it is the only one that can fail to load or be
+                        genuinely empty. The cards and rack map above are seeded
+                        and always render. */}
+                    {live.error !== null && (
+                      <div style={{ padding: '10px 14px' }}>
+                        <ErrorBanner
+                          title="Could not load transfers"
+                          message={live.error}
+                          {...{ onRetry: live.refetch }}
+                        />
+                      </div>
+                    )}
+                    {live.loading && live.rows.length === 0 && (
+                      <div style={{ padding: '14px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        Loading transfers…
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                       <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         {profileTransfers.length} transfers touch {selected.name}
@@ -1796,7 +1882,7 @@ export default function Warehouses({
                         <EmptyState title="No transfers touch this warehouse" description="Nothing has moved in or out of this facility on the seeded ledger." />
                       </div>
                     ) : (
-                      <div style={{ overflowX: 'auto' }}>
+                      <DataTableShell ariaLabel="Warehouse transfers" data-table-scroll style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
                           <thead>
                             <tr style={{ background: 'var(--th-bg)' }}>
@@ -1810,7 +1896,8 @@ export default function Warehouses({
                           <tbody>
                             {profileTransfers.map((t) => {
                               const flow = TRANSFER_FLOW[t.status]
-                              const bs = toBs(new Date(`${t.dateAD}T00:00:00Z`))
+                              const transferAd = new Date(`${t.dateAD}T00:00:00Z`)
+                              const bs = toBs(transferAd)
                               return (
                                 <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>
                                   <td style={td}>
@@ -1833,10 +1920,19 @@ export default function Warehouses({
                                   </td>
                                   <td style={{ ...td, color: 'var(--text2)' }}>{t.requestedBy}</td>
                                   <td style={td}>
-                                    <span style={{ display: 'block', color: 'var(--text)' }}>{bs ? formatBs(bs) : '—'}</span>
-                                    <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                                      {formatAd(new Date(`${t.dateAD}T00:00:00Z`))}
+                                    {/* BS leads, AD beneath — but only while the
+                                        engine can name the BS day. Outside its
+                                        table the English date takes the lead
+                                        line rather than leaving a dash above a
+                                        date the row already holds. */}
+                                    <span style={{ display: 'block', color: 'var(--text)' }}>
+                                      {bs ? formatBs(bs) : formatAd(transferAd)}
                                     </span>
+                                    {bs && (
+                                      <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                                        {formatAd(transferAd)}
+                                      </span>
+                                    )}
                                   </td>
                                   <td style={{ ...td, textAlign: 'right' }}>
                                     <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -1863,7 +1959,7 @@ export default function Warehouses({
                             })}
                           </tbody>
                         </table>
-                      </div>
+                      </DataTableShell>
                     )}
                   </div>
                 )}
@@ -2047,7 +2143,7 @@ export default function Warehouses({
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>{a.action}</div>
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{a.warehouse}</div>
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                        {bs ? formatBs(bs) : '—'} · {formatAd(a.ad)}
+                        {bs ? `${formatBs(bs)} · ${formatAd(a.ad)}` : formatAd(a.ad)}
                       </div>
                     </div>
                   </div>
@@ -2128,19 +2224,29 @@ export default function Warehouses({
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Source Facility
                 <Select value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} style={selectStyle}>
-                  {WAREHOUSES.map((w) => (
-                    <option key={w.id} value={w.name}>
-                      {w.name}
+                  <option value="">
+                    {liveWarehouses.length === 0 ? 'No active warehouse exists' : 'Select a facility'}
+                  </option>
+                  {liveWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.code ? `${w.name} (${w.code})` : w.name}
                     </option>
                   ))}
                 </Select>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Destination Facility
-                <Select value={form.destination} onChange={(e) => setForm((f) => ({ ...f, destination: e.target.value }))} style={selectStyle}>
-                  {WAREHOUSES.map((w) => (
-                    <option key={w.id} value={w.name}>
-                      {w.name}
+                <Select
+                  value={form.destination}
+                  onChange={(e) => setForm((f) => ({ ...f, destination: e.target.value }))}
+                  style={selectStyle}
+                >
+                  <option value="">
+                    {liveWarehouses.length === 0 ? 'No active warehouse exists' : 'Select a facility'}
+                  </option>
+                  {liveWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.code ? `${w.name} (${w.code})` : w.name}
                     </option>
                   ))}
                 </Select>
@@ -2150,7 +2256,20 @@ export default function Warehouses({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Asset
-                <Input value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} placeholder="Sony FX3 Cinema Camera" style={inputStyle} />
+                <Select value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} style={selectStyle}>
+                  <option value="">
+                    {catalogueError !== null
+                      ? 'Catalogue unavailable'
+                      : transferProducts.length === 0
+                        ? 'Loading the catalogue…'
+                        : 'Select an asset'}
+                  </option>
+                  {transferProducts.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.name} ({pr.assetCode})
+                    </option>
+                  ))}
+                </Select>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Serial
@@ -2194,7 +2313,6 @@ export default function Warehouses({
           </div>
         </div>
       )}
-      </PageBody>
-    </div>
+    </PageShell>
   )
 }

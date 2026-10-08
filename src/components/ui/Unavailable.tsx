@@ -99,7 +99,6 @@ export function Unavailable({
       document.removeEventListener('pointerdown', away)
       document.removeEventListener('keydown', esc)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
 
   return (

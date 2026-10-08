@@ -1,4 +1,5 @@
 import Icon from './Icon'
+import { InfoTooltip } from './InfoTooltip'
 import { Button } from './Button'
 import { BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
@@ -43,9 +44,14 @@ export interface EditableRowDef {
   hint?: string
 }
 
+/* Law 15 — the law is the hit area, not the paint, and `--tap` in theme.css is
+   where that number lives. Both consumers below are a real <input>/<textarea>
+   inside a stacked edit row, so the honest fix is to grow the box rather than
+   inset an invisible target; 36 also left these out of step with Input.tsx,
+   which has been at 44 all along. */
 const inputStyle = {
   width: '100%',
-  minHeight: 36,
+  minHeight: 'var(--tap)',
   padding: '7px 10px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -105,9 +111,12 @@ export function EditableRows({
 
         return (
           <div key={r.label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }} htmlFor={`edit-${key}`}>
-              {r.label}
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <label style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }} htmlFor={`edit-${key}`}>
+                {r.label}
+              </label>
+              {r.hint && <InfoTooltip content={r.hint} />}
+            </div>
 
             {r.as === 'textarea' ? (
               <textarea
@@ -130,10 +139,6 @@ export function EditableRows({
                 }
                 style={{ ...inputStyle, borderColor: error ? 'var(--danger)' : 'var(--border)' }}
               />
-            )}
-
-            {r.hint && !error && (
-              <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{r.hint}</span>
             )}
 
             {/* Law: errors inline, never colour alone — the message carries the meaning. */}

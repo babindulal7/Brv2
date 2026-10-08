@@ -1,13 +1,38 @@
 import Icon from '../ui/Icon'
-import { useState } from 'react'
+import { useRef, useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
+import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
+import { useSync } from '../../lib/syncContext'
+import { useOptionalWorkspace } from '../../lib/workspaceContext'
+import { InfoTooltip } from '../ui/InfoTooltip'
+import InternalNotesDrawer from '../../modules/notes/InternalNotesDrawer'
+import './shell.css'
 
 export interface Crumb {
   label: string
   to?: string | undefined
+}
+
+const DEFAULT_PAGE_INFO: Record<string, string> = {
+  Today: 'Prepare pickups, receive returns, and keep equipment moving.',
+  Dashboard: 'Prepare pickups, receive returns, and keep equipment moving.',
+  Rentals: 'Manage bookings, pickups, returns, and turnaround states.',
+  'New Rental': 'Create a new rental booking, select dates, and assign inventory.',
+  Calendar: 'Master operational schedule of deliveries, returns, and bookings.',
+  Operations: 'Daily turnaround workflows: packing, inspection, dispatch, and check-in.',
+  Inventory: 'Equipment catalog, serial tracking, availability, and condition.',
+  Clients: 'Client directory, contacts, rental history, and credit terms.',
+  Finance: 'Invoices, payments, daily closing, and financial ledgers.',
+  Documents: 'Rental agreements, delivery notes, and verified handovers.',
+  Analytics: 'Fleet utilization, revenue metrics, and operational performance.',
+  Reports: 'Fleet utilization, revenue metrics, and operational performance.',
+  'Crew Assist': 'Technician rosters, driver dispatch, and field assignments.',
+  'Team Notes': 'Operational scratchpad, shift handovers, gear defects & field alerts.',
+  Tools: 'Calculators, pricing sandbox, and technical utilities.',
+  Settings: 'System configuration, warehouse locations, and staff permissions.',
 }
 
 interface HeaderProps {
@@ -36,18 +61,54 @@ const iconBtn = {
 
 /**
  * Generation C top strip — breadcrumb left, global search centred, chrome right.
- *
- * Transcribed from `12402A27` and `09168AC3`. The page title does NOT live here;
- * it sits in `PageHeader` below, so a page can put its own action cluster beside
- * its own title without fighting the global chrome for space.
+ * Enhanced with Miraz POS Live Clock, Sync Heartbeat & Tactile Search.
  */
-export default function Header({ crumbs, searchPlaceholder = 'Search…', actions }: HeaderProps) {
-  const { user, logout } = useAuth()
+export default function Header({ crumbs, actions }: HeaderProps) {
+  const { user, logout, lockNow, hasPin } = useAuth()
+  const sync = useSync()
+  const syncStatus = sync?.status ?? (sync as { syncStatus?: string } | undefined)?.syncStatus ?? 'synced'
+  const pendingCount = sync?.pendingCount ?? 0
+  const syncError = sync?.error
+  const triggerSync = sync?.triggerSync ?? (async () => {})
+  const isAbnormalSync = syncStatus !== 'synced' || pendingCount > 0
   const navigate = useNavigate()
-  const viewport = useViewport()
-  const isPhone = viewport === 'phone'
-  const isTablet = viewport === 'tablet'
+  const vp = useViewport()
+  const isPhone = vp === 'phone'
+  const isDispatch = crumbs.some((crumb) => crumb.label === 'Today' || crumb.label === 'Dashboard')
+  const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
+  const ws = useOptionalWorkspace()
+  const profileBtnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault()
+        setNotesOpen(v => !v)
+      }
+    }
+    const handleOpenNotes = () => setNotesOpen(true)
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('babin:open-notes', handleOpenNotes)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('babin:open-notes', handleOpenNotes)
+    }
+  }, [])
+
+  const activeCrumb = crumbs[crumbs.length - 1]?.label || crumbs[0]?.label || ''
+
+  const effectiveInfo = useMemo(() => {
+    if (ws?.pageInfo) return ws.pageInfo
+    for (let i = crumbs.length - 1; i >= 0; i--) {
+      const label = crumbs[i]?.label
+      if (label && DEFAULT_PAGE_INFO[label]) {
+        return DEFAULT_PAGE_INFO[label]
+      }
+    }
+    return null
+  }, [ws?.pageInfo, crumbs])
 
   const handleLogoutRequest = () => {
     if (!user) return
@@ -60,17 +121,37 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
     }
   }
 
-  // Fallback if useAuth has no user or user has no name
-  const initials = user?.name ? user.name.slice(0, 2).toUpperCase() : 'BR'
+  // Fallback if useAuth has no user or user.name is undefined
+  const initials = (user?.name || 'BR').slice(0, 2).toUpperCase()
 
   return (
+    /*
+      The fragment is load-bearing: HandoverSheet is a Modal, and Modal paints
+      `position: fixed; inset: 0` in place (this codebase uses no portals — see
+      Modal.tsx, Select.tsx, MoreSheet.tsx, CommandPalette.tsx). An ancestor
+      carrying `backdrop-filter` is a containing block for fixed descendants in
+      WebKit and per the containing-block rules, so leaving the sheet INSIDE the
+      glass <header> risks collapsing a full-screen modal into the 59px header
+      strip on Safari/iPad. Measured here on Chromium 148: `filter` and
+      `transform` do trap a fixed child, `backdrop-filter` currently does not —
+      so this is engine-dependent, which is exactly why the sheet is a sibling
+      rather than a descendant. BottomBar.tsx:128 already renders MoreSheet this
+      way, outside its own glass <nav>; this matches it.
+    */
+    <>
     <header
+      className="app-global-header"
       style={{
-        display: 'flex',
+        display: 'grid',
+        /* Three stable columns: left crumbs / centered search / right chrome.
+           A flex row centers the search in the REMAINING space, so every page
+           with a different crumb length shifts the search box sideways. Grid
+           1fr/auto/1fr keeps the search truly centered no matter what the
+           current page's breadcrumb reads. */
+        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: isPhone ? 'var(--sp-sm)' : 'var(--sp-lg)',
-        padding: isPhone ? '8px 12px' : '10px 20px',
+        columnGap: isPhone ? 'var(--sp-xs)' : 'var(--sp-md)',
+        padding: isPhone ? '6px 12px' : '6px 20px',
         /* Reads the token rather than setting the height, so `--header-h` and
            this element cannot disagree. Everything that sticks BELOW the header
            — the page rails, the filter drawer — offsets by that token, and
@@ -78,274 +159,452 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
            real 59. Border-box is global, so this covers the padding and the
            border below. */
         minHeight: 'var(--header-h)',
+        height: 'var(--header-h)',
+        flexShrink: 0,
         borderBottom: '1px solid var(--border)',
+        /* v4.2 §4 — chrome is glass at 20–24px. --sidebar is a 0.88 tint, and a
+           sticky bar that content scrolls UNDER must blur what passes behind it
+           or the tint just smears the page through itself. */
         background: 'var(--sidebar)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         transition: 'background-color var(--dur-theme) ease',
         position: 'sticky',
         top: 0,
         zIndex: 20,
       }}
     >
-      <nav aria-label="Breadcrumb" style={{ flexShrink: 0, minWidth: 0, maxWidth: isPhone ? '180px' : undefined, overflow: 'hidden' }}>
-        <ol style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 4 : 7, margin: 0, padding: 0, listStyle: 'none' }}>
-          {crumbs.map((c, i) => {
-            const last = i === crumbs.length - 1
-            const isFirst = i === 0
-            const color = isFirst ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)'
-            const fontWeight = isFirst || last ? 600 : 500
+      <div
+        className="app-global-header__breadcrumbs"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          minWidth: 0,
+          width: '100%',
+          justifySelf: 'start',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Page controls that belong to the page as a whole (8 Oct 2026, RULINGS-2026-10-08.md):
+            pages send them here through <WorkspaceHeaderActions>, so they sit beside the page
+            name instead of above the page. Empty — and so zero-width — on pages that send none. */}
+        <span className="workspace-page-actions" ref={ws?.setHeaderActionsElement} />
+        <nav aria-label="Breadcrumb" style={{ minWidth: 0, overflow: 'hidden' }}>
+          <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
+            {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {
+              const last = i === arr.length - 1
+              const labelEl = (
+                <span
+                  aria-current={last ? 'page' : undefined}
+                  style={{
+                    /* The current page reads as the page's title (8 Oct 2026, RULINGS-2026-10-08.md):
+                       larger, in the display face; parent crumbs stay at UI size. */
+                    fontSize: last ? 'clamp(1.1rem, 0.95rem + 0.5vw, 1.35rem)' : 'var(--t-ui)',
+                    fontFamily: last ? 'var(--font-display, inherit)' : undefined,
+                    letterSpacing: last ? '-0.02em' : undefined,
+                    lineHeight: last ? 1.2 : undefined,
+                    fontWeight: i === 0 ? 600 : last ? 600 : 500,
+                    color: i === 0 ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: 'inline-block',
+                    maxWidth: isPhone ? '180px' : 'none',
+                  }}
+                >
+                  {c.label}
+                </span>
+              )
+              return (
+                <li key={`${i}-${c.label}`} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flexShrink: 0 }}>
+                  {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
+                  {c.to && !last ? (
+                    <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', minWidth: 0 }}>
+                      {labelEl}
+                    </Link>
+                  ) : (
+                    labelEl
+                  )}
+                </li>
+              )
+            })}
+          </ol>
+        </nav>
+        {/* The info slot is always mounted so pages with and without a page
+            description keep the identical breadcrumb width — otherwise the
+            icon appearing/disappearing shifts the search box on navigation. */}
+        <span style={{ display: 'inline-flex', flexShrink: 0, visibility: effectiveInfo ? 'visible' : 'hidden' }} aria-hidden={effectiveInfo ? undefined : true}>
+          <InfoTooltip
+            content={effectiveInfo ?? 'Page info'}
+            size={16}
+            label={activeCrumb ? `${activeCrumb} info` : 'Page info'}
+            style={{ flexShrink: 0 }}
+          />
+        </span>
+      </div>
 
-            return (
-              <li key={`${c.label}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 4 : 7, minWidth: 0 }}>
-                {i > 0 && <Icon name="chevron_right" size={isPhone ? 11 : 13} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
-                {!last && c.to ? (
-                  <Link
-                    to={c.to}
-                    style={{
-                      fontSize: 'var(--t-ui)',
-                      fontWeight,
-                      color,
-                      textDecoration: 'none',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {c.label}
-                  </Link>
-                ) : (
-                  <span
-                    aria-current={last ? 'page' : undefined}
-                    style={{
-                      fontSize: 'var(--t-ui)',
-                      fontWeight,
-                      color,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {c.label}
-                  </span>
-                )}
-              </li>
-            )
-          })}
-        </ol>
-      </nav>
-
+      {/* On desktop and tablet, center search input + clock + sync status */}
       {!isPhone && (
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, gap: 'var(--sp-md)' }}>
-          <button
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, width: '100%', justifySelf: 'center', gap: 'var(--sp-sm)' }}>
+          {!isDispatch && <button
             type="button"
-            onClick={() => {
-              window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))
-            }}
+            onClick={() => openCommandPalette()}
+            aria-label="Search bookings, clients, equipment and pages"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 'var(--sp-sm)',
-              width: '100%',
-              maxWidth: isTablet ? 300 : 440,
+              width: 'min(440px, 100%)',
+              flexShrink: 1,
+              minWidth: 0,
               minHeight: 44,
-              padding: '0 12px',
+              padding: '0 14px',
               borderRadius: 'var(--r-input)',
               background: 'var(--input-bg)',
               border: '1px solid var(--input-border)',
+              boxShadow: 'var(--specular-rim), 0 1px 3px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               textAlign: 'left',
+              transition: 'border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--input-focus)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--input-border)'
             }}
           >
             <Icon name="search" size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-            <span style={{ flex: 1, fontSize: 'var(--t-ui)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {searchPlaceholder} (⌘K)
-            </span>
-            <kbd
-              className="figure"
+            <span
               style={{
-                fontSize: 'var(--t-meta)',
+                flex: 1,
+                minWidth: 0,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                fontSize: 'var(--t-ui)',
                 color: 'var(--muted)',
-                flexShrink: 0,
-                padding: '2px 6px',
-                borderRadius: 4,
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
               }}
             >
-              ⌘K
-            </kbd>
-          </button>
-
-          {/* Branch & Fiscal Year Pills */}
-          {!isTablet && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              <span
+              Search bookings, clients, equipment…
+            </span>
+            {vp !== 'tablet' && (
+              <kbd
+                className="figure"
                 style={{
                   fontSize: '11px',
                   fontWeight: 600,
-                  padding: '3px 8px',
-                  borderRadius: 'var(--r-xs)',
-                  background: 'rgba(59, 130, 246, 0.12)',
-                  color: '#60a5fa',
-                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  color: 'var(--muted)',
+                  flexShrink: 0,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                }}
+              >
+                Ctrl+K / ⌘K
+              </kbd>
+            )}
+          </button>}
+
+          {/* Outbox sync badge slot is always mounted so its appearance can
+              never push the search box or the right chrome sideways. When the
+              connection is healthy the slot stays invisible but keeps its
+              width; it is removed from tab order and the a11y tree. */}
+          <div
+            className="header-sync-context"
+            aria-hidden={isAbnormalSync ? undefined : true}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexShrink: 0,
+              minWidth: 104,
+              justifyContent: 'flex-start',
+              visibility: isAbnormalSync ? 'visible' : 'hidden',
+            }}
+          >
+            <button
+                className="header-sync-control tap"
+                type="button"
+                tabIndex={isAbnormalSync ? 0 : -1}
+                onClick={() => triggerSync()}
+                style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 'var(--sp-xs)',
-                }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6' }} />
-                Kathmandu HQ
-              </span>
-              <span
-                style={{
+                  gap: 6,
+                  minHeight: 44,
+                  minWidth: 96,
+                  justifyContent: 'center',
+                  whiteSpace: 'nowrap',
+                  padding: '4px 11px',
+                  borderRadius: 999,
+                  background:
+                    syncStatus === 'syncing'
+                      ? 'var(--nav-active-bg)'
+                      : pendingCount > 0 || syncStatus === 'pending'
+                      ? 'rgba(232, 118, 45, 0.12)'
+                      : syncStatus === 'offline'
+                      ? 'var(--surface-2)'
+                      : syncStatus === 'error'
+                      ? 'var(--danger-soft)'
+                      : 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--specular-rim)',
                   fontSize: '11px',
                   fontWeight: 600,
-                  padding: '3px 8px',
-                  borderRadius: 'var(--r-xs)',
-                  background: 'rgba(245, 158, 11, 0.12)',
-                  color: '#fbbf24',
-                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                  color:
+                    syncStatus === 'syncing'
+                      ? 'var(--primary-text)'
+                      : pendingCount > 0 || syncStatus === 'pending'
+                      ? 'var(--warn-text)'
+                      : syncStatus === 'offline'
+                      ? 'var(--muted)'
+                      : syncStatus === 'error'
+                      ? 'var(--danger-text)'
+                      : 'var(--success-text)',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  transition: 'all var(--dur-fast) var(--ease)',
                 }}
+                title={
+                  syncStatus === 'syncing'
+                    ? 'Syncing with Supabase Cloud...'
+                    : pendingCount > 0
+                    ? `${pendingCount} offline mutations pending. Click to sync now.`
+                    : syncStatus === 'offline'
+                    ? 'Offline Mode active (Dexie cache). Click to sync when reconnected.'
+                    : syncStatus === 'error'
+                    ? `Sync failed: ${syncError ?? 'no reason reported'}. Click to retry.`
+                    : 'Cloud Database & Local Cache Synced. Click to force sync.'
+                }
               >
-                FY 2083/84
-              </span>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    display: 'inline-block',
+                    background:
+                      syncStatus === 'syncing'
+                        ? 'var(--primary-text)'
+                        : pendingCount > 0 || syncStatus === 'pending'
+                        ? 'var(--warn-text)'
+                        : syncStatus === 'error'
+                        ? 'var(--danger-text)'
+                        : syncStatus === 'offline'
+                        ? 'var(--muted)'
+                        : 'var(--success-text)',
+                    boxShadow:
+                      syncStatus === 'syncing'
+                        ? '0 0 6px var(--primary-text)'
+                        : syncStatus === 'error'
+                        ? '0 0 6px var(--danger-text)'
+                        : undefined,
+                  }}
+                />
+                <span>
+                  {syncStatus === 'syncing'
+                    ? 'Syncing…'
+                    : pendingCount > 0
+                    ? `${pendingCount} Queued`
+                    : syncStatus === 'offline'
+                    ? 'Offline'
+                    : syncStatus === 'error'
+                    ? 'Sync Error'
+                    : 'Synced'}
+                </span>
+              </button>
             </div>
-          )}
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 'var(--sp-xs)' : 'var(--sp-sm)', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, justifySelf: 'end', minWidth: 0 }}>
         {actions}
 
-        {/* Phone search button triggering ⌘K command palette */}
-        {isPhone && (
+        <button
+          type="button"
+          onClick={() => setNotesOpen(true)}
+          aria-label="Team internal notes"
+          title="Team internal notes (Alt+N)"
+          style={iconBtn}
+        >
+          <Icon name="message" size={17} />
+        </button>
+
+        {isPhone && !isDispatch && (
           <button
             type="button"
+            onClick={() => openCommandPalette()}
             aria-label="Search"
-            onClick={() => {
-              window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))
-            }}
+            title="Search"
             style={iconBtn}
           >
             <Icon name="search" size={17} />
           </button>
         )}
 
-        <button type="button" aria-label="Notifications, 12 unread" style={{ ...iconBtn, position: 'relative' }}>
-          <Icon name="bell" size={17} />
-          <span
-            className="figure"
-            style={{
-              position: 'absolute',
-              top: 1,
-              right: 1,
-              minWidth: 16,
-              height: 16,
-              borderRadius: 'var(--r-badge)',
-              /*
-               * The AA-verified status pair, not raw `--danger`. Dark theme's
-               * `--danger` is #ef4444, and white on it measured 3.76:1 — under
-               * AA for 9.5px text. The damage pair passes in both themes.
-               */
-              background: 'var(--st-danger-fg)',
-              color: 'var(--st-danger-bg)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-              display: 'grid',
-              placeItems: 'center',
-              border: '2px solid var(--sidebar)',
-            }}
-          >
-            12
-          </span>
-        </button>
-
-        {!isPhone && (
-          <button type="button" aria-label="Help" style={iconBtn}>
-            <Icon name="info" size={17} />
-          </button>
-        )}
-
-        {isPhone ? (
+        {/* Compact User Profile Trigger (Law 15: >= 44x44px hit area across all viewports) */}
+        <div style={{ position: 'relative' }}>
           <button
+            ref={profileBtnRef}
             type="button"
-            onClick={handleLogoutRequest}
-            aria-label={`User profile: ${user?.name || 'Guest'}. Log out`}
+            onClick={() => setProfileOpen((v) => !v)}
+            /*
+             * WCAG 2.5.3 "Label in Name" — the visible initials ("BA") are
+             * part of what a sighted user reads, so the accessible name has to
+             * CONTAIN them. `aria-hidden` on the avatar was tried first and is
+             * not enough: axe still counts aria-hidden text as visible for this
+             * rule, because from a sighted user's side it very much is. Leading
+             * with the initials and following with the role is the form the
+             * rule wants, and it reads better too — a screen-reader user hears
+             * who they are signed in as before they hear what the control does.
+             */
+            aria-label={`${initials} — user profile`}
+            title="User profile"
+            aria-expanded={profileOpen}
             style={{
               ...iconBtn,
               padding: 0,
             }}
           >
             <span
+              aria-hidden="true"
               style={{
-                width: 32,
-                height: 32,
+                width: 36,
+                height: 36,
                 borderRadius: 'var(--r-badge)',
                 background: 'var(--card2)',
                 border: '1px solid var(--border)',
                 display: 'grid',
                 placeItems: 'center',
-                color: 'var(--text2)',
+                color: 'var(--text)',
                 fontSize: 'var(--t-meta)',
                 fontWeight: 700,
-                flexShrink: 0,
               }}
             >
               {initials}
             </span>
           </button>
-        ) : (
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              height: 38,
-              padding: '0 6px 0 3px',
-              fontFamily: 'inherit',
-            }}
-          >
-            <span
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 'var(--r-badge)',
-                background: 'var(--card2)',
-                border: '1px solid var(--border)',
-                display: 'grid',
-                placeItems: 'center',
-                color: 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-                flexShrink: 0,
-              }}
-            >
-              {initials}
-            </span>
-            <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
-              <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-                {user?.name || 'Guest'}
-              </span>
-              <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
-            </span>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleLogoutRequest() }}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)' }}
-            >
-              Log Out
-            </button>
-          </div>
-        )}
+
+          {profileOpen && (
+            <>
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+                onClick={() => {
+                  setProfileOpen(false)
+                  // Scrim clicks land focus on body — hand it back instead of
+                  // stranding it, but never steal a focus that already moved
+                  // somewhere meaningful.
+                  const active = document.activeElement as Element | null
+                  if (!active || active === document.body) profileBtnRef.current?.focus()
+                }}
+                aria-hidden="true"
+              />
+              <div
+                role="dialog"
+                aria-label="User profile"
+                title="User profile"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  zIndex: 91,
+                  width: 230,
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-card)',
+                  boxShadow: 'var(--shadow-modal)',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                  <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                    {user?.name || 'Guest'}
+                  </div>
+                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
+                    {user?.role || ''} · Kathmandu HQ
+                  </div>
+                </div>
+                {hasPin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileOpen(false)
+                      lockNow()
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      minHeight: 44,
+                      padding: '0 10px',
+                      borderRadius: 'var(--r-sm)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      color: 'var(--text)',
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <Icon name="lock" size={16} />
+                    Lock Session
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileOpen(false)
+                    handleLogoutRequest()
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    minHeight: 44,
+                    padding: '0 10px',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1px solid transparent',
+                    background: 'var(--btn-danger-bg)',
+                    color: 'var(--btn-danger-fg)',
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Log Out
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {showHandover && (
-        <HandoverSheet
-          isOpen={showHandover}
-          onClose={() => setShowHandover(false)}
-          userName={user?.name}
-          userRole={user?.role}
-        />
-      )}
     </header>
+
+    {showHandover && (
+      <HandoverSheet
+        isOpen={showHandover}
+        onClose={() => setShowHandover(false)}
+        userName={user?.name}
+        userRole={user?.role}
+      />
+    )}
+
+    {notesOpen && (
+      <InternalNotesDrawer
+        isOpen={notesOpen}
+        onClose={() => setNotesOpen(false)}
+      />
+    )}
+    </>
   )
 }

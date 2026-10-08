@@ -1,46 +1,56 @@
-import { useMemo } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { recordExport } from '../../lib/exportAudit'
+import { canExportClientPii } from '../../lib/rbac'
+import { useAuth } from '../../lib/auth'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { useViewport } from '../../lib/device'
+import { Card, PageHeader, PageActions, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
+import { PageShell } from '../../components/ui/PageShell'
 import type { Kpi } from '../../components/ui/Page'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { ClientsDirectory } from './ClientsDirectory'
 import { useClients, useMembershipPlans } from '../../lib/queries/useClients'
 import { EmptyState } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import Membership from './Membership'
+import { RecordForm } from '../../components/records/RecordForm'
+import ImportCenter from './ImportCenter'
+import DuplicateCenter from './DuplicateCenter'
+import GenerateReferralCode from './GenerateReferralCode'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { useAuth } from '../../lib/auth'
-import { isStaff } from '../../lib/rbac'
-import { TIER_TONE, type ClientRecord } from '../../data/clients'
+import { TIER_TONE, type ClientRecord, STACK_NOTE } from '../../lib/queries/clients'
 import { STATUS } from '../../lib/status'
+import { FilterButton } from '../../components/ui/FilterDrawer'
+import './clients.css'
 
 /**
- * Clients — directory, memberships, referrals and credit.
- *
- * Foundation §5.1 merges Memberships into this screen as a **tab**, so the page
- * title and the tab strip live here and `Membership` renders `embedded`.
- *
- * The render heads the first tab "Customers". CLAUDE.md: that word appears
- * nowhere in the UI — they are **clients**.
+ * Clients — directory, memberships, referrals, credit, imports, and duplicates.
+ * All workflows integrated directly in this module with tabs and in-page views.
  */
 
-type TabKey = 'clients' | 'membership' | 'referral' | 'credit'
+type TabKey = 'clients' | 'new' | 'membership' | 'referral' | 'credit' | 'import' | 'duplicates'
 
 interface TabDef {
   key: TabKey
   label: string
   /** A money-only surface is absent for Warehouse, not disabled (§8.3). */
   money?: boolean
+  hideInBar?: boolean
 }
 
 const TAB_DEFS: TabDef[] = [
-  { key: 'clients', label: 'Clients' },
+  { key: 'clients', label: 'Directory' },
+  { key: 'new', label: 'New Client', hideInBar: true },
   { key: 'membership', label: 'Membership' },
   { key: 'referral', label: 'Referral' },
   { key: 'credit', label: 'Credit', money: true },
+  { key: 'import', label: 'Import' },
+  { key: 'duplicates', label: 'Duplicates' },
 ]
 
 /** Escapes a value for a CSV cell — the export is real, so quoting has to be. */
@@ -49,23 +59,15 @@ function csvCell(v: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-export interface ClientsProps {
-  loading?: boolean | undefined
-  error?: string | null | undefined
-  onRetry?: (() => void) | undefined
-}
-
-export default function Clients({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: ClientsProps = {}) {
-  const navigate = useNavigate()
-  const { user } = useAuth()
-  const isStaffMember = user ? isStaff(user.role) : true
+export default function Clients() {
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
   const money = useCanViewMoney()
+  const { user } = useAuth()
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
+  const [directoryFiltersOpen, setDirectoryFiltersOpen] = useState(false)
+  const [membershipFiltersOpen, setMembershipFiltersOpen] = useState(false)
 
   /**
    * Every panel on this screen now reads the database. The directory comes from
@@ -81,50 +83,36 @@ export default function Clients({
 
   /**
    * Blocking is a write now, and this screen's only job in it is the re-read.
-   *
-   * ⛔ **What this replaced.** A `bulkBlock(ids, reason)` handler and a
-   * `blockRefusal` banner that said "N clients were NOT blocked … Nothing on
-   * this screen has changed", because `actions/clients/blockClient.ts` was a
-   * stub. It is now implemented: a block is an insert into `client_flags` and an
-   * unblock sets that row's removal fields (Law 3 — never a delete).
-   * `ClientsDirectory` owns the dispatch and reports its own outcome; the one
-   * thing it cannot do is refresh the list, because `useClients` lives here.
-   *
-   * `isBlocked` arrives from `client_directory_v.is_blocked` (migration 0054),
-   * so re-reading is the only way to show the change. There is deliberately no
-   * local override map: painting `isBlocked` over a fetched row is what made the
-   * old version unable to tell a real block from an imagined one.
    */
-  const tabs = useMemo(() => TAB_DEFS.filter((t) => money || !t.money), [money])
-
-  const requested = (params.get('tab') ?? 'clients') as TabKey
-  const activeTab: TabKey = tabs.some((t) => t.key === requested) ? requested : 'clients'
+  const tabParam = (params.get('tab') as TabKey | null) ?? 'clients'
+  const activeTab: TabKey = TAB_DEFS.some((t) => t.key === tabParam) ? tabParam : 'clients'
 
   const setTab = (key: TabKey) => {
+    setDirectoryFiltersOpen(false)
+    setMembershipFiltersOpen(false)
     const next = new URLSearchParams(params)
     if (key === 'clients') next.delete('tab')
     else next.set('tab', key)
-    setParams(next, { replace: true })
+    setParams(next)
   }
 
-  /**
-   * A real CSV of the directory. Money columns are omitted for Warehouse — an
-   * export is still the application handing out figures, so §8.3 applies to the
-   * file exactly as it applies to the table.
-   */
+  // Streamline visible tabs to core operational sections; secondary tools in overflow
+  const PRIMARY_TAB_KEYS: TabKey[] = ['clients', 'membership']
+  const visibleTabs = TAB_DEFS.filter(
+    (t) => (PRIMARY_TAB_KEYS.includes(t.key) || t.key === activeTab) && !t.hideInBar && (!t.money || money),
+  )
+
+  /** Full directory export as CSV. Escaped cells; dates in both calendars. */
   const exportCsv = () => {
-    // No 'Company' column. `ClientRecord.company` has no source in
-    // `client_directory_v` — the mapper never sets it — so every cell was blank
-    // on every row. A header over nothing is a column the file cannot fill.
+    /* G5 (RULING 2026-10-07): phone, email and PAN leave the building only with Owner · Admin · Manager. */
+    const pii = canExportClientPii(user?.role ?? 'Client')
     const headers = [
       'Client ID',
       'Name',
       'Type',
       'Membership',
-      'Phone',
-      'Email',
-      'PAN',
-      'Current Rentals',
+      ...(pii ? ['Phone', 'Email', 'PAN'] : []),
+      'Active Rentals',
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
       'Last Rental (BS)',
       'Status',
@@ -135,17 +123,16 @@ export default function Clients({
         c.name,
         c.clientType,
         c.membership,
-        c.phone,
-        c.email,
-        c.pan ?? '',
+        ...(pii ? [c.phone, c.email, c.pan ?? ''] : []),
         c.currentRentalsCount,
         ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
         c.lastRentalBs,
-        c.isBlocked ? 'Blocked' : 'Active',
+        c.isBlocked ? 'Blocked' : 'Not blocked',
       ]
         .map(csvCell)
         .join(','),
     )
+    recordExport({ list: 'clients', module: 'Clients', rowCount: clients.length, columns: headers, includesPii: pii })
     const blob = new Blob([[headers.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -171,78 +158,65 @@ export default function Clients({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
+    <PageShell
+      width="full"
+      header={
+        <PageHeader
+        {...(activeTab === 'clients'
+          ? {
+              leading: (
+                <FilterButton
+                  onClick={() => setDirectoryFiltersOpen((open) => !open)}
+                  controls="clients-filters"
+                  expanded={directoryFiltersOpen}
+                />
+              ),
+            }
+          : activeTab === 'membership' ? {
+              leading: (
+                <FilterButton
+                  onClick={() => setMembershipFiltersOpen((open) => !open)}
+                  controls="membership-filters"
+                  expanded={membershipFiltersOpen}
+                />
+              ),
+            } : {})}
         title="Clients"
-        description="Manage your clients, memberships, referrals and credit"
         actions={
-          <>
-            <Button variant="primary" icon="plus" onClick={() => navigate('/clients/new')}>
-              New Client
-            </Button>
-            <Button icon="upload" onClick={() => navigate('/clients/import')}>
-              Import
-            </Button>
-            <Button icon="download" onClick={exportCsv}>
-              Export
-            </Button>
-            <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
-              Find Duplicates
-            </Button>
-          </>
+          <PageActions
+            primary={
+              <Button variant="primary" icon="plus" aria-label="New Client" onClick={() => setTab('new')}>
+                {phone ? 'New' : 'New Client'}
+              </Button>
+            }
+            secondary={[
+              <Button key="export" icon="download" aria-label="Export clients" onClick={exportCsv}>
+                {phone ? '' : 'Export'}
+              </Button>,
+            ]}
+            overflow={[
+              { label: 'Import Clients', icon: 'upload', onClick: () => setTab('import') },
+              { label: 'Duplicate Center', icon: 'users', onClick: () => setTab('duplicates') },
+              ...(money ? [{ label: 'Credit Policies', icon: 'card' as const, onClick: () => setTab('credit') }] : []),
+              { label: 'Referral Codes', icon: 'sparkles', onClick: () => setTab('referral') },
+            ]}
+          />
         }
-      />
+        />
+      }
+    >
 
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
-        {tabs.map((t) => {
-          const on = activeTab === t.key
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                height: 34,
-                padding: '0 12px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                marginBottom: -1,
-              }}
-            >
-              {t.label}
-            </button>
-          )
-        })}
+      <div style={{ overflowX: 'auto', paddingBottom: 2, maxWidth: '100%' }}>
+        <SegmentedControl<TabKey>
+          ariaLabel="Client sections"
+          options={visibleTabs.map((t) => ({ id: t.key, label: t.label }))}
+          value={activeTab}
+          onChange={setTab}
+        />
       </div>
 
       {activeTab === 'clients' && (
         <>
-          {/*
-            `PageBody` owns error → loading → children here, in that fixed order,
-            and replaces the ladder this screen used to hand-roll (an ErrorBanner,
-            a Card reading "Loading clients…", and a bare boolean for the happy
-            path). Three deliberate choices:
-
-            - `empty` is NOT passed. `ClientsDirectory` renders its own empty
-              state one level down and it is the better one: it keeps the search
-              box and the filter chips on screen, and it already distinguishes
-              "the directory is empty" from "nothing matches this filter" — a
-              distinction only it can make, because it owns the filter state.
-              Intercepting at zero rows here would replace both with one message
-              and take the filters away with them.
-            - `hasRows` IS passed, so a failed refresh renders the banner ABOVE
-              the table someone is reading instead of replacing it.
-            - `restricted` is not set: clients are not a money surface. A
-              money-blind session reads the directory with the money columns
-              absent, which `client_directory_v` does by returning them null.
-          */}
           <PageBody
             loading={isLoading}
             error={isError}
@@ -252,18 +226,27 @@ export default function Clients({
             skeleton="table"
             skeletonRows={6}
           >
-            <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} onBlockChanged={refresh} />
+            <ClientsDirectory
+              clients={clients}
+              onRequestAdd={() => setTab('new')}
+              onBlockChanged={refresh}
+              filtersOpen={directoryFiltersOpen}
+              onFiltersOpenChange={setDirectoryFiltersOpen}
+            />
           </PageBody>
         </>
       )}
-      {activeTab === 'membership' && <Membership embedded />}
+      {activeTab === 'new' && <RecordForm kind="client" onDone={() => setTab('clients')} />}
+      {activeTab === 'import' && <ImportCenter embedded />}
+      {activeTab === 'duplicates' && <DuplicateCenter embedded />}
+      {activeTab === 'membership' && <Membership embedded filtersOpen={membershipFiltersOpen} onFiltersClose={() => setMembershipFiltersOpen(false)} />}
       {activeTab === 'referral' && <ReferralView />}
       {activeTab === 'credit' && money && (
         <CreditView clients={clients} loading={isLoading} error={isError} onRetry={handleRetry} />
       )}
 
       <FooterNote extra={['Clients are never deleted — a closed account is retained and marked']} />
-    </div>
+    </PageShell>
   )
 }
 
@@ -316,13 +299,31 @@ export const REFERRALS: Referral[] = [
 const th = {
   textAlign: 'left' as const,
   padding: '9px 12px',
+  fontFamily: "'Outfit', var(--font-display), sans-serif",
   fontSize: 'var(--t-th)',
   fontWeight: 600,
   color: 'var(--text2)',
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding is untouched; the floor is a vertical law.
+ *
+ * This is a DATA-INTEGRITY fix, not a density preference. At 11 + 11 + a
+ * --t-meta line the credit rows below stood around 39px, which cannot contain
+ * the 44px hit area §7.3 owes the client link each row carries. A target
+ * bigger than its row has to overhang into the neighbouring row, and an
+ * absolutely positioned hit area wins the hit test — so the LATER row in the
+ * DOM takes any tap landing in the overlap band. Commit 7d38cdf proved that on
+ * the floor workspaces, where a boundary tap could record a return against the
+ * wrong line item. On a credit table the same mis-tap opens the wrong client's
+ * account, and every credit-limit judgement made from that screen is then
+ * being made about the wrong person. The floor has to come first so the link
+ * can be given its 44px without re-creating the overlap.
+ */
+const td = { height: 'var(--row-min-h)', padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 /**
  * Referral — the panel that used to render `REFERRALS` above.
@@ -345,13 +346,26 @@ const td = { padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text
  * not a source for this one.
  */
 function ReferralView() {
-  const navigate = useNavigate()
+  const [composing, setComposing] = useState(false)
+
+  if (composing) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div>
+          <Button icon="chevron_left" onClick={() => setComposing(false)}>
+            Back to Referrals
+          </Button>
+        </div>
+        <GenerateReferralCode embedded onDone={() => setComposing(false)} />
+      </div>
+    )
+  }
 
   return (
     <Card
       title="Referral conversions and affiliate rewards"
       action={
-        <Button icon="plus" onClick={() => navigate('/clients/referral/new')}>
+        <Button icon="plus" onClick={() => setComposing(true)}>
           Generate Referral Code
         </Button>
       }
@@ -449,7 +463,7 @@ function CreditView({
       <Card
         title="Credit policy by membership tier"
         action={
-          <Unavailable reason="The Manager override gate is not built yet — Foundation §10 requires an authorisation step and an immutable audit row that do not exist">
+          <Unavailable reason={/* The Manager override gate is not built yet — Foundation §10 requires an authorisation step and an immutable audit row that do not exist */ "Manager overrides are not available yet."}>
             <Button icon="flag" disabled>
               Request Override
             </Button>
@@ -472,20 +486,11 @@ function CreditView({
           emptyTitle="No membership plan is on file"
           emptyMessage="`membership_plans` holds no active plan, so there is no tier, no default credit limit and no plan discount to state. The five tiers this table used to list were written into the page."
         >
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div className="credit-policy-grid">
             {plans.rows.map((p) => (
               <div
                 key={p.level}
-                style={{
-                  padding: 'var(--sp-md)',
-                  borderRadius: 'var(--r-card)',
-                  background: 'var(--card2)',
-                  border: '1px solid var(--border)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                  minWidth: 0,
-                }}
+                className="credit-policy-card"
               >
                 <span
                   style={{
@@ -504,7 +509,7 @@ function CreditView({
                 >
                   {p.label}
                 </span>
-                <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                <span className="figure client-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                   {/* null is withheld, never zero — see `MembershipPlanRow`. */}
                   {p.defaultCreditLimit === null ? '—' : formatMoney(p.defaultCreditLimit)}
                 </span>
@@ -513,7 +518,7 @@ function CreditView({
                       figure — the two are the same value here, so neither is
                       claimed as a number. */}
                   Discount{' '}
-                  <span className="figure">
+                  <span className="figure client-mono">
                     {p.individualDiscountPct === null ? 'Negotiated' : `${p.individualDiscountPct}%`}
                   </span>
                 </span>
@@ -533,7 +538,10 @@ function CreditView({
           }}
         >
           <Icon name="info" size={13} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 1 }} />
-          Discount stacking is capped at 25% — a plan discount plus any promotion may not exceed it.
+          {/* The 25% stacking cap this line used to state was rescinded — see
+              STACK_NOTE's own note in data/membership.ts. Imported rather than
+              restated so the two surfaces cannot drift apart again. */}
+          {STACK_NOTE}
         </p>
       </Card>
 
@@ -548,8 +556,8 @@ function CreditView({
           emptyTitle="No account carries an approved credit limit"
           emptyMessage="Every loaded client has a limit of zero, so none of them can rent on credit today."
         >
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+          <DataTableShell ariaLabel="Approved credit limits">
+            <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)' }}>
                   <th style={th}>Client</th>
@@ -561,7 +569,7 @@ function CreditView({
               </thead>
               <tbody>
                 {withLimit.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={c.id} className="client-row" style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ ...td, fontWeight: 600 }}>
                       <Link to={`/clients/${c.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                         {c.name}
@@ -584,11 +592,11 @@ function CreditView({
                         {c.membership}
                       </span>
                     </td>
-                    <td className="figure" style={td}>
+                    <td className="figure client-outfit" style={td}>
                       {formatMoney(c.creditLimitPaisa)}
                     </td>
                     <td
-                      className="figure"
+                      className="figure client-outfit"
                       style={{ ...td, fontWeight: c.outstandingPaisa > 0 ? 600 : 400, color: c.outstandingPaisa > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
                     >
                       {formatMoney(c.outstandingPaisa)}
@@ -616,7 +624,7 @@ function CreditView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         </PageBody>
       </Card>
     </div>

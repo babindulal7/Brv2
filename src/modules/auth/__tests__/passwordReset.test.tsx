@@ -244,13 +244,13 @@ describe('ResetPassword — with a recovery session', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  it('sets the password and lands the operator on /today', async () => {
+  it('sets the password and lands the operator on /dashboard', async () => {
     await mount(<ResetPassword />)
     await type(byId('new-password'), 'correct-horse-battery')
     await type(byId('confirm-password'), 'correct-horse-battery')
     await submit()
 
     expect(updatePassword).toHaveBeenCalledWith('correct-horse-battery')
-    expect(navigate).toHaveBeenCalledWith('/today', { replace: true })
+    expect(navigate).toHaveBeenCalledWith('/dashboard', { replace: true })
   })
 })

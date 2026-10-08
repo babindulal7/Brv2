@@ -1,12 +1,52 @@
-import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
+import { TouchTarget } from './TouchTarget'
 import { useViewport } from '../../lib/device'
+
+/*
+ * ── Shared modal bookkeeping (module scope, one per bundle) ─────────────────
+ *
+ * Two defects lived here while each instance managed itself in isolation
+ * (UI_UX_AUDIT_2026-08-28 §1, §6, §7):
+ *
+ *  · SCROLL LOCK — every instance's cleanup set `body.overflow = ''`
+ *    unconditionally, so closing a ConfirmDialog stacked over another Modal
+ *    (ClientsDirectory "Block Client", VoidInvoiceModal) unlocked the page
+ *    while the outer modal was still up. `scrollLocks` counts open modals and
+ *    only the LAST one out restores scrolling.
+ *
+ *  · ESCAPE — every open instance listened on `window`, so one Escape closed
+ *    the whole stack, outer form included. `modalStack` records opening order;
+ *    only the TOP modal answers Escape.
+ */
+const modalStack: symbol[] = []
+let scrollLocks = 0
+
+function lockScroll(id: symbol) {
+  modalStack.push(id)
+  scrollLocks += 1
+  document.body.style.overflow = 'hidden'
+}
+
+function unlockScroll(id: symbol) {
+  const i = modalStack.indexOf(id)
+  if (i !== -1) modalStack.splice(i, 1)
+  scrollLocks = Math.max(0, scrollLocks - 1)
+  if (scrollLocks === 0) document.body.style.overflow = ''
+}
+
+/* What can take focus inside the dialog, for the Tab trap and initial focus.
+   Deliberately the boring selector — matches FilterDrawer's approach rather
+   than inventing a cleverer one. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // Matches --dur in theme.css (the app's generic transition-duration token).
 // Kept as a JS constant so the close-unmount timer stays in sync with the
 // CSS fade below; update both together if that token ever changes.
-const TRANSITION_MS = 150
+const TRANSITION_MS = 200
 
 /**
  * Rewritten from Tailwind utility classNames — `fixed inset-0 z-50 flex...` —
@@ -22,12 +62,17 @@ const TRANSITION_MS = 150
 export interface ModalProps {
   isOpen: boolean
   onClose: () => void
+  onEscape?: () => void
   title?: string
-  subtitle?: string
+  subtitle?: ReactNode
   children: ReactNode
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   sheet?: boolean
+  sidePeek?: boolean
+  swipeDismiss?: boolean
+  peekHeight?: boolean
+  portal?: boolean
 }
 
 const SIZE_MAX_WIDTH: Record<NonNullable<ModalProps['size']>, number> = {
@@ -35,18 +80,23 @@ const SIZE_MAX_WIDTH: Record<NonNullable<ModalProps['size']>, number> = {
   md: 520,
   lg: 720,
   xl: 960,
-  full: 1100,
+  full: 1400,
 }
 
 export function Modal({
   isOpen,
   onClose,
+  onEscape,
   title,
   subtitle,
   children,
   footer,
   size = 'md',
   sheet = false,
+  sidePeek = false,
+  swipeDismiss = false,
+  peekHeight = false,
+  portal,
 }: ModalProps) {
   // Keeps the modal mounted for a beat after isOpen flips to false so the
   // CSS fade/scale-out below can actually play instead of vanishing instantly.
@@ -57,25 +107,88 @@ export function Modal({
       setShouldRender(true)
       return
     }
+    // Closed modals that never rendered need no exit timer. Pages can mount
+    // many dormant dialogs; scheduling one for each leaks work into test and
+    // page teardown, and can update a root after it has gone away.
+    if (!shouldRender) return
     const timeout = window.setTimeout(() => setShouldRender(false), TRANSITION_MS)
     return () => window.clearTimeout(timeout)
-  }, [isOpen])
+  }, [isOpen, shouldRender])
+
+  const stackId = useRef<symbol | null>(null)
+  if (stackId.current === null) stackId.current = Symbol('modal')
+  const surfaceRef = useRef<HTMLDivElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
+  const titleId = useId()
+  const touchStartY = useRef<number | null>(null)
 
   useEffect(() => {
+    const id = stackId.current!
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose()
+      // Only the top of the stack answers Escape — see module comment above.
+      if (e.key === 'Escape' && isOpen && modalStack[modalStack.length - 1] === id) {
+        ;(onEscape ?? onClose)()
       }
     }
     if (isOpen) {
-      document.body.style.overflow = 'hidden'
+      lockScroll(id)
       window.addEventListener('keydown', handleKeyDown)
     }
     return () => {
-      document.body.style.overflow = ''
+      unlockScroll(id)
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, onEscape])
+
+  /*
+   * Focus contract (WCAG 2.4.3 / 2.1.2) — the piece FilterDrawer and MoreSheet
+   * already had that this, the app's ONLY dialog, did not:
+   *   open  → remember the opener, move focus to the first focusable control
+   *           (or the surface itself, which carries tabIndex={-1} for exactly
+   *           this fallback);
+   *   close → put focus back on the opener, so a keyboard user is not dropped
+   *           at <body> after every sheet.
+   * rAF matches FilterDrawer.tsx:178 — the surface must be painted before it
+   * can be focused.
+   */
+  useEffect(() => {
+    if (isOpen) {
+      openerRef.current = (document.activeElement as HTMLElement) ?? null
+      const raf = window.requestAnimationFrame(() => {
+        const surface = surfaceRef.current
+        if (!surface) return
+        const first = surface.querySelector<HTMLElement>(FOCUSABLE)
+        ;(first ?? surface).focus()
+      })
+      return () => window.cancelAnimationFrame(raf)
+    }
+    openerRef.current?.focus()
+    openerRef.current = null
+    return undefined
+  }, [isOpen])
+
+  /* Tab trap — focus cycles inside the surface instead of walking out into
+     the obscured page behind the scrim. */
+  const handleTrapKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab' || !surfaceRef.current) return
+    const nodes = Array.from(surfaceRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+    if (nodes.length === 0) {
+      e.preventDefault()
+      surfaceRef.current.focus()
+      return
+    }
+    const first = nodes[0]
+    const last = nodes[nodes.length - 1]
+    if (!first || !last) return
+    const active = document.activeElement
+    if (e.shiftKey && (active === first || active === surfaceRef.current)) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
 
   /*
    * The three bands, taught here once rather than per caller.
@@ -95,26 +208,32 @@ export function Modal({
   const viewport = useViewport()
   const phone = viewport === 'phone'
   const tablet = viewport === 'tablet'
-  const maxWidth = phone ? '100%' : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
-  const surfaceMaxHeight = phone ? '100dvh' : sheet ? '90vh' : '85vh'
-  const surfaceRadius = phone ? 0 : sheet ? '16px 16px 0 0' : 16
+  const maxWidth = sidePeek ? 480 : phone ? (sheet ? '100%' : 'calc(100% - 24px)') : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
+  const surfaceMaxHeight = sidePeek ? '100dvh' : peekHeight ? '70dvh' : phone ? '85dvh' : sheet ? '85dvh' : size === 'full' ? '92dvh' : '85dvh'
+  const surfaceRadius = sidePeek ? '16px 0 0 16px' : phone ? (sheet ? '16px 16px 0 0' : 16) : sheet ? '16px 16px 0 0' : 16
 
   // After every hook: `useViewport` is one, so the early return cannot precede it.
   if (!shouldRender) return null
 
-  return (
+  const modalNode = (
     <div
+      className="app-modal"
+      onKeyDown={handleTrapKeyDown}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 60,
+        /* First adopter of the theme.css stacking scale (declared 24 Aug with
+           zero consumers). 1400 puts every dialog above the page-level
+           dropdowns that still sit at literal 1000 — at the old literal 60
+           they painted OVER an open modal. Toasts sit at --z-system, above. */
+        zIndex: 'var(--z-modal)' as unknown as number,
         display: 'flex',
-        alignItems: phone || sheet ? 'flex-end' : 'center',
-        justifyContent: 'center',
-        padding: phone || sheet ? 0 : 'var(--sp-lg)',
-        background: 'rgba(0, 0, 0, 0.6)',
+        alignItems: sidePeek ? 'stretch' : sheet ? 'flex-end' : 'center',
+        justifyContent: sidePeek ? 'flex-end' : 'center',
+        padding: sheet || sidePeek ? 0 : 'var(--sp-md)',
+        background: 'var(--scrim)',
         opacity: isOpen ? 1 : 0,
-        transition: 'opacity var(--dur) ease',
+        transition: 'opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       <div
@@ -124,42 +243,54 @@ export function Modal({
       />
 
       <div
+        ref={surfaceRef}
+        className="app-modal__surface"
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        tabIndex={-1}
         style={{
+          outline: 'none',
           position: 'relative',
           zIndex: 1,
           width: '100%',
           maxWidth,
           maxHeight: surfaceMaxHeight,
-          ...(phone ? { height: '100dvh' } : {}),
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--card)',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--border2)',
           borderRadius: surfaceRadius,
           boxShadow: 'var(--shadow-modal)',
           overflow: 'hidden',
           opacity: isOpen ? 1 : 0,
-          transform: isOpen ? 'scale(1)' : 'scale(0.97)',
-          transition: 'opacity var(--dur) ease, transform var(--dur) ease',
+          transform: isOpen ? 'translate(0, 0)' : sidePeek ? 'translateX(12px)' : 'translateY(8px)',
+          transition: 'opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
         {/* Header */}
         <div
+          onTouchStart={swipeDismiss ? (event) => { touchStartY.current = event.touches[0]?.clientY ?? null } : undefined}
+          onTouchEnd={swipeDismiss ? (event) => {
+            const endY = event.changedTouches[0]?.clientY
+            if (touchStartY.current !== null && endY !== undefined && endY - touchStartY.current > 80) onClose()
+            touchStartY.current = null
+          } : undefined}
           style={{
             display: 'flex',
             alignItems: 'flex-start',
             justifyContent: 'space-between',
             gap: 'var(--sp-md)',
-            padding: '16px 20px',
+            padding: phone ? 'calc(16px + env(safe-area-inset-top, 0px)) 20px 16px' : '16px 20px',
             borderBottom: '1px solid var(--border)',
             flexShrink: 0,
           }}
         >
+          {sheet && swipeDismiss && <span aria-hidden="true" style={{ position: 'absolute', top: 6, left: 'calc(50% - 18px)', width: 36, height: 4, borderRadius: 2, background: 'var(--border2)' }} />}
           <div style={{ minWidth: 0 }}>
             {title && (
               <h2
+                id={titleId}
                 style={{
                   margin: 0,
                   fontSize: 'var(--t-h3)',
@@ -198,14 +329,19 @@ export function Modal({
               display: 'grid',
               placeItems: 'center',
               flexShrink: 0,
+              /* TouchTarget below needs an anchor; the paint stays 32px so the
+                 header keeps its density — Law 15 is the HIT AREA, not the
+                 glyph (TouchTarget.tsx). */
+              position: 'relative',
             }}
           >
+            <TouchTarget />
             <Icon name="close" size={20} />
           </button>
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>{children}</div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', padding: 20 }}>{children}</div>
 
         {/* Footer */}
         {footer && (
@@ -214,8 +350,9 @@ export function Modal({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
+              flexWrap: 'wrap',
               gap: 'var(--sp-md)',
-              padding: '16px 20px',
+              padding: phone || sheet ? '16px 20px calc(16px + env(safe-area-inset-bottom, 0px))' : '16px 20px',
               borderTop: '1px solid var(--border)',
               background: 'var(--card2)',
               flexShrink: 0,
@@ -227,4 +364,9 @@ export function Modal({
       </div>
     </div>
   )
+
+  // RULING 2026-09-23: never `process.env` in shipped modules — the program has no
+  // node types; MODE is 'test' under vitest, so the portal skips there only.
+  const usePortal = portal ?? (import.meta.env.MODE !== 'test')
+  return usePortal && typeof document !== 'undefined' ? createPortal(modalNode, document.body) : modalNode
 }

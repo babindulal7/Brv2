@@ -4,6 +4,7 @@ import {
   type Flag,
   type JobName,
   type JobState,
+  type CloseGateInput,
   BOOKING_STATUS,
   STATUS_ORDER,
   statusToken,
@@ -23,9 +24,18 @@ import {
 
 const SIX: readonly BookingStatus[] = ['Quote', 'Booked', 'Packed', 'On Rent', 'Returned', 'Closed']
 
-const PASSING_GATES = {
+/**
+ * A booking that is genuinely finished: billed, settled, deposit returned, no
+ * case, no unapproved damage.
+ *
+ * `rentalInvoiced: true` is the load-bearing member (MONEY-13). Before 7 Sep
+ * the fixture had no such field, so "all four gates pass" was reachable by a
+ * rental nobody had ever billed — the sum was over zero rows.
+ */
+const PASSING_GATES: CloseGateInput = {
+  rentalInvoiced: true,
   rentalOutstandingPaisa: 0,
-  depositResolved: true,
+  depositHeldPaisa: 0,
   openCases: 0,
   damageChargesPendingApproval: 0,
 }
@@ -46,14 +56,27 @@ describe('BOOKING_STATUS — Foundation §1.2, six statuses and no more', () => 
     expect(STATUS_ORDER).toEqual(SIX)
   })
 
-  it('carries a colour token from the five-tone law for each', () => {
-    expect(statusToken('Quote')).toBe('neutral')
-    expect(statusToken('Booked')).toBe('primary')
-    expect(statusToken('Packed')).toBe('progress')
-    // §4.2 — green split by fill weight: solid = out, soft = in.
-    expect(statusToken('On Rent')).toBe('out')
-    expect(statusToken('Returned')).toBe('in')
-    expect(statusToken('Closed')).toBe('neutral')
+  it('carries the v4.1 seven-hue colour token for each', () => {
+    /*
+     * DESIGN_DIRECTION_SPEC_v4.1 §4. This test asserted the five-tone law
+     * until 25 Aug 2026; v4.1 superseded it and two expectations moved:
+     *
+     *   On Rent  green -> ORANGE. Green used to mean "out of the warehouse",
+     *            split from Returned by fill weight within one hue. v4.1 gives
+     *            "out with the client" its own hue, so the lifecycle reads
+     *            gray -> blue -> yellow -> orange -> green -> dim.
+     *   Closed   neutral -> dim. Gray now means "not started yet" (Quote);
+     *            "finished" is the dim hue, so the two no longer share a token.
+     *
+     * The KEY names are deliberately unchanged (`out`, `in`, `progress`) per
+     * §7.5 — v4.1 recolours the statuses, it does not rename them.
+     */
+    expect(statusToken('Quote')).toBe('neutral')   // gray  — not started
+    expect(statusToken('Booked')).toBe('primary')  // blue  — committed
+    expect(statusToken('Packed')).toBe('progress') // yellow — in-house work
+    expect(statusToken('On Rent')).toBe('out')     // ORANGE — with the client
+    expect(statusToken('Returned')).toBe('in')     // green — safely home
+    expect(statusToken('Closed')).toBe('dim')      // dim   — finished
   })
 })
 
@@ -228,9 +251,98 @@ describe('closeGates — §1.7', () => {
     const gates = closeGates({ ...PASSING_GATES, rentalOutstandingPaisa: 50_000, openCases: 2 })
     const money = gates.find((g) => g.label === 'Rental Outstanding settled')
     expect(money?.passing).toBe(false)
-    expect(money?.blocking).toBe('50000')
+    /* Was the paisa integer `'50000'`. Law 12 wants the figure an operator can
+       act on, in the rupees every other screen shows. */
+    expect(money?.blocking).toBe('Rs 500 still outstanding')
     const cases = gates.find((g) => g.label === 'No open Case')
     expect(cases?.blocking).toBe('2 open')
+  })
+
+  /* ── MONEY-13 · "outstanding = 0" on a rental nobody billed ─────────────── */
+
+  it('refuses a rental that was never invoiced, though its outstanding reads zero', () => {
+    const gates = closeGates({ ...PASSING_GATES, rentalInvoiced: false })
+    const money = gates.find((g) => g.label === 'Rental Outstanding settled')
+    expect(money?.passing).toBe(false)
+    // The refusal has to say WHY zero is not settlement, or it reads as a bug.
+    expect(money?.blocking).toMatch(/nothing has been invoiced/i)
+    expect(money?.blocking).toMatch(/empty sum/i)
+  })
+
+  it('separates "never billed" from "paid in full" — the same zero, two verdicts', () => {
+    const unbilled = closeGates({ ...PASSING_GATES, rentalInvoiced: false })[0]
+    const settled = closeGates(PASSING_GATES)[0]
+    expect(unbilled?.passing).toBe(false)
+    expect(settled?.passing).toBe(true)
+  })
+
+  it('names an overpayment as an overpayment rather than as an outstanding balance', () => {
+    const gates = closeGates({ ...PASSING_GATES, rentalOutstandingPaisa: -25_000 })
+    expect(gates[0]?.passing).toBe(false)
+    expect(gates[0]?.blocking).toBe('Rs 250 overpaid — the invoice does not reconcile')
+  })
+
+  /* ── RL-05 · held, not uncollected ──────────────────────────────────────── */
+
+  it('refuses a close while the deposit is still held, and names the amount', () => {
+    const gates = closeGates({ ...PASSING_GATES, depositHeldPaisa: 2_500_000 })
+    const deposit = gates.find((g) => g.label === 'Deposit resolved')
+    expect(deposit?.passing).toBe(false)
+    expect(deposit?.blocking).toContain('Rs 25,000')
+    expect(deposit?.blocking).toMatch(/still held/i)
+  })
+
+  it('passes the deposit gate once everything received has been refunded or applied', () => {
+    expect(closeGates({ ...PASSING_GATES, depositHeldPaisa: 0 }).every((g) => g.passing)).toBe(true)
+  })
+
+  it('refuses, rather than passes, when more was refunded than was ever received', () => {
+    const deposit = closeGates({ ...PASSING_GATES, depositHeldPaisa: -100 }).find(
+      (g) => g.label === 'Deposit resolved',
+    )
+    expect(deposit?.passing).toBe(false)
+    expect(deposit?.blocking).toMatch(/more deposit has been refunded or applied/i)
+  })
+
+  /* ── RULING 2026-10-06 · skip a held deposit with a written reason ──────── */
+
+  it('passes a held deposit only when a skip reason of at least 10 characters is given', () => {
+    const find = (g: Parameters<typeof closeGates>[0]) => closeGates(g).find((x) => x.label === 'Deposit resolved')
+    const held = { ...PASSING_GATES, depositHeldPaisa: 2_500_000 }
+    expect(find({ ...held, depositSkipReason: 'Client collects it next week' })?.passing).toBe(true)
+    expect(find({ ...held, depositSkipReason: 'short' })?.passing).toBe(false)
+    expect(find({ ...held, depositSkipReason: '          ' })?.passing).toBe(false)
+  })
+
+  it('never lets a skip reason excuse an over-refund, which does not reconcile', () => {
+    const deposit = closeGates({
+      ...PASSING_GATES,
+      depositHeldPaisa: -100,
+      depositSkipReason: 'A perfectly long reason',
+    }).find((g) => g.label === 'Deposit resolved')
+    expect(deposit?.passing).toBe(false)
+  })
+
+  it('does not let a deposit skip pass any other close gate', () => {
+    const gates = closeGates({
+      ...PASSING_GATES,
+      depositHeldPaisa: 2_500_000,
+      depositSkipReason: 'Client collects it next week',
+      openCases: 1,
+      rentalOutstandingPaisa: 100,
+    })
+    expect(gates.filter((g) => !g.passing).map((g) => g.label)).toEqual(['Rental Outstanding settled', 'No open Case'])
+  })
+
+  /* ── RL-06 · the count that used to be a constant ───────────────────────── */
+
+  it('refuses on an unapproved damage finding and counts it in words, singular and plural', () => {
+    const one = closeGates({ ...PASSING_GATES, damageChargesPendingApproval: 1 })[3]
+    expect(one?.passing).toBe(false)
+    expect(one?.blocking).toBe('1 damage finding awaiting approval, and approving one is not built yet')
+
+    const three = closeGates({ ...PASSING_GATES, damageChargesPendingApproval: 3 })[3]
+    expect(three?.blocking).toBe('3 damage findings awaiting approval, and approving one is not built yet')
   })
 })
 
@@ -289,7 +401,13 @@ describe('planTransition — §1.2 + §1.7 + §1.9 in one call', () => {
       from: 'Booked',
       to: 'Closed',
       flags: ['Overdue', 'Missing'],
-      gates: { rentalOutstandingPaisa: 500, depositResolved: false, openCases: 1, damageChargesPendingApproval: 1 },
+      gates: {
+        rentalInvoiced: true,
+        rentalOutstandingPaisa: 500,
+        depositHeldPaisa: 500_000,
+        openCases: 1,
+        damageChargesPendingApproval: 1,
+      },
     })
     expect(p.allowed).toBe(false)
     // 1 forward-only + 2 flags + 4 close gates

@@ -17,18 +17,20 @@ import { canViewMoneyField, canViewUtilization } from '../lib/fieldGating'
 import type { IntelGlance, IntelGroup, IntelField } from '../components/ui/IntelCard'
 import type { StatusKey } from '../lib/status'
 
-const INV_TONE: Record<InvStatus, StatusKey> = {
-  'In Stock': 'in',
-  Reserved: 'primary',
-  Packed: 'progress',
-  'On Rent': 'out',
-  Returning: 'in',
-  Inspection: 'progress',
-  Cleaning: 'progress',
-  Maintenance: 'progress',
-  Missing: 'danger',
-  Retired: 'neutral',
-}
+/*
+ * IMPORTED, not re-declared.
+ *
+ * This file carried a byte-identical private copy of `INV_TONE`, and the copy
+ * drifted exactly as you would expect: the canonical table in `./inventory`
+ * moved `Retired` from `neutral` to `dim` under v4.1 §4 (gray means "not
+ * started yet", which is Quote; "finished" is the dim hue) and this one stayed
+ * on `neutral`. Nothing enforced the pairing because nothing referenced it —
+ * two tables, one meaning, no link.
+ *
+ * Importing kills the whole class rather than re-fixing one row: there is now
+ * one table, and a future hue ruling reaches both consumers or neither.
+ */
+import { INV_TONE } from './inventory'
 
 /** Worst-first, so a glance dot never reads "healthy" over a Missing unit. */
 const ALARM_ORDER: InvStatus[] = ['Missing', 'Maintenance', 'Inspection', 'Cleaning', 'Reserved', 'Packed', 'On Rent', 'In Stock', 'Returning', 'Retired']

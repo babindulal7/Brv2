@@ -32,7 +32,8 @@
  * — "never colour alone" applies to the screen reader too, not just the screen.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -41,11 +42,12 @@ import type {
 } from 'react'
 import Icon from '../../../components/ui/Icon'
 import { formatMoney } from '../../../lib/money'
-import { CLIENTS_DATA } from '../../../data/clients'
-import type { ClientRecord } from '../../../data/clients'
+import { CLIENTS_DATA } from '../../../lib/queries/clients'
+import type { ClientRecord } from '../../../lib/queries/clients'
 import { clientHealth, healthAccessibleName } from './clientHealth'
 import type { ClientHealthVerdict } from './clientHealth'
 import { ClientHealthChip, TOUCH } from './ClientHealthChip'
+import { floatingLayer } from '../../../components/ui/floatingLayer'
 
 /* ── Search ────────────────────────────────────────────────────────────── */
 
@@ -149,6 +151,7 @@ export interface ClientComboboxProps {
   inputStyle?: CSSProperties
   /** `id` of the label element, for `aria-labelledby`. */
   labelledBy?: string
+  required?: boolean
   /** Money gating — pass the page's `canViewMoneyField(gctx, 'client-balance')`. */
   showOutstanding?: boolean
   /** §64: "starts searching at 2–3 characters". */
@@ -157,9 +160,26 @@ export interface ClientComboboxProps {
   maxResults?: number
   /** Rendered inside the field's right edge — the page puts the §11 eye here. */
   trailing?: ReactNode
+  /** One 44px icon action embedded in the input's right edge. */
+  inputAction?: ReactNode
   disabled?: boolean
   /** Inline, persistent error (never a toast, never an alert). */
   error?: string
+  /**
+   * A **one-shot** escape from §9's "focus opens the list".
+   *
+   * Focus normally means the operator is about to search, so the list opens on
+   * it. A page that moves focus here for some other reason — New Rental hands
+   * `AddClientModal` this input as its focus-restore target, because the
+   * add-client control that was pressed is replaced by the health eye and is
+   * gone by the time the modal restores focus — sets this to `true`
+   * immediately before doing so. The next focus then does not open the list,
+   * and the flag is consumed. It is a ref rather than a boolean prop because
+   * both moments (focusing before the modal opens, and the modal's own restore
+   * on close) happen outside React's render, so a prop would not have
+   * propagated in time.
+   */
+  suppressNextFocusOpen?: { current: boolean }
 }
 
 /* ── Component ─────────────────────────────────────────────────────────── */
@@ -173,12 +193,15 @@ export function ClientCombobox({
   recentClientIds,
   inputStyle,
   labelledBy,
+  required = false,
   showOutstanding = true,
   minQueryChars = 2,
   maxResults = 8,
   trailing,
+  inputAction,
   disabled = false,
   error,
+  suppressNextFocusOpen,
 }: ClientComboboxProps) {
   const reactId = useId()
   const inputId = `${reactId}-client-input`
@@ -194,7 +217,7 @@ export function ClientCombobox({
   const pool = useMemo(() => clients.filter((c) => !c.mergedIntoId), [clients])
 
   const selected = useMemo(
-    () => pool.find((c) => c.id === selectedClientId) ?? null,
+    () => pool.find((c) => c.id === selectedClientId || (c.dbId && c.dbId === selectedClientId)) ?? null,
     [pool, selectedClientId],
   )
 
@@ -266,7 +289,12 @@ export function ClientCombobox({
   useEffect(() => {
     if (!open || !activeId) return
     const el = document.getElementById(activeId)
-    el?.scrollIntoView({ block: 'nearest' })
+    const list = listRef.current
+    if (!el || !list) return
+    const rowBounds = el.getBoundingClientRect()
+    const listBounds = list.getBoundingClientRect()
+    if (rowBounds.top < listBounds.top) list.scrollTop -= listBounds.top - rowBounds.top
+    else if (rowBounds.bottom > listBounds.bottom) list.scrollTop += rowBounds.bottom - listBounds.bottom
   }, [open, activeId])
 
   function openList() {
@@ -359,14 +387,22 @@ export function ClientCombobox({
     // up `Input.tsx`'s own `minHeight: 44` for free. Set directly here instead
     // of relying on whatever `inputStyle` the calling page passed in.
     minHeight: 44,
-    paddingRight: 34,
+    paddingRight: inputAction ? 82 : 34,
     ...(error ? { borderColor: 'var(--danger)' } : {}),
   }
 
   return (
     <div
       ref={rootRef}
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}
+      /* `flexWrap` is here for the error paragraph below, which used to be
+         `position: absolute; top: 100%` — out of flow, and therefore drawn
+         straight over whatever the calling page had put in the next row. It
+         now takes a full-width line of its own inside this widget, so the
+         field grows by the height of its own error instead of covering a
+         neighbour. The input keeps its line: it is `flex: 1` with
+         `minWidth: 0`, so it shrinks rather than wrapping, and the trailing
+         slot stays beside it. */
+      style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}
       onBlur={(e) => {
         // Only close when focus actually leaves the whole widget.
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) revert()
@@ -383,6 +419,7 @@ export function ClientCombobox({
           aria-expanded={open}
           aria-controls={listboxId}
           aria-autocomplete="list"
+          aria-required={required || undefined}
           aria-haspopup="listbox"
           {...(labelledBy ? { 'aria-labelledby': labelledBy } : {})}
           {...(activeId ? { 'aria-activedescendant': activeId } : {})}
@@ -397,7 +434,14 @@ export function ClientCombobox({
             setActiveIndex(0)
           }}
           onFocus={(e) => {
-            openList()
+            // One focus without the list, when the page asked for one — see
+            // `suppressNextFocusOpen`. The flag is consumed here, so the very
+            // next focus behaves normally again.
+            if (suppressNextFocusOpen?.current) {
+              suppressNextFocusOpen.current = false
+            } else {
+              openList()
+            }
             // Typing replaces the committed name instead of appending to it.
             e.currentTarget.select()
           }}
@@ -408,7 +452,7 @@ export function ClientCombobox({
           aria-hidden="true"
           style={{
             position: 'absolute',
-            right: 10,
+            right: inputAction ? 58 : 10,
             top: '50%',
             transform: 'translateY(-50%)',
             display: 'inline-flex',
@@ -418,6 +462,11 @@ export function ClientCombobox({
         >
           <Icon name={open ? 'chevron_up' : 'search'} size={15} />
         </span>
+        {inputAction && (
+          <div style={{ position: 'absolute', right: 4, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
+            {inputAction}
+          </div>
+        )}
 
         {open && (
           <ClientListbox
@@ -433,6 +482,7 @@ export function ClientCombobox({
             showOutstanding={showOutstanding}
             onHover={setActiveIndex}
             onCommit={commit}
+            inputRef={inputRef}
           />
         )}
       </div>
@@ -444,10 +494,10 @@ export function ClientCombobox({
           id={errorId}
           role="alert"
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            margin: '4px 0 0',
+            /* In flow, on its own wrapped line — see the note on the root. */
+            flexBasis: '100%',
+            width: '100%',
+            margin: 0,
             fontSize: 'var(--t-meta)',
             color: 'var(--danger-text)',
             display: 'flex',
@@ -478,6 +528,7 @@ function ClientListbox({
   showOutstanding,
   onHover,
   onCommit,
+  inputRef,
 }: {
   id: string
   listRef: MutableRefObject<HTMLUListElement | null>
@@ -491,30 +542,96 @@ function ClientListbox({
   showOutstanding: boolean
   onHover: (i: number) => void
   onCommit: (o: Option) => void
+  inputRef: React.RefObject<HTMLInputElement | null>
 }) {
   const noMatches = searching && !options.some((o) => o.kind === 'client')
 
-  return (
+  const [placement, setPlacement] = useState<CSSProperties>({ visibility: 'hidden' })
+
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    const workspace = input.closest<HTMLElement>('#main-content')
+    const footer = workspace?.querySelector<HTMLElement>('[aria-label="Record actions"]')
+    const shortcuts = workspace?.querySelector<HTMLElement>('[aria-label="Rental sections"]')
+
+    // Follow the field during the section shortcuts' smooth scroll. The shell,
+    // sticky shortcuts, and action footer all reduce the usable popup space.
+    const measure = () => {
+      const viewport = window.visualViewport
+      const viewportTop = viewport?.offsetTop ?? 0
+      const viewportLeft = viewport?.offsetLeft ?? 0
+      let top = viewportTop + 8
+      let bottom = viewportTop + (viewport?.height ?? window.innerHeight) - 8
+      let left = viewportLeft + 8
+      let right = viewportLeft + (viewport?.width ?? window.innerWidth) - 8
+      const workspaceRect = workspace?.getBoundingClientRect()
+      if (workspaceRect && workspaceRect.width > 0 && workspaceRect.height > 0) {
+        top = Math.max(top, workspaceRect.top + 8)
+        bottom = Math.min(bottom, workspaceRect.bottom - 8)
+        left = Math.max(left, workspaceRect.left + 8)
+        right = Math.min(right, workspaceRect.right - 8)
+      }
+      const shortcutRect = shortcuts?.getBoundingClientRect()
+      if (shortcutRect && shortcutRect.height > 0 && shortcutRect.bottom > top && shortcutRect.top < bottom) {
+        top = Math.max(top, shortcutRect.bottom + 8)
+      }
+      const footerRect = footer?.getBoundingClientRect()
+      if (footerRect && footerRect.height > 0 && footerRect.top > top && footerRect.top < bottom) {
+        bottom = footerRect.top - 8
+      }
+      const rect = input.getBoundingClientRect()
+      const spaceBelow = Math.max(0, bottom - rect.bottom - 4)
+      const spaceAbove = Math.max(0, rect.top - top - 4)
+      const openUpward = spaceBelow < 240 && spaceAbove > spaceBelow
+      const width = Math.min(Math.max(320, rect.width), Math.max(0, right - left))
+      setPlacement({
+        visibility: rect.bottom < top || rect.top > bottom ? 'hidden' : 'visible',
+        left: Math.max(left, Math.min(rect.left, right - width)),
+        width,
+        maxHeight: Math.min(380, openUpward ? spaceAbove : spaceBelow),
+        ...(openUpward
+          ? { bottom: window.innerHeight - Math.min(bottom, rect.top - 4) }
+          : { top: Math.max(top, rect.bottom + 4) }),
+      })
+    }
+    measure()
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    window.visualViewport?.addEventListener('resize', measure)
+    window.visualViewport?.addEventListener('scroll', measure)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    for (const element of [input, workspace, footer, shortcuts]) if (element) observer?.observe(element)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+      window.visualViewport?.removeEventListener('resize', measure)
+      window.visualViewport?.removeEventListener('scroll', measure)
+      observer?.disconnect()
+    }
+  }, [inputRef])
+
+  // Portal to document.body to avoid any ancestor overflow clipping
+  return createPortal(
     <div
       style={{
-        position: 'absolute',
-        zIndex: 40,
-        top: 'calc(100% + 4px)',
-        left: 0,
-        right: 0,
-        minWidth: 320,
+        ...placement,
+        position: 'fixed',
+        zIndex: floatingLayer(inputRef.current),
+        display: 'flex',
+        flexDirection: 'column',
         background: 'var(--dropdown)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-card)',
         boxShadow: 'var(--shadow-modal)',
         overflow: 'hidden',
       }}
-      // Keeps the input focused: a mousedown on the panel must not blur it.
       onMouseDown={(e) => e.preventDefault()}
     >
       <div
         style={{
           padding: '7px 12px',
+          flexShrink: 0,
           fontSize: 'var(--t-meta)',
           fontWeight: 700,
           letterSpacing: '0.05em',
@@ -551,7 +668,7 @@ function ClientListbox({
         id={id}
         role="listbox"
         aria-label="Clients"
-        style={{ listStyle: 'none', margin: 0, padding: 'var(--sp-xs)', maxHeight: 340, overflowY: 'auto' }}
+        style={{ listStyle: 'none', margin: 0, padding: 'var(--sp-xs)', minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}
       >
         {options.map((option, i) => {
           const optionId = `${id}-opt-${i}`
@@ -593,6 +710,7 @@ function ClientListbox({
         <div
           style={{
             padding: '7px 12px',
+            flexShrink: 0,
             fontSize: 'var(--t-meta)',
             color: 'var(--text2)',
             borderTop: '1px solid var(--border)',
@@ -602,7 +720,8 @@ function ClientListbox({
           <span className="figure">{truncated}</span> more match — refine the search to narrow it.
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -667,26 +786,49 @@ function ClientOptionRow({
         >
           {client.name}
         </span>
-        {client.isVip && (
-          <span
-            style={{
-              flexShrink: 0,
-              height: 18,
-              padding: '0 6px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              borderRadius: 'var(--r-badge)',
-              // Foundation §4.2: gold is outline-only, never a fill.
-              border: '1px solid var(--ext-line)',
-              color: 'var(--gold)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-              lineHeight: 1,
-            }}
-          >
-            VIP
-          </span>
-        )}
+        {/*
+          * VIP is BLUE, and it used to be GOLD. That was a real bug, not a
+          * taste call.
+          *
+          * DESIGN_DIRECTION_SPEC_v4.1 §2: gold (`--ext-*`) "is NOT a status
+          * ... it is the only outline on screen, marking sub-rented /
+          * external gear", and §4 repeats it — "never solid, never on an
+          * action, never a status". A VIP client is not external gear. The
+          * chip painted `border: 1px solid var(--ext-line)` with
+          * `color: var(--gold)`, which is the sub-rental mark's exact
+          * signature, and it sat INSIDE this row's `role="option"` — so gold
+          * appeared inside a clickable affordance as well as outside its one
+          * meaning. `lib/status.ts` names the cost precisely: "a gold Save
+          * button beside a gold sub-rental badge destroys the one distinction
+          * a warehouse must see."
+          *
+          * `primary` is the replacement because §2 gives blue exactly one
+          * meaning — "committed · scheduled" — and a VIP flag is a standing,
+          * committed relationship with the client. It is the only one of the
+          * seven that fits: yellow is in-house work, orange is out with a
+          * client, green is settled, red is a problem, gray is not started,
+          * dim is finished.
+          *
+          * The old comment cited "Foundation §4.2". That document is
+          * superseded; v4.1 §2/§4 is the standing rule and is what this reads.
+          */}
+        {client.isVip && <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 7px',
+                      borderRadius: 'var(--r-chip)',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text2)',
+                      fontSize: 'var(--t-th)',
+                      fontWeight: 700,
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    VIP
+                  </span>}
         <span style={{ marginLeft: 'auto', flexShrink: 0 }}>
           <ClientHealthChip verdict={verdict} />
         </span>

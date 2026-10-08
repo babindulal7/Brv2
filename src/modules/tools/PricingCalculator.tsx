@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
+import { Card, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
-import { price, formatMoney, parseMoney, rupees, DISCOUNT_CAP } from '../../lib/money'
+import { price, formatMoney, parseMoney, rupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { validateDiscount } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
+import { isMoneySurface } from '../../lib/queries/tools'
 
 /**
  * **Pricing Calculator — `10_TOOLS.md` §10.3.**
@@ -35,14 +38,13 @@ import { getSetting } from '../../lib/settingsStore'
  *
  * ## Three laws this screen has to carry even though it saves nothing
  *
- * **Law 10 — discount.** *">10% needs reason ≥10 chars **and** a named approver;
- * 25% hard cap; no role bypass, including Owner."* A sandbox that quietly
- * applies 40% teaches the number, and someone quotes from it — §5's own warning
- * about a rental calculator that disagrees with the booking page. So the chip
- * row stops at the cap, a chip or custom value above 10 opens the reason and
- * approver fields (Rulings §7: *"chips open a popover carrying both fields"*),
- * and `validateDiscount()` gates the total: until it passes, the discount is
- * not applied and the reason says so inline.
+ * **Law 10 — discount, as amended 31 Aug 2026: THE GATE IS GONE.** D3 (ruled
+ * 30 Aug, Babin's final word 31 Aug: "don't put any gate on discount") removed
+ * the reason/approver ceremony, the 25% cap and the role tiers everywhere in
+ * one change set. `validateDiscount()` still gates the total, but it now
+ * checks only arithmetic validity — negative is a price rise (the R3-1 hole
+ * stays closed), above 100% is a negative price. The chips are common presets,
+ * not a ceiling; the custom field takes anything valid.
  *
  * **Law 5 — the deposit is a liability.** It is never in the rental total, never
  * reduces outstanding, and is never a payment. It renders in its own block,
@@ -78,19 +80,26 @@ interface Line {
 /** Law 9 — days are explicit on every priced line, defaulted to `1`, never by omission. */
 const NEW_LINE = (id: number): Line => ({ id, label: '', qty: '1', days: '1', rate: '' })
 
-/** §10.3's `▢ ▢ ▢`. Nothing above `DISCOUNT_CAP` — Law 10's hard ceiling. */
-const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, DISCOUNT_CAP] as const
+/**
+ * §10.3's `▢ ▢ ▢` — common presets, NOT a ceiling. The old cap (`DISCOUNT_CAP`
+ * when it read 25) left with the gate; the custom field beside these takes any
+ * valid percentage.
+ */
+const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
-export default function PricingCalculator() {
+export interface PricingCalculatorProps {
+  embedded?: boolean
+}
+
+export default function PricingCalculator({ embedded = false }: PricingCalculatorProps = {}) {
   const viewport = useViewport()
+  const isMoney = isMoneySurface('/tools/pricing')
 
   const [lines, setLines] = useState<Line[]>([NEW_LINE(1)])
   const [nextId, setNextId] = useState(2)
 
   const [discountChip, setDiscountChip] = useState<number | null>(0)
   const [customDiscount, setCustomDiscount] = useState('')
-  const [reason, setReason] = useState('')
-  const [approver, setApprover] = useState('')
 
   const [vatOn, setVatOn] = useState(true)
   const [advance, setAdvance] = useState('')
@@ -102,8 +111,11 @@ export default function PricingCalculator() {
   const requested = customDiscount.trim() !== '' ? Number(customDiscount) : (discountChip ?? 0)
   const discountPercent = Number.isFinite(requested) ? requested : 0
 
-  const gate = validateDiscount(discountPercent, reason, approver.trim() || null)
-  const needsApproval = discountPercent > 10
+  /* Law 10 as amended (D3, Babin's final word 31 Aug: "don't put any gate on
+     discount") — no reason, no approver, no cap below 100. The gate that
+     remains is arithmetic validity only, so the old reason/approver fields
+     are gone: an input that influences nothing is a control that lies. */
+  const gate = validateDiscount(discountPercent)
 
   const equipment = useMemo(
     () =>
@@ -139,16 +151,17 @@ export default function PricingCalculator() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="dollar"
         title="Pricing"
-        description="A quote sandbox on the same engine as New Rental. It books nothing and saves nothing."
+        description={isMoney ? "A quote sandbox on the same engine as New Rental. It books nothing and saves nothing." : "A quote sandbox."}
       />
 
       <div
         style={{
           display: 'grid',
-          /* Desktop: sheet beside the ladder. Below 1180 the ladder reflows
+          /* Desktop: sheet beside the ladder. Below 1280 the ladder reflows
              underneath — visible, not hidden behind a handle (Rulings §7). */
           gridTemplateColumns: stacked ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(300px, 340px)',
           gap: 'var(--sp-md)',
@@ -229,8 +242,7 @@ export default function PricingCalculator() {
               </div>
             ))}
             <p style={{ margin: 0, padding: '0 14px 14px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              Law 9 — days are explicit on every priced line, never implied. A blank rate contributes nothing rather than zero.
-            </p>
+              {/* Law 9 — days are explicit on every priced line, never implied. A blank rate contributes nothing rather than zero. */}— days are explicit on every priced line, never implied. A blank rate contributes nothing rather than zero. </p>
           </Card>
 
           <Card title="Discount">
@@ -273,20 +285,6 @@ export default function PricingCalculator() {
               />
             </div>
 
-            {/* Rulings §7 — the chip row alone cannot satisfy Law 10; both
-                fields appear the moment the percentage passes 10. */}
-            {needsApproval && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 'var(--sp-md)' }}>
-                <LabelledInput
-                  label="Reason (10 characters minimum)"
-                  value={reason}
-                  onChange={setReason}
-                  placeholder="Why this discount is authorised"
-                />
-                <LabelledInput label="Approver" value={approver} onChange={setApprover} placeholder="Named Manager or Owner" />
-              </div>
-            )}
-
             {/* Law 12 — inline and persistent. No toast carries a failure. */}
             {!gate.valid && gate.error && (
               <div
@@ -315,11 +313,11 @@ export default function PricingCalculator() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, cursor: 'pointer' }}>
                 <input type="checkbox" checked={vatOn} onChange={() => setVatOn((v) => !v)} style={{ width: 18, height: 18 }} />
-                <span style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
+                <span style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   {/* Never a literal. Rate comes from Settings ▸ Financial. */}
                   VAT <span className="figure">{vatRatePercent}%</span>
+                  <InfoTooltip content="Read from Settings, never hardcoded" />
                 </span>
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Read from Settings, never hardcoded</span>
               </label>
 
               <LabelledInput
@@ -336,7 +334,7 @@ export default function PricingCalculator() {
                 onChange={setDeposit}
                 numeric
                 placeholder="Rs"
-                hint="Law 5 — a liability. It is shown separately below and never enters the rental total."
+                hint={/* Law 5 — a liability. It is shown separately below and never enters the rental total. */ "— a liability. It is shown separately below and never enters the rental total."}
               />
             </div>
           </Card>
@@ -473,9 +471,12 @@ function LabelledInput({
 }): ReactNode {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-      <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-        {label}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          {label}
+        </span>
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -483,7 +484,6 @@ function LabelledInput({
         {...(numeric ? { inputMode: 'decimal' as const } : {})}
         style={controlStyle}
       />
-      {hint && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</span>}
     </label>
   )
 }

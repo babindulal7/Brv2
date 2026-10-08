@@ -22,35 +22,97 @@
 -- ⚠ SUPERSEDED 15 Aug 2026 — the header below said NOT APPLIED, and its ROWS
 -- ARE IN THE LIVE DATABASE. Read the next paragraph before believing either.
 --
--- This file was never applied AS A MIGRATION: `supabase_migrations.schema_
--- migrations` has no row for it, and the entry it does carry at 0047 is a
--- different, 811-character file named `0047_seed_tail_b917_equipment_line`. But
--- the corpus itself went in by another route on 12 Aug — almost certainly
--- `scripts/execute-generated-sql.mjs`, which writes rows without recording a
--- migration. Proof: this file's first client, `client_uuid`
--- a8c85792-2135-6d5a-33b3-fb88e6a4c5f7, is live as `C-34` "Sagarmatha Pictures
--- Pvt. Ltd.", created 2026-08-12. Counted the same day: 121 bookings, 419
--- booking_lines, 76 clients, 126 products, 120 invoices, 93 payments.
---
--- **This status line cost real work.** Two separate audits on 15 Aug read
--- "NOT APPLIED" here, concluded the live database was empty, and built their
--- central recommendation on it — one of them advising against converting screens
--- because they would render blank. They would not have; the rows are there. A
--- status comment in a migration is a claim about a database, and this repo now
--- has two proofs that such a claim goes stale silently. Check
--- `supabase_migrations.schema_migrations` AND the rows, never the header.
---
--- Leave it unapplied. Applying it would be a no-op by design — every insert
--- carries a derived client_uuid (Law 8) and conflicts on its natural key — so
--- there is nothing to gain and a needless write against live data to lose.
---
--- The original note, kept because the reasoning was correct at the time:
---   NOT APPLIED. CLAUDE.md: "Never apply a migration to a live Supabase project
---   without explicit approval." This file has been generated and reviewed, not
---   executed — no local Postgres instance exists in this repo.
+-- Re-applying is NOT a no-op — it is a one-shot seed that FAILS CLOSED, and the
+-- earlier header claiming otherwise was never tested until 3 Sep 2026. What is
+-- true, measured: every INSERT is idempotent (natural-key / client_uuid
+-- arbiters all conflict on a second run — 40/125/120/89/64/93 rows before and
+-- after, nothing duplicated), and the gate prologue and 0056's deposit rewrite
+-- are both no-ops on a built database. What is not: the invoice issuance
+-- UPDATE (Draft -> Sent) ahead of each payment is unguarded, so on a re-apply
+-- it re-runs while the payment INSERT that would move the invoice on is
+-- skipped, and this file's own self-check then refuses ('INV-1 is Sent after
+-- a part payment, expected Partially Paid'). The single transaction rolls the
+-- whole file back and re-enables the gate. Apply it ONCE, into a database that
+-- has never held it; the fix is a where status = 'Draft' guard on that
+-- update — filed, not done here (PLAN.md §4.42a residual).
 -- =============================================================================
 
 begin;
+
+-- -----------------------------------------------------------------------------
+-- The handover/close gate is SUSPENDED for this load, and only for this load.
+--
+-- trg_booking_gate_check (0010:369) refuses a move into 'On Rent' or 'Closed'
+-- while the booking has a pending deposit or an outstanding invoice. 38 of the
+-- bookings below are exactly that: gear that went out against an invoice the
+-- client had not yet settled. The trigger is right about a TRANSITION a user
+-- performs; this file performs no transitions. It restates a STATE the business
+-- was already in, in bulk, in one transaction — the same distinction that lets a
+-- restore reinstate rows a workflow would have had to earn.
+--
+-- Ruled 2 Sep 2026 (PLAN.md §4.42a). Two things this deliberately does NOT do:
+-- it does not weaken the gate, which stays fully armed for every write the
+-- application makes; and it does not restate the corpus to dodge it, which would
+-- have cost the fixture the On Rent / Returned spread every operational screen is
+-- built against.
+--
+-- ⬅ TODO(decision) §4.42(a), still open and NOT answered by the above: may gear
+-- go out against an unsettled rental invoice at all? clients.payment_terms
+-- (Net 15/30) says the business already sells on terms, which the gate forbids.
+-- If that is ruled a defect in the GATE, this suspension becomes unnecessary
+-- rather than wrong.
+--
+-- The re-enable is unconditional and inside the same transaction: if anything
+-- below raises, the whole file rolls back and the trigger was never disabled.
+-- -----------------------------------------------------------------------------
+alter table bookings disable trigger trg_booking_gate_check;
+
+-- -----------------------------------------------------------------------------
+-- Identifier CHECKs, pulled forward from 0055 when — and only when — needed.
+--
+-- 0005 (clients:89) and 0002 (bookings:58) constrain client_code / booking_no to the RETIRED shapes
+-- (CL-YYYY-NNNN / BK-YYYY-NNNN). 0055 is what legalises the ruled C-<n> / B-<n>
+-- this corpus has always carried, and 0055 sits eighteen files LATER. So on a
+-- from-scratch build the very first client below would fail its own CHECK.
+--
+-- The fix is NOT to seed the retired shape and let 0055 rewrite it (tried, and
+-- measured: that shape-locks this file to pre-0055, breaks --from 0047 on any
+-- built database, and makes it disagree with seedCompact.ts — the transport
+-- form that actually reached live). The fix is to swap the two CHECKs to their
+-- ruled form HERE if the retired form is still in force, exactly as 0055 will.
+--
+-- Idempotent with 0055 by construction: 0055 does drop constraint if exists
+-- then add constraint with the same names and the same regexes, and its
+-- update … where … ~ '^CL-…' rewrite finds zero rows because nothing retired
+-- was ever seeded. Final state is identical whether 0055 runs before this file
+-- (production's actual order) or after it (filename order). Nothing between
+-- 0047 and 0055 references either shape (checked). The regexes are copied from
+-- 0055:101-105 and must stay verbatim.
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'clients'::regclass
+      and conname = 'clients_client_code_format'
+      and pg_get_constraintdef(oid) like '%CL-%'
+  ) then
+    alter table clients drop constraint clients_client_code_format;
+    alter table clients add constraint clients_client_code_format
+      check (client_code ~ '^C-[0-9]+$');
+  end if;
+
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'bookings'::regclass
+      and conname = 'bookings_booking_no_format'
+      and pg_get_constraintdef(oid) like '%BK-%'
+  ) then
+    alter table bookings drop constraint bookings_booking_no_format;
+    alter table bookings add constraint bookings_booking_no_format
+      check (booking_no ~ '^B-[0-9]+$');
+  end if;
+end $$;
 
 -- -----------------------------------------------------------------------------
 -- 1 · Clients — 40
@@ -6430,8 +6492,8 @@ where invoice_no = 'INV-1';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b422860f-26da-2b6d-7cfb-55f0c042e50d'::uuid,
-  'DEP-2026-0001',
+  'd8c75e33-1b23-6e9b-b5e6-24b9a6f73265'::uuid,
+  'DEP-1',
   (select id from bookings where booking_no = 'B-715'),
   (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -6444,9 +6506,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '3d70a5b7-16ff-a1fd-953d-b10c32e5fba1'::uuid,
-  'DEP-2026-0001-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0001'),
+  'ac8619c9-eb64-cc7a-4945-d4b9e8cf82cc'::uuid,
+  'DEP-1-M1',
+  (select id from security_deposits where deposit_no = 'DEP-1'),
   'Received'::deposit_movement_type,
   25000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -7250,8 +7312,8 @@ where invoice_no = 'INV-4';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '231eee49-c4b9-5283-2448-4ecaf08c686d'::uuid,
-  'DEP-2026-0002',
+  'fa08577c-25d4-76e6-2433-b8fb93025003'::uuid,
+  'DEP-2',
   (select id from bookings where booking_no = 'B-801'),
   (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -7264,9 +7326,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '9d298158-dc92-16b8-23e9-df097f0a237f'::uuid,
-  'DEP-2026-0002-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0002'),
+  '1fbd09ed-bf5b-0958-e68a-9d70e5e7fffe'::uuid,
+  'DEP-2-M1',
+  (select id from security_deposits where deposit_no = 'DEP-2'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -7628,8 +7690,8 @@ where invoice_no = 'INV-5';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'cb49b246-55b9-45f5-c09b-8369e9ad917a'::uuid,
-  'DEP-2026-0003',
+  'b9ce90f0-f0da-8846-991f-395c007df8d5'::uuid,
+  'DEP-3',
   (select id from bookings where booking_no = 'B-802'),
   (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -7642,9 +7704,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a7f3990d-d2c9-ecd8-dc91-6084a2b30209'::uuid,
-  'DEP-2026-0003-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0003'),
+  '277526fc-a7ca-d72e-d853-aac3451c6619'::uuid,
+  'DEP-3-M1',
+  (select id from security_deposits where deposit_no = 'DEP-3'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -7997,8 +8059,8 @@ where invoice_no = 'INV-6';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ea530be4-6e52-4c0a-6b22-dc2c2c0c73d0'::uuid,
-  'DEP-2026-0004',
+  'baa92195-dd0b-0ac7-de3f-2548f020cc6b'::uuid,
+  'DEP-4',
   (select id from bookings where booking_no = 'B-803'),
   (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -8579,8 +8641,8 @@ where invoice_no = 'INV-8';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ca32d41e-130c-78f5-356a-8226aa0aae95'::uuid,
-  'DEP-2026-0005',
+  'ba038070-56cb-705a-e847-b9a3cc05da35'::uuid,
+  'DEP-5',
   (select id from bookings where booking_no = 'B-805'),
   (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -8593,9 +8655,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'cb1e275a-5f5a-f84c-9365-97cf9903b018'::uuid,
-  'DEP-2026-0005-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0005'),
+  'd9d97f81-153b-f55c-aa19-f612f035b0db'::uuid,
+  'DEP-5-M1',
+  (select id from security_deposits where deposit_no = 'DEP-5'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -8916,8 +8978,8 @@ where invoice_no = 'INV-9';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'bb9c620d-0473-89b6-7d1e-453c244159a0'::uuid,
-  'DEP-2026-0006',
+  'cfd640f8-90bc-ba0a-1677-4cac7ac78634'::uuid,
+  'DEP-6',
   (select id from bookings where booking_no = 'B-806'),
   (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -9300,8 +9362,8 @@ where invoice_no = 'INV-10';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1808fa48-3826-c524-5335-6100c44b03dd'::uuid,
-  'DEP-2026-0007',
+  '644275ed-5e3c-f22a-f0f9-7dabddb08b5b'::uuid,
+  'DEP-7',
   (select id from bookings where booking_no = 'B-807'),
   (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -9314,9 +9376,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6c399b4c-70a2-fe64-42e6-6659767cbe0e'::uuid,
-  'DEP-2026-0007-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0007'),
+  'a38cc979-0179-cadb-3961-106c5ce313a2'::uuid,
+  'DEP-7-M1',
+  (select id from security_deposits where deposit_no = 'DEP-7'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -9867,8 +9929,8 @@ where invoice_no = 'INV-12';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '27057511-9c84-ebb3-a7e6-5403291a26c4'::uuid,
-  'DEP-2026-0008',
+  'f43c54fa-4ef9-8798-5916-1cb3aa52e99a'::uuid,
+  'DEP-8',
   (select id from bookings where booking_no = 'B-809'),
   (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -10219,8 +10281,8 @@ where invoice_no = 'INV-13';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '3c38a744-0010-43f6-0384-d3affc046938'::uuid,
-  'DEP-2026-0009',
+  '4b4dd59c-97e2-ae85-2c84-2ad0a8a334a7'::uuid,
+  'DEP-9',
   (select id from bookings where booking_no = 'B-810'),
   (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -10233,9 +10295,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '99c58758-7988-4299-2864-947e2d32d33a'::uuid,
-  'DEP-2026-0009-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0009'),
+  '4ee64dcd-e27f-8edf-ef6d-a94afe428862'::uuid,
+  'DEP-9-M1',
+  (select id from security_deposits where deposit_no = 'DEP-9'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -10629,8 +10691,8 @@ where invoice_no = 'INV-14';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '896e8504-2890-0744-166e-403e0e21cc69'::uuid,
-  'DEP-2026-0010',
+  '42ba31f8-f170-c1d3-355d-5b043692b9f4'::uuid,
+  'DEP-10',
   (select id from bookings where booking_no = 'B-811'),
   (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -10643,9 +10705,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ea30c718-c0f0-ab72-1535-a3ad718da40c'::uuid,
-  'DEP-2026-0010-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0010'),
+  'ffe9feee-9da6-5b3b-9441-32997295c881'::uuid,
+  'DEP-10-M1',
+  (select id from security_deposits where deposit_no = 'DEP-10'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -11183,8 +11245,8 @@ where invoice_no = 'INV-16';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '62f993a6-d8e2-5324-b974-74295fa42a65'::uuid,
-  'DEP-2026-0011',
+  '985fc041-7077-19b7-ba32-821d4bda17b6'::uuid,
+  'DEP-11',
   (select id from bookings where booking_no = 'B-813'),
   (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -11197,9 +11259,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b1ca5957-96ac-aab5-9371-fe798d7f64ba'::uuid,
-  'DEP-2026-0011-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0011'),
+  '982659fb-736f-f71e-2153-35b3e5cb1542'::uuid,
+  'DEP-11-M1',
+  (select id from security_deposits where deposit_no = 'DEP-11'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -11561,8 +11623,8 @@ where invoice_no = 'INV-17';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '7c31530e-04bb-cad6-ce0d-91431bc844f8'::uuid,
-  'DEP-2026-0012',
+  '5aec9a9e-45de-c987-c902-58a5cad8626b'::uuid,
+  'DEP-12',
   (select id from bookings where booking_no = 'B-814'),
   (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -11575,9 +11637,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a78c1586-4da3-6ffe-7075-79b7e24fad57'::uuid,
-  'DEP-2026-0012-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0012'),
+  '64b391ee-0fda-8348-6b29-33ff067dc716'::uuid,
+  'DEP-12-M1',
+  (select id from security_deposits where deposit_no = 'DEP-12'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -11930,8 +11992,8 @@ where invoice_no = 'INV-18';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '6c26d156-8e5a-8601-9780-7b421ef635ea'::uuid,
-  'DEP-2026-0013',
+  '2227d749-2e4c-6a07-bfea-27ec34a3933b'::uuid,
+  'DEP-13',
   (select id from bookings where booking_no = 'B-815'),
   (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -12512,8 +12574,8 @@ where invoice_no = 'INV-20';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f268ea01-ec92-7a7a-f36f-293630359ad5'::uuid,
-  'DEP-2026-0014',
+  '893d1827-965b-c6a0-7a42-a469d5b6311d'::uuid,
+  'DEP-14',
   (select id from bookings where booking_no = 'B-817'),
   (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -12526,9 +12588,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b5c42d4f-001a-605d-1265-b1491f002212'::uuid,
-  'DEP-2026-0014-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0014'),
+  '97bc72ba-ff19-1afd-dc13-2e147eabfcf1'::uuid,
+  'DEP-14-M1',
+  (select id from security_deposits where deposit_no = 'DEP-14'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -12849,8 +12911,8 @@ where invoice_no = 'INV-21';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f823f122-7b05-777b-1c01-6d3d4c3fbdad'::uuid,
-  'DEP-2026-0015',
+  '1dbc97f9-6e5f-178b-745a-8e7f49e719e4'::uuid,
+  'DEP-15',
   (select id from bookings where booking_no = 'B-818'),
   (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -13248,8 +13310,8 @@ where invoice_no = 'INV-22';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1c41c582-69bb-a24b-9c04-6adc114e2942'::uuid,
-  'DEP-2026-0016',
+  '94f56d6d-cfee-6aed-d869-1de4365845b9'::uuid,
+  'DEP-16',
   (select id from bookings where booking_no = 'B-819'),
   (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -13262,9 +13324,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b9465d32-86a4-5553-d4ef-6bcac60e5fa2'::uuid,
-  'DEP-2026-0016-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0016'),
+  'e616be30-7a4c-1661-5a11-77ce3d143391'::uuid,
+  'DEP-16-M1',
+  (select id from security_deposits where deposit_no = 'DEP-16'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -13845,8 +13907,8 @@ where invoice_no = 'INV-24';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '03c50d1e-a902-a02d-a038-6fe15d57b1c4'::uuid,
-  'DEP-2026-0017',
+  'd65409c4-96de-63be-a2ec-b8aaaf4c754b'::uuid,
+  'DEP-17',
   (select id from bookings where booking_no = 'B-821'),
   (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -14212,8 +14274,8 @@ where invoice_no = 'INV-25';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'dd93abcc-fb98-6a69-1a1b-c6307b3b442f'::uuid,
-  'DEP-2026-0018',
+  '8c7e8e58-7829-147a-90b6-3b450ff16327'::uuid,
+  'DEP-18',
   (select id from bookings where booking_no = 'B-822'),
   (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -14226,9 +14288,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '43fca25e-3cff-b476-2dd5-7d6ee4016669'::uuid,
-  'DEP-2026-0018-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0018'),
+  'e4fef758-4bcb-b762-80ca-52063f7292e4'::uuid,
+  'DEP-18-M1',
+  (select id from security_deposits where deposit_no = 'DEP-18'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -14637,8 +14699,8 @@ where invoice_no = 'INV-26';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '17d2f63d-0c06-bdea-f515-873c802710d2'::uuid,
-  'DEP-2026-0019',
+  '4c9302ac-0fd9-ea51-f7a3-923c1b6952f5'::uuid,
+  'DEP-19',
   (select id from bookings where booking_no = 'B-823'),
   (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -14651,9 +14713,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ef73443b-e4c7-8eea-73bc-7e0e88af2216'::uuid,
-  'DEP-2026-0019-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0019'),
+  'f604978d-b65b-114f-d2f2-0a0a3ead9e1b'::uuid,
+  'DEP-19-M1',
+  (select id from security_deposits where deposit_no = 'DEP-19'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -15221,8 +15283,8 @@ where invoice_no = 'INV-28';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ec25c421-20ae-c90e-5246-4670432925a7'::uuid,
-  'DEP-2026-0020',
+  '867058a3-2a9f-10a3-06ac-e5ed9763589b'::uuid,
+  'DEP-20',
   (select id from bookings where booking_no = 'B-825'),
   (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -15235,9 +15297,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6e6a1679-8252-1cbc-6de9-346f68b123b6'::uuid,
-  'DEP-2026-0020-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0020'),
+  'e373c69f-f296-a8ae-bb60-b1754f5bcedc'::uuid,
+  'DEP-20-M1',
+  (select id from security_deposits where deposit_no = 'DEP-20'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -15614,8 +15676,8 @@ where invoice_no = 'INV-29';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '3d92a67d-c5ea-9e79-aaae-e986ce6c17d0'::uuid,
-  'DEP-2026-0021',
+  'ce652757-db59-32e9-ec06-597e4ead0b54'::uuid,
+  'DEP-21',
   (select id from bookings where booking_no = 'B-826'),
   (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -15628,9 +15690,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '71be5bce-880d-819e-a929-4eff3ccbb86c'::uuid,
-  'DEP-2026-0021-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0021'),
+  'c86625f1-2bcc-87f4-88bd-968d7ed71ff4'::uuid,
+  'DEP-21-M1',
+  (select id from security_deposits where deposit_no = 'DEP-21'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -15998,8 +16060,8 @@ where invoice_no = 'INV-30';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '89a18820-0659-d265-e699-8928c5b849c1'::uuid,
-  'DEP-2026-0022',
+  'a40ccef3-5867-76af-f5c5-ef7c01742237'::uuid,
+  'DEP-22',
   (select id from bookings where booking_no = 'B-827'),
   (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -16610,8 +16672,8 @@ where invoice_no = 'INV-32';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'e2206cb7-7fd2-0a4e-3fa7-9d09d2eef5c6'::uuid,
-  'DEP-2026-0023',
+  '53b4251d-fdac-1661-20ff-a2a09f81a9ce'::uuid,
+  'DEP-23',
   (select id from bookings where booking_no = 'B-829'),
   (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -16624,9 +16686,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ff1482b8-6f40-f333-ecee-bf1df8f66b1e'::uuid,
-  'DEP-2026-0023-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0023'),
+  '8089450c-4113-c1bc-f585-76034e6bf7d6'::uuid,
+  'DEP-23-M1',
+  (select id from security_deposits where deposit_no = 'DEP-23'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -16962,8 +17024,8 @@ where invoice_no = 'INV-33';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '69e5ebd0-bb3a-134a-8550-b681f422001b'::uuid,
-  'DEP-2026-0024',
+  'c400a7d1-f193-7bf2-a5f3-05cf90cee356'::uuid,
+  'DEP-24',
   (select id from bookings where booking_no = 'B-830'),
   (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -17361,8 +17423,8 @@ where invoice_no = 'INV-34';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b8994f0d-bb04-39bd-7540-643b394c5d22'::uuid,
-  'DEP-2026-0025',
+  '23844eea-c75e-d25c-b86e-cc6746adb075'::uuid,
+  'DEP-25',
   (select id from bookings where booking_no = 'B-831'),
   (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -17375,9 +17437,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'd7d553b7-a6df-d070-fd4d-36e3106bc601'::uuid,
-  'DEP-2026-0025-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0025'),
+  'e862837a-1ff0-7db8-83c9-e7b142c49d98'::uuid,
+  'DEP-25-M1',
+  (select id from security_deposits where deposit_no = 'DEP-25'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -17958,8 +18020,8 @@ where invoice_no = 'INV-36';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'cf00ee58-47bb-e7c9-49cc-b4d113a63760'::uuid,
-  'DEP-2026-0026',
+  '42ea49a6-0532-74f1-32d3-661ec7fa228e'::uuid,
+  'DEP-26',
   (select id from bookings where booking_no = 'B-833'),
   (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -18325,8 +18387,8 @@ where invoice_no = 'INV-37';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ac2b2cb7-eb7f-138b-f3c5-7d67ed3e1b18'::uuid,
-  'DEP-2026-0027',
+  'f66adf2e-a9d9-b253-c7ef-953afd793462'::uuid,
+  'DEP-27',
   (select id from bookings where booking_no = 'B-834'),
   (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -18339,9 +18401,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b42191ad-c693-3cb3-3ae0-e57f658e423e'::uuid,
-  'DEP-2026-0027-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0027'),
+  'd918741d-4191-f094-1163-d50caa7222e4'::uuid,
+  'DEP-27-M1',
+  (select id from security_deposits where deposit_no = 'DEP-27'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -18750,8 +18812,8 @@ where invoice_no = 'INV-38';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'dfb4ec81-7b6d-4243-9fca-429bd2601723'::uuid,
-  'DEP-2026-0028',
+  '052f5dc4-a537-c4f1-69d8-6f3195cfa256'::uuid,
+  'DEP-28',
   (select id from bookings where booking_no = 'B-835'),
   (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -18764,9 +18826,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '4afd5917-087a-9f5c-e2bd-79aefbf61ea5'::uuid,
-  'DEP-2026-0028-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0028'),
+  '258da23d-ad66-1dd8-215d-d6ea183bebe1'::uuid,
+  'DEP-28-M1',
+  (select id from security_deposits where deposit_no = 'DEP-28'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -19334,8 +19396,8 @@ where invoice_no = 'INV-40';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '61f5d901-c172-adcb-d440-8e070dac726f'::uuid,
-  'DEP-2026-0029',
+  'f8e35159-ca18-7d66-e3c0-1f43139a5aa1'::uuid,
+  'DEP-29',
   (select id from bookings where booking_no = 'B-837'),
   (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -19348,9 +19410,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a510fddd-e232-c11b-0ee3-56f19e09ac65'::uuid,
-  'DEP-2026-0029-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0029'),
+  '7d21b9d1-0987-bafd-cd33-a95c13a527be'::uuid,
+  'DEP-29-M1',
+  (select id from security_deposits where deposit_no = 'DEP-29'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -19727,8 +19789,8 @@ where invoice_no = 'INV-41';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'e916f3db-3741-0e0c-43fa-a0cc7af4d44f'::uuid,
-  'DEP-2026-0030',
+  'ebe74615-3173-ca6f-1230-c69d82db0ad6'::uuid,
+  'DEP-30',
   (select id from bookings where booking_no = 'B-838'),
   (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -19741,9 +19803,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '710fa8a1-fcb1-86fe-54c4-b2330724b701'::uuid,
-  'DEP-2026-0030-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0030'),
+  'd41a3bc1-eacb-dc63-bcca-f74f7c44bab9'::uuid,
+  'DEP-30-M1',
+  (select id from security_deposits where deposit_no = 'DEP-30'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -20111,8 +20173,8 @@ where invoice_no = 'INV-42';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '07eeeeda-2088-4299-ae6f-3c8a75cd54a8'::uuid,
-  'DEP-2026-0031',
+  'c6c61e98-d46f-6dfd-2cc8-39b9ba11fd58'::uuid,
+  'DEP-31',
   (select id from bookings where booking_no = 'B-839'),
   (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -20723,8 +20785,8 @@ where invoice_no = 'INV-44';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '14c14501-07ee-34eb-6926-91d9aea8a67e'::uuid,
-  'DEP-2026-0032',
+  'a83e5294-5282-4b5a-f14d-a780f1ff9b1a'::uuid,
+  'DEP-32',
   (select id from bookings where booking_no = 'B-841'),
   (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -20737,9 +20799,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'd1287e72-81d3-0585-e816-bceafa7c7dee'::uuid,
-  'DEP-2026-0032-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0032'),
+  'd9f27f4c-3105-d88c-f73c-dc30a2e0a383'::uuid,
+  'DEP-32-M1',
+  (select id from security_deposits where deposit_no = 'DEP-32'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -21075,8 +21137,8 @@ where invoice_no = 'INV-45';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '085a9e55-811c-4695-a947-3e8fa8dba104'::uuid,
-  'DEP-2026-0033',
+  '15d4f945-27a4-e165-5a2a-57a8f85e39e2'::uuid,
+  'DEP-33',
   (select id from bookings where booking_no = 'B-842'),
   (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -21474,8 +21536,8 @@ where invoice_no = 'INV-46';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ae74a774-eac6-b18e-94a7-42f461050178'::uuid,
-  'DEP-2026-0034',
+  '5097ac58-c5a4-11ed-c47b-498a79aae240'::uuid,
+  'DEP-34',
   (select id from bookings where booking_no = 'B-843'),
   (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -21488,9 +21550,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '24b07a7b-a5c2-1cf8-90c8-19a3f1dd74f7'::uuid,
-  'DEP-2026-0034-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0034'),
+  '0a069bb9-b7cc-87ee-1620-d89633b0e153'::uuid,
+  'DEP-34-M1',
+  (select id from security_deposits where deposit_no = 'DEP-34'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -22071,8 +22133,8 @@ where invoice_no = 'INV-48';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '6c30948c-7da5-847b-45eb-c93f77d3ca62'::uuid,
-  'DEP-2026-0035',
+  '08710584-6921-f4d0-1ab4-ae0d21506fea'::uuid,
+  'DEP-35',
   (select id from bookings where booking_no = 'B-845'),
   (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -22438,8 +22500,8 @@ where invoice_no = 'INV-49';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'aab03f21-b9ba-7bf3-fa92-a5587162cf79'::uuid,
-  'DEP-2026-0036',
+  'fd143b06-f687-611e-a3e9-a08820205d79'::uuid,
+  'DEP-36',
   (select id from bookings where booking_no = 'B-846'),
   (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -22452,9 +22514,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'af130591-ee9d-ecdc-6a6b-8d2f492795d3'::uuid,
-  'DEP-2026-0036-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0036'),
+  'fdb17cb3-f798-b990-a1eb-8bfd18ad1673'::uuid,
+  'DEP-36-M1',
+  (select id from security_deposits where deposit_no = 'DEP-36'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -22863,8 +22925,8 @@ where invoice_no = 'INV-50';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b5f7a814-3cb5-6a9b-c71d-e6d9f774c4cb'::uuid,
-  'DEP-2026-0037',
+  'ed4c13c9-1e2b-ff8a-d03c-70d19d26b3f6'::uuid,
+  'DEP-37',
   (select id from bookings where booking_no = 'B-847'),
   (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -22877,9 +22939,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '531e7d0d-2a55-93d2-43c4-93ae7b8b704a'::uuid,
-  'DEP-2026-0037-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0037'),
+  '4bf83916-5aa5-f417-e8a8-329625a4dc50'::uuid,
+  'DEP-37-M1',
+  (select id from security_deposits where deposit_no = 'DEP-37'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -23462,8 +23524,8 @@ where invoice_no = 'INV-52';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f7b8b08c-a3b5-4a89-7032-1c4ef3928237'::uuid,
-  'DEP-2026-0038',
+  '4e1bcd1f-1f78-ef0e-9f5e-fc36a800b74b'::uuid,
+  'DEP-38',
   (select id from bookings where booking_no = 'B-849'),
   (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -23476,9 +23538,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '0c011b4c-7a71-db07-cd2d-42d5905c61f4'::uuid,
-  'DEP-2026-0038-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0038'),
+  'bfd35246-4c12-abf8-302e-b910c1f549ef'::uuid,
+  'DEP-38-M1',
+  (select id from security_deposits where deposit_no = 'DEP-38'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -23870,8 +23932,8 @@ where invoice_no = 'INV-53';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1e67de98-4a3d-3d14-c15d-b836578b8e59'::uuid,
-  'DEP-2026-0039',
+  '4888dc12-b268-efe3-f9d8-b40b78bbc60e'::uuid,
+  'DEP-39',
   (select id from bookings where booking_no = 'B-850'),
   (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -23884,9 +23946,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b232bbbb-8049-30e0-a43d-503c6a24cbd8'::uuid,
-  'DEP-2026-0039-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0039'),
+  '61740dcf-bf7e-5bb8-f429-e35e7ecd0f6a'::uuid,
+  'DEP-39-M1',
+  (select id from security_deposits where deposit_no = 'DEP-39'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -24269,8 +24331,8 @@ where invoice_no = 'INV-54';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '69db49d8-ee89-dc85-f1b2-31ee439e124a'::uuid,
-  'DEP-2026-0040',
+  '150b4bdf-54b7-52b8-5758-9c0c302f696a'::uuid,
+  'DEP-40',
   (select id from bookings where booking_no = 'B-851'),
   (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -24911,8 +24973,8 @@ where invoice_no = 'INV-56';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd93b7999-7447-f04b-1860-f5e4264b00f8'::uuid,
-  'DEP-2026-0041',
+  '0f160ac0-6e52-1be0-d8f5-419415293aec'::uuid,
+  'DEP-41',
   (select id from bookings where booking_no = 'B-853'),
   (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -24925,9 +24987,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '28cbbe44-4738-fc2a-75a9-2d8eeec8f7b4'::uuid,
-  'DEP-2026-0041-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0041'),
+  '8b3c26a5-953d-411d-2867-ddc2d428ab67'::uuid,
+  'DEP-41-M1',
+  (select id from security_deposits where deposit_no = 'DEP-41'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -25278,8 +25340,8 @@ where invoice_no = 'INV-57';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'dfc8e349-f512-bda7-9037-d234cf7cfb1b'::uuid,
-  'DEP-2026-0042',
+  'd16d40d8-9d92-c6c7-8800-c29aec7c0b36'::uuid,
+  'DEP-42',
   (select id from bookings where booking_no = 'B-854'),
   (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -25692,8 +25754,8 @@ where invoice_no = 'INV-58';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '68a1c285-eba8-c241-4d0d-6081e9b284a0'::uuid,
-  'DEP-2026-0043',
+  '31e4b5ac-ca4b-22d8-7876-42c92de9f1c7'::uuid,
+  'DEP-43',
   (select id from bookings where booking_no = 'B-855'),
   (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -25706,9 +25768,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'e9f4860c-9082-c304-708f-6806bacddb62'::uuid,
-  'DEP-2026-0043-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0043'),
+  '28cf4c0f-99b0-f194-4c6b-8db5f52e06b2'::uuid,
+  'DEP-43-M1',
+  (select id from security_deposits where deposit_no = 'DEP-43'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -26319,8 +26381,8 @@ where invoice_no = 'INV-60';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f896461d-3dc3-d454-4929-18f2eebbe2a6'::uuid,
-  'DEP-2026-0044',
+  'bacd3142-6d20-1818-419d-6aa34be9468b'::uuid,
+  'DEP-44',
   (select id from bookings where booking_no = 'B-857'),
   (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -26701,8 +26763,8 @@ where invoice_no = 'INV-61';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '8f7ac6da-a6b6-622b-1b3d-26ad4abf881e'::uuid,
-  'DEP-2026-0045',
+  '46c3d81d-74d6-76ce-8b09-5267d68465be'::uuid,
+  'DEP-45',
   (select id from bookings where booking_no = 'B-858'),
   (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -26715,9 +26777,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '7bccf98d-45d4-1a4c-6e21-fd5f4009696f'::uuid,
-  'DEP-2026-0045-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0045'),
+  '415344b9-0b50-4d96-1453-1d3d7f4bccac'::uuid,
+  'DEP-45-M1',
+  (select id from security_deposits where deposit_no = 'DEP-45'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -27141,8 +27203,8 @@ where invoice_no = 'INV-62';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b3c95a61-be84-44dd-63ce-c8c3a7420567'::uuid,
-  'DEP-2026-0046',
+  '69b463d2-822e-00f7-388c-9b42580413c1'::uuid,
+  'DEP-46',
   (select id from bookings where booking_no = 'B-859'),
   (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -27155,9 +27217,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6b563438-7e5e-1da0-6901-649948887320'::uuid,
-  'DEP-2026-0046-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0046'),
+  'fcd2ba93-4594-e3d6-6f35-ba8ec6771e69'::uuid,
+  'DEP-46-M1',
+  (select id from security_deposits where deposit_no = 'DEP-46'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -27755,8 +27817,8 @@ where invoice_no = 'INV-64';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '64016c4b-22a0-30e3-d952-cd11787aeccb'::uuid,
-  'DEP-2026-0047',
+  '98d93a6e-f8a6-8929-27a4-b3bbee514ac6'::uuid,
+  'DEP-47',
   (select id from bookings where booking_no = 'B-861'),
   (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -27769,9 +27831,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '5ba38c83-872b-22d0-f684-dd51e11de91b'::uuid,
-  'DEP-2026-0047-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0047'),
+  '25380b2c-221a-c376-7c38-451f09f4048f'::uuid,
+  'DEP-47-M1',
+  (select id from security_deposits where deposit_no = 'DEP-47'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -28163,8 +28225,8 @@ where invoice_no = 'INV-65';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '90efc2d4-d8ba-067a-d212-28982b656d1d'::uuid,
-  'DEP-2026-0048',
+  '1ee4e8a4-10b0-36f8-24d5-6f6ab4aad039'::uuid,
+  'DEP-48',
   (select id from bookings where booking_no = 'B-862'),
   (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -28177,9 +28239,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '08eb1d20-4137-3e6a-afb4-bb7f024b8cc1'::uuid,
-  'DEP-2026-0048-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0048'),
+  '9478678b-64cc-76a5-4306-2a686f2107aa'::uuid,
+  'DEP-48-M1',
+  (select id from security_deposits where deposit_no = 'DEP-48'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -28562,8 +28624,8 @@ where invoice_no = 'INV-66';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '9e206900-3b08-baab-ac89-6d65d13e2275'::uuid,
-  'DEP-2026-0049',
+  '4795be9d-4a4c-348b-794a-c884baa40781'::uuid,
+  'DEP-49',
   (select id from bookings where booking_no = 'B-863'),
   (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -29219,8 +29281,8 @@ where invoice_no = 'INV-68';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'abf87e69-a8aa-1997-f163-0aa677c42a53'::uuid,
-  'DEP-2026-0050',
+  'afe31d26-6c1c-4225-161c-c2e42365cda9'::uuid,
+  'DEP-50',
   (select id from bookings where booking_no = 'B-865'),
   (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -29233,9 +29295,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'de3f555b-a1ef-b182-6c6d-da41b3dce59c'::uuid,
-  'DEP-2026-0050-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0050'),
+  '403d0bf5-0bd3-4803-d8e9-d3e65189796d'::uuid,
+  'DEP-50-M1',
+  (select id from security_deposits where deposit_no = 'DEP-50'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -29601,8 +29663,8 @@ where invoice_no = 'INV-69';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'cbb10471-782a-8dc4-c402-60ddd9a250bf'::uuid,
-  'DEP-2026-0051',
+  '7bb45a4d-80f5-6946-d92e-f00c09aab97d'::uuid,
+  'DEP-51',
   (select id from bookings where booking_no = 'B-866'),
   (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -30030,8 +30092,8 @@ where invoice_no = 'INV-70';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd51b5188-e4c5-7fdf-32c1-45418d6b5ea5'::uuid,
-  'DEP-2026-0052',
+  '75f04a75-ab51-da51-c78f-1b597523b60e'::uuid,
+  'DEP-52',
   (select id from bookings where booking_no = 'B-867'),
   (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -30044,9 +30106,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'f68a5491-2121-4bf4-dd3e-2e2e257dc10b'::uuid,
-  'DEP-2026-0052-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0052'),
+  'e49b76fe-4d96-e317-d890-3041e249b989'::uuid,
+  'DEP-52-M1',
+  (select id from security_deposits where deposit_no = 'DEP-52'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -30687,8 +30749,8 @@ where invoice_no = 'INV-72';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '4296c216-ff05-3f37-1b1e-69d7508d4933'::uuid,
-  'DEP-2026-0053',
+  'f20cf923-8ac1-d324-cfde-6b8528d029dc'::uuid,
+  'DEP-53',
   (select id from bookings where booking_no = 'B-869'),
   (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -31084,8 +31146,8 @@ where invoice_no = 'INV-73';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '26589c9b-6b96-5a8e-e4ca-0dd4eb1ae33a'::uuid,
-  'DEP-2026-0054',
+  '6c2fbee4-d2f2-4016-6b3f-552256983ff8'::uuid,
+  'DEP-54',
   (select id from bookings where booking_no = 'B-870'),
   (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -31098,9 +31160,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'dc2bcea8-2013-072d-cfb8-53bdf9a1d8e5'::uuid,
-  'DEP-2026-0054-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0054'),
+  '35ee24c1-8dad-4fd9-0423-bd8d937e8126'::uuid,
+  'DEP-54-M1',
+  (select id from security_deposits where deposit_no = 'DEP-54'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -31539,8 +31601,8 @@ where invoice_no = 'INV-74';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1e9210e7-0afc-286b-434c-acf5589f1ba2'::uuid,
-  'DEP-2026-0055',
+  '294e2876-6569-b270-cc6d-8b849308dc45'::uuid,
+  'DEP-55',
   (select id from bookings where booking_no = 'B-871'),
   (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -31553,9 +31615,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '7db33c4e-ea5e-67e5-6309-acfe084e63fb'::uuid,
-  'DEP-2026-0055-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0055'),
+  '4f5e9986-dd07-af33-fe4a-ae4bdbe35561'::uuid,
+  'DEP-55-M1',
+  (select id from security_deposits where deposit_no = 'DEP-55'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -32183,8 +32245,8 @@ where invoice_no = 'INV-76';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '117bf2bf-412d-df6f-af5a-5f89cb4e38b9'::uuid,
-  'DEP-2026-0056',
+  '950a2c1a-ef5f-503e-8cde-0d07b0119c0c'::uuid,
+  'DEP-56',
   (select id from bookings where booking_no = 'B-873'),
   (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -32197,9 +32259,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '8ef34d00-8529-5f50-406b-498a0a5e4fe8'::uuid,
-  'DEP-2026-0056-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0056'),
+  '9caa60c4-451e-30ef-435e-835c8f23a18d'::uuid,
+  'DEP-56-M1',
+  (select id from security_deposits where deposit_no = 'DEP-56'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -32606,8 +32668,8 @@ where invoice_no = 'INV-77';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '0c9451af-680d-92ac-574c-4f23701b1b86'::uuid,
-  'DEP-2026-0057',
+  '0fa66317-1771-ea00-40ca-a56edbfeb3d0'::uuid,
+  'DEP-57',
   (select id from bookings where booking_no = 'B-874'),
   (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -32620,9 +32682,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '8ccead42-9fca-eb13-01c1-562aef3a2a83'::uuid,
-  'DEP-2026-0057-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0057'),
+  'fa0d3917-0cb6-619a-e159-63be228015a6'::uuid,
+  'DEP-57-M1',
+  (select id from security_deposits where deposit_no = 'DEP-57'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -33020,8 +33082,8 @@ where invoice_no = 'INV-78';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '37709f44-739f-7520-18b6-9a09308cb8d5'::uuid,
-  'DEP-2026-0058',
+  'f5d17763-1556-fb33-88be-5c24c139460b'::uuid,
+  'DEP-58',
   (select id from bookings where booking_no = 'B-875'),
   (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -33692,8 +33754,8 @@ where invoice_no = 'INV-80';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd361694c-82b5-26f9-1138-84edd45dc4aa'::uuid,
-  'DEP-2026-0059',
+  '8532d333-497f-5923-a81a-13ac86f8537d'::uuid,
+  'DEP-59',
   (select id from bookings where booking_no = 'B-877'),
   (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -33706,9 +33768,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '11045bf9-aaae-3e33-c09d-9f164a687e80'::uuid,
-  'DEP-2026-0059-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0059'),
+  '622bb126-48a9-668a-dc92-8345201db4a7'::uuid,
+  'DEP-59-M1',
+  (select id from security_deposits where deposit_no = 'DEP-59'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -34074,8 +34136,8 @@ where invoice_no = 'INV-81';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '648447e8-7b16-f538-db70-562dd10fd59d'::uuid,
-  'DEP-2026-0060',
+  'f3a41336-910b-6edd-58bb-eeb1f125fd2d'::uuid,
+  'DEP-60',
   (select id from bookings where booking_no = 'B-878'),
   (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -34503,8 +34565,8 @@ where invoice_no = 'INV-82';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '5569424a-5e8d-5f2c-aab1-6bd4f2bfdfdd'::uuid,
-  'DEP-2026-0061',
+  'aa5a989c-cc44-adc2-89af-98444e6041d3'::uuid,
+  'DEP-61',
   (select id from bookings where booking_no = 'B-879'),
   (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -34517,9 +34579,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '08d2ebcf-46f3-421a-bbe2-281eb3722d8e'::uuid,
-  'DEP-2026-0061-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0061'),
+  'c20f9b80-7e9f-3a71-1de5-a2c7721b4b3a'::uuid,
+  'DEP-61-M1',
+  (select id from security_deposits where deposit_no = 'DEP-61'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -35160,8 +35222,8 @@ where invoice_no = 'INV-84';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd02bec8d-5712-38ae-8ae7-0946b0947ff5'::uuid,
-  'DEP-2026-0062',
+  'c4a67b5a-2b60-a1df-9c52-170ad5889d16'::uuid,
+  'DEP-62',
   (select id from bookings where booking_no = 'B-881'),
   (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -35557,8 +35619,8 @@ where invoice_no = 'INV-85';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'a93ddd70-9395-26fd-7ee6-bb979589ea08'::uuid,
-  'DEP-2026-0063',
+  'b53e4e93-be1f-118f-233a-41e67f8df2ad'::uuid,
+  'DEP-63',
   (select id from bookings where booking_no = 'B-882'),
   (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -35571,9 +35633,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '51131c5f-fc45-c8b1-25b4-833317ec23bc'::uuid,
-  'DEP-2026-0063-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0063'),
+  '0e13485d-25ea-45d6-c5e8-9a177812ee1a'::uuid,
+  'DEP-63-M1',
+  (select id from security_deposits where deposit_no = 'DEP-63'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -36012,8 +36074,8 @@ where invoice_no = 'INV-86';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '5db5e6ef-17ba-903c-a08f-91fbfebfbfac'::uuid,
-  'DEP-2026-0064',
+  '72605158-8576-490a-63f2-ed95c25c94b1'::uuid,
+  'DEP-64',
   (select id from bookings where booking_no = 'B-883'),
   (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -36026,9 +36088,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '17a22f73-87de-d12d-13ed-dabf3020a82b'::uuid,
-  'DEP-2026-0064-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0064'),
+  'd1143749-e75a-4bba-b2ca-c50b26c57cfd'::uuid,
+  'DEP-64-M1',
+  (select id from security_deposits where deposit_no = 'DEP-64'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -36656,8 +36718,8 @@ where invoice_no = 'INV-88';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '396f639f-564f-5534-9c45-c6c90c149896'::uuid,
-  'DEP-2026-0065',
+  'a9887c46-210f-d176-4195-595e8606fffe'::uuid,
+  'DEP-65',
   (select id from bookings where booking_no = 'B-885'),
   (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -36670,9 +36732,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '0360f21e-ed39-7c29-9cb8-c670ec665f3c'::uuid,
-  'DEP-2026-0065-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0065'),
+  'c53fe701-bac6-fa7f-3d18-05d371b1f812'::uuid,
+  'DEP-65-M1',
+  (select id from security_deposits where deposit_no = 'DEP-65'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -37079,8 +37141,8 @@ where invoice_no = 'INV-89';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '15ebd101-bb8c-edc6-3b5e-5f01727e88fe'::uuid,
-  'DEP-2026-0066',
+  '4b21f22b-a0ef-b257-349b-bbf397b67c77'::uuid,
+  'DEP-66',
   (select id from bookings where booking_no = 'B-886'),
   (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -37093,9 +37155,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a76d4602-104e-0721-bfdd-214aeb879719'::uuid,
-  'DEP-2026-0066-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0066'),
+  '4c64d71b-e5fd-06ab-f5ee-6a57248306d7'::uuid,
+  'DEP-66-M1',
+  (select id from security_deposits where deposit_no = 'DEP-66'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -37493,8 +37555,8 @@ where invoice_no = 'INV-90';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ce60c620-4c14-f9bc-7829-7621f352810f'::uuid,
-  'DEP-2026-0067',
+  '6c9e65e8-1227-bc5d-f3dd-5c7c0315a19c'::uuid,
+  'DEP-67',
   (select id from bookings where booking_no = 'B-887'),
   (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -38180,8 +38242,8 @@ where invoice_no = 'INV-92';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '892207ff-bac3-a1ee-1dae-d2a6b1f3c1c8'::uuid,
-  'DEP-2026-0068',
+  'b1862334-a67d-0d66-ee65-3b2903ccba80'::uuid,
+  'DEP-68',
   (select id from bookings where booking_no = 'B-889'),
   (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -38194,9 +38256,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '1972ab0c-94d5-11bd-9f93-34fd8573399e'::uuid,
-  'DEP-2026-0068-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0068'),
+  'ed804b42-b7f4-27b6-2014-e7e162a2ad3c'::uuid,
+  'DEP-68-M1',
+  (select id from security_deposits where deposit_no = 'DEP-68'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -38577,8 +38639,8 @@ where invoice_no = 'INV-93';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b5d03379-193d-84ad-3f2c-8fc0f8b1bf41'::uuid,
-  'DEP-2026-0069',
+  '4e93f8fc-ff2c-05aa-7bff-7c5b086af2b4'::uuid,
+  'DEP-69',
   (select id from bookings where booking_no = 'B-890'),
   (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -39021,8 +39083,8 @@ where invoice_no = 'INV-94';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '876cccb4-70ce-de2c-4969-44fc2872f4aa'::uuid,
-  'DEP-2026-0070',
+  '2c55d90a-4f03-746c-cc8e-eb1a7b4edf69'::uuid,
+  'DEP-70',
   (select id from bookings where booking_no = 'B-891'),
   (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -39035,9 +39097,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '078b3683-8cda-8576-44e3-c12bff35ee40'::uuid,
-  'DEP-2026-0070-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0070'),
+  'e9d252a3-82a2-6d30-025e-eaa055ea7182'::uuid,
+  'DEP-70-M1',
+  (select id from security_deposits where deposit_no = 'DEP-70'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -39708,8 +39770,8 @@ where invoice_no = 'INV-96';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '68aa0ac5-f2e2-66e1-0b14-16e561659674'::uuid,
-  'DEP-2026-0071',
+  '6f491270-6b0d-0e44-4f6a-563ce460468c'::uuid,
+  'DEP-71',
   (select id from bookings where booking_no = 'B-893'),
   (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -40120,8 +40182,8 @@ where invoice_no = 'INV-97';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'edb395e0-930a-3911-a97d-586cb8ad108a'::uuid,
-  'DEP-2026-0072',
+  '2d936bda-bdf5-27ff-58c9-dd75b9f75eea'::uuid,
+  'DEP-72',
   (select id from bookings where booking_no = 'B-894'),
   (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -40134,9 +40196,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6faba880-f9e4-5bab-68c6-99055c9f1f76'::uuid,
-  'DEP-2026-0072-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0072'),
+  '798562a7-ca3d-600b-58ff-feaaf9d1030b'::uuid,
+  'DEP-72-M1',
+  (select id from security_deposits where deposit_no = 'DEP-72'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -40590,8 +40652,8 @@ where invoice_no = 'INV-98';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'a68129b3-cbfe-e09b-cf4e-94a6c35c0ea3'::uuid,
-  'DEP-2026-0073',
+  '3647aa48-c9dc-7396-3ce7-ebe60dbb06d7'::uuid,
+  'DEP-73',
   (select id from bookings where booking_no = 'B-895'),
   (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -40604,9 +40666,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '89f3c33b-4666-1504-9af6-c33f085a6d3d'::uuid,
-  'DEP-2026-0073-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0073'),
+  'f6ce537f-0c74-5ae8-80bd-1c50b1f24c04'::uuid,
+  'DEP-73-M1',
+  (select id from security_deposits where deposit_no = 'DEP-73'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -41264,8 +41326,8 @@ where invoice_no = 'INV-100';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '93b4f84c-15da-fd04-dff1-eb85040feb59'::uuid,
-  'DEP-2026-0074',
+  '6dff5e3d-170d-0042-96b8-d9cb50de0c04'::uuid,
+  'DEP-74',
   (select id from bookings where booking_no = 'B-897'),
   (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -41278,9 +41340,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '48fee663-9e68-f22a-6e0d-3993d895c139'::uuid,
-  'DEP-2026-0074-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0074'),
+  'ac4693df-1837-0d2f-2fdc-538d6e99419d'::uuid,
+  'DEP-74-M1',
+  (select id from security_deposits where deposit_no = 'DEP-74'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -41702,8 +41764,8 @@ where invoice_no = 'INV-101';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '60434ac5-8037-8ead-bffc-a95c96373b11'::uuid,
-  'DEP-2026-0075',
+  '39ff4f15-2fb9-a1ab-df98-404dfc731d32'::uuid,
+  'DEP-75',
   (select id from bookings where booking_no = 'B-898'),
   (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -41716,9 +41778,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'd184e5e2-5d9e-a453-19a2-73b6f8691101'::uuid,
-  'DEP-2026-0075-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0075'),
+  '59c257d3-8d5f-3b4e-1d98-ca52f47c8890'::uuid,
+  'DEP-75-M1',
+  (select id from security_deposits where deposit_no = 'DEP-75'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -42131,8 +42193,8 @@ where invoice_no = 'INV-102';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd89d174e-a77a-fa41-2da4-d857fcb5e530'::uuid,
-  'DEP-2026-0076',
+  'dda5154b-7c58-d8d7-acd7-74f4600807a0'::uuid,
+  'DEP-76',
   (select id from bookings where booking_no = 'B-899'),
   (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -42833,8 +42895,8 @@ where invoice_no = 'INV-104';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '16f6b28a-8396-a703-0f30-1a6dd7a493f6'::uuid,
-  'DEP-2026-0077',
+  '3e11bb07-ea1b-a5e2-a12d-1c8f2c840bbe'::uuid,
+  'DEP-77',
   (select id from bookings where booking_no = 'B-901'),
   (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -42847,9 +42909,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ef3c5577-b66a-9c1f-d28a-c6bb3e2fadb5'::uuid,
-  'DEP-2026-0077-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0077'),
+  '39a98b24-78f4-cb93-5fbc-c7b84a77182a'::uuid,
+  'DEP-77-M1',
+  (select id from security_deposits where deposit_no = 'DEP-77'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -43230,8 +43292,8 @@ where invoice_no = 'INV-105';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'e1a5641b-d3ec-36f8-4c3a-83e60f5a530f'::uuid,
-  'DEP-2026-0078',
+  '51b0feec-c9e8-f641-2e10-30352e145963'::uuid,
+  'DEP-78',
   (select id from bookings where booking_no = 'B-902'),
   (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -43244,9 +43306,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'f06bacfe-afba-d5e2-68aa-14d8e7a6f17d'::uuid,
-  'DEP-2026-0078-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0078'),
+  '95c4e773-fa6d-95c9-fb05-4a3bb5bfd899'::uuid,
+  'DEP-78-M1',
+  (select id from security_deposits where deposit_no = 'DEP-78'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -43702,8 +43764,8 @@ where invoice_no = 'INV-106';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '7afd13f1-a32d-9699-f56e-e30d9dc17f23'::uuid,
-  'DEP-2026-0079',
+  'dcb76b5f-abd0-6cd3-cd8b-5ddcf00a9f21'::uuid,
+  'DEP-79',
   (select id from bookings where booking_no = 'B-903'),
   (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -43716,9 +43778,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '4ad8d873-a77f-7809-c8b1-373228cd1ce2'::uuid,
-  'DEP-2026-0079-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0079'),
+  '6f705b0a-edfb-0f16-a93e-46d673dc0d5f'::uuid,
+  'DEP-79-M1',
+  (select id from security_deposits where deposit_no = 'DEP-79'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -44441,8 +44503,8 @@ where invoice_no = 'INV-108';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '4c83411f-fab3-2f53-52ab-720745f37b6b'::uuid,
-  'DEP-2026-0080',
+  'ecb1aa83-b852-57a5-7a68-dee771ecfa02'::uuid,
+  'DEP-80',
   (select id from bookings where booking_no = 'B-905'),
   (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -44455,9 +44517,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '163b6dd1-9685-b040-b8a3-e71791b0a644'::uuid,
-  'DEP-2026-0080-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0080'),
+  'ae73c531-24f8-0bd6-c287-90ef41fc54c1'::uuid,
+  'DEP-80-M1',
+  (select id from security_deposits where deposit_no = 'DEP-80'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -44881,8 +44943,8 @@ where invoice_no = 'INV-109';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '4b634c75-755c-c4ad-f1e1-455b14272794'::uuid,
-  'DEP-2026-0081',
+  '85a15539-8247-b778-0ff3-234f0cae4435'::uuid,
+  'DEP-81',
   (select id from bookings where booking_no = 'B-906'),
   (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -44895,9 +44957,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b7ce5ec8-4c76-554c-6a3d-713362703146'::uuid,
-  'DEP-2026-0081-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0081'),
+  'bc6a6aef-00c4-70d0-35ee-82d27681113b'::uuid,
+  'DEP-81-M1',
+  (select id from security_deposits where deposit_no = 'DEP-81'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -45366,8 +45428,8 @@ where invoice_no = 'INV-110';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '52341409-9477-3024-8a05-d4fbdf1a0be6'::uuid,
-  'DEP-2026-0082',
+  '477f5b1b-e87a-5735-862b-9553b2b4064f'::uuid,
+  'DEP-82',
   (select id from bookings where booking_no = 'B-907'),
   (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -45380,9 +45442,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'e4741404-378c-3427-615c-92b93de452ca'::uuid,
-  'DEP-2026-0082-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0082'),
+  '9a1107fa-410c-6144-6de7-fc07eefc2a56'::uuid,
+  'DEP-82-M1',
+  (select id from security_deposits where deposit_no = 'DEP-82'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -46092,8 +46154,8 @@ where invoice_no = 'INV-112';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'aff122c8-d83f-c6cf-d20f-12fc3fd1a74e'::uuid,
-  'DEP-2026-0083',
+  '2f5c9152-f9b9-1cfd-6e9a-16238f95e135'::uuid,
+  'DEP-83',
   (select id from bookings where booking_no = 'B-909'),
   (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -46106,9 +46168,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'fb1f7bba-9b32-8e8e-5e01-a2aa38506355'::uuid,
-  'DEP-2026-0083-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0083'),
+  'aa617f90-ad7a-5cf0-9933-e6c97c4f5b66'::uuid,
+  'DEP-83-M1',
+  (select id from security_deposits where deposit_no = 'DEP-83'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -46545,8 +46607,8 @@ where invoice_no = 'INV-113';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b37c2410-66d0-9925-e0d1-433a6b11e45a'::uuid,
-  'DEP-2026-0084',
+  'c306a6ef-1caf-1e5b-2490-75567f0f8582'::uuid,
+  'DEP-84',
   (select id from bookings where booking_no = 'B-910'),
   (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -46559,9 +46621,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '4abcd227-c2b6-aca1-2b41-01292d685e6b'::uuid,
-  'DEP-2026-0084-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0084'),
+  '6a10aa2f-5ff2-45ad-8b85-2dc7aa57eb04'::uuid,
+  'DEP-84-M1',
+  (select id from security_deposits where deposit_no = 'DEP-84'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -46989,8 +47051,8 @@ where invoice_no = 'INV-114';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '56ac72ef-2728-2506-cba8-1add5c114319'::uuid,
-  'DEP-2026-0085',
+  'de4bb3f9-bb52-94bd-ceff-0508bf89eba6'::uuid,
+  'DEP-85',
   (select id from bookings where booking_no = 'B-911'),
   (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -47003,9 +47065,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '452bc4d5-48aa-bf18-82e3-187fd6186f5b'::uuid,
-  'DEP-2026-0085-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0085'),
+  '39866c38-58c4-2d6a-0d1f-26cfe9516e06'::uuid,
+  'DEP-85-M1',
+  (select id from security_deposits where deposit_no = 'DEP-85'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -47756,8 +47818,8 @@ where invoice_no = 'INV-116';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '7898a88c-3658-c422-6b69-9fe4e88ab380'::uuid,
-  'DEP-2026-0086',
+  'a3265700-ced9-bf76-04c3-b7275b6c9be7'::uuid,
+  'DEP-86',
   (select id from bookings where booking_no = 'B-913'),
   (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -47770,9 +47832,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'c60016c6-238a-523c-a027-74cb1b501f6d'::uuid,
-  'DEP-2026-0086-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0086'),
+  'e0f732b6-5503-3b08-3fcf-e9c6da2e02bd'::uuid,
+  'DEP-86-M1',
+  (select id from security_deposits where deposit_no = 'DEP-86'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -48168,8 +48230,8 @@ where invoice_no = 'INV-117';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '5ee82afb-284a-d967-1462-0b1b87deaa44'::uuid,
-  'DEP-2026-0087',
+  '90acda93-5c13-1c74-4f5e-d73192e4a2dd'::uuid,
+  'DEP-87',
   (select id from bookings where booking_no = 'B-914'),
   (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -48182,9 +48244,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '22bfd143-9d7e-bb05-a157-cfc7e84cb251'::uuid,
-  'DEP-2026-0087-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0087'),
+  '2b16e313-842d-8425-a268-f26ae39785ec'::uuid,
+  'DEP-87-M1',
+  (select id from security_deposits where deposit_no = 'DEP-87'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -48640,8 +48702,8 @@ where invoice_no = 'INV-118';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '51fb86d1-1d7c-5691-2720-3cba544cd5b1'::uuid,
-  'DEP-2026-0088',
+  '0f5d5dee-0b85-7153-78eb-2ffb4d3b68d5'::uuid,
+  'DEP-88',
   (select id from bookings where booking_no = 'B-915'),
   (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -48654,9 +48716,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '75d46e96-5614-a60d-7f6b-2f5483318e03'::uuid,
-  'DEP-2026-0088-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0088'),
+  '3cf1c0e5-fc47-6b16-ff56-c382eb7225f6'::uuid,
+  'DEP-88-M1',
+  (select id from security_deposits where deposit_no = 'DEP-88'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -49379,8 +49441,8 @@ where invoice_no = 'INV-120';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'fa7b4b14-af53-3eac-c85a-92d296898ec6'::uuid,
-  'DEP-2026-0089',
+  'e0790bd2-a8d5-e74f-91fa-28c6a0899431'::uuid,
+  'DEP-89',
   (select id from bookings where booking_no = 'B-917'),
   (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -49393,9 +49455,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a33cd86c-9425-a910-77ef-3ddcae80b677'::uuid,
-  'DEP-2026-0089-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0089'),
+  'd64c4e5f-a124-efaa-5772-64c39c3de49c'::uuid,
+  'DEP-89-M1',
+  (select id from security_deposits where deposit_no = 'DEP-89'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -50210,5 +50272,8 @@ begin
 
   raise notice 'Seed corpus verified: % booking(s), Foundation §2.8 reconciles.', 120;
 end $$;
+
+-- Gate back on before commit — see the note at the top of this file.
+alter table bookings enable trigger trg_booking_gate_check;
 
 commit;

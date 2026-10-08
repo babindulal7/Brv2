@@ -1,9 +1,12 @@
 import { createContext, useContext, useState } from 'react'
+import { recordExport } from '../../../lib/exportAudit'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import '../settings.css'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../../components/ui/Page'
+import { InfoTooltip } from '../../../components/ui/InfoTooltip'
 import { STATUS, BRAND, BRAND_ON } from '../../../lib/status'
 import type { StatusKey, BrandKey } from '../../../lib/status'
 import { SETTING_SPECS, formatSetting } from '../../../lib/settingsStore'
@@ -13,8 +16,8 @@ import { getAllowOverbooking, setAllowOverbooking } from '../../../lib/bookingRu
 import { TEXT_SIZES, applyTextSize, readTextSize } from '../../../lib/textSize'
 import type { TextSize } from '../../../lib/textSize'
 import type { UseEditModeResult } from '../../../lib/edit/useEditMode'
-import type { Dest, TabKey, TabDef, ActivityEntry, QuickAction } from '../../../data/settings'
-import { isDestVisible } from '../../../data/settings'
+import type { Dest, TabKey, TabDef, ActivityEntry, QuickAction } from '../../../lib/queries/settings'
+import { isDestVisible } from '../../../lib/queries/settings'
 
 /**
  * **Settings — the atoms every section is built from.**
@@ -31,7 +34,29 @@ import { isDestVisible } from '../../../data/settings'
 
 /* ── style atoms ───────────────────────────────────────────────────────── */
 
+/*
+ * §7.3's row floor ("rows >= 56px") for every Settings section table, written
+ * with the token rather than as padding arithmetic: `height` on a `<td>`
+ * behaves as a MINIMUM, so short rows rise to the floor while the two-line
+ * cells and the nested expander rows keep the height they compute.
+ *
+ * This is the fix `BranchesWarehouses.tsx` flagged and deliberately declined to
+ * force from inside itself — see the note on its branch-disclosure control,
+ * which reads: "These rows pitch at about 39px, short of the §7.3 'rows >= 56'
+ * floor, so this target and the one in the row below overlap in a band of
+ * roughly 5px and the lower row wins it. Raising the row height is the fix and
+ * it belongs to `td`, which several screens share." This is that `td`, so the
+ * fix lands here.
+ *
+ * It is a data-integrity line, not a density preference: below 56 a 44px hit
+ * area cannot fit inside its own row, so it spills over the boundary, and an
+ * absolutely-positioned target wins the hit test — meaning the row LATER in the
+ * DOM answers a tap aimed at the row above it. On a branch list whose row
+ * controls open, edit and deactivate a branch, that is the wrong branch acted
+ * on, not a cosmetic wobble.
+ */
 export const td: CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',
@@ -43,9 +68,23 @@ export const controlStyle: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 5,
-  /* Law 15 — 44×44 on every device, desktop included. The visual control stays
-     32px; the tap area is grown with padding rather than the border box, so the
-     rows do not gain 12px of height each. */
+  /* ⚠ Law 15 / v4.1 §5 — NOT SATISFIED BY THIS OBJECT ALONE.
+
+     This comment used to read "the tap area is grown with padding rather than
+     the border box". It is not: `padding: '0 12px'` is HORIZONTAL only, so the
+     vertical tap area is exactly the 32px below. The technique described was
+     real, but was never applied on the axis that mattered — the comment
+     asserted a compliance the code did not deliver, which is worse than no
+     comment, because an audit reading it moves on.
+
+     The paint genuinely should stay ~32: these are pagination arrows, section
+     nav chips and "See all" links in dense settings strips, and most call sites
+     already override this height downward anyway. So the fix is the one §5
+     names — grow the HIT AREA, not the box — which an inline style object
+     cannot express, because it needs a pseudo-element.
+
+     Every consumer must therefore also carry `className="tap"` (theme.css).
+     Where a consumer already composes a className, append it. */
   minHeight: 32,
   padding: '0 12px',
   borderRadius: 'var(--r-btn)',
@@ -153,25 +192,49 @@ export function DestControl({
   dest,
   children,
   style,
+  className,
   ariaLabel,
 }: {
   dest: Dest
   children: ReactNode
   style: CSSProperties
+  /**
+   * Forwarded to the two LIVE cases only. It exists because of `tap`
+   * (theme.css): a caller handing us `controlStyle` is handing us a 32px paint,
+   * and Law 15 wants a 44px hit area under it — which no inline style object
+   * can express, because the technique is a pseudo-element.
+   *
+   * The `none` case deliberately refuses it. That branch is an inert
+   * `aria-disabled` span: there is nothing to hit, so a 44px invisible region
+   * around it buys the operator nothing and costs something real — it reaches
+   * across the gap and shadows whichever live control happens to sit beside it.
+   */
+  className?: string
   ariaLabel?: string
 }) {
   const go = useContext(GoTab)
 
   if (dest.kind === 'route') {
     return (
-      <Link to={dest.to} style={style} {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}>
+      <Link
+        to={dest.to}
+        style={style}
+        {...(className ? { className } : {})}
+        {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
+      >
         {children}
       </Link>
     )
   }
   if (dest.kind === 'tab') {
     return (
-      <button type="button" onClick={() => go(dest.tab)} style={style} {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}>
+      <button
+        type="button"
+        onClick={() => go(dest.tab)}
+        style={style}
+        {...(className ? { className } : {})}
+        {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
+      >
         {children}
       </button>
     )
@@ -320,6 +383,7 @@ export function KpiCard({ k }: { k: KpiSpec }) {
         >
           {k.label}
         </div>
+        {k.note && <InfoTooltip content={k.note} label={`About ${k.label}`} size={16} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
       </div>
 
       <div
@@ -354,7 +418,6 @@ export function KpiCard({ k }: { k: KpiSpec }) {
             {k.delta.text}
           </span>
         )}
-        <span style={{ color: 'var(--muted)' }}>{k.note}</span>
       </div>
 
       {k.dest ? (
@@ -413,6 +476,22 @@ export interface Field {
    * than believed.
    */
   readBy?: string
+  /**
+   * A caller-supplied control for this row, rendered in place of the value /
+   * switch / dest chain below.
+   *
+   * Added 24 Aug 2026 for `Settings ▸ System ▸ Security ▸ Device PIN`, which is
+   * the first row on this page whose control is genuinely interactive — it opens
+   * a modal, calls two RPCs and reflects database state. The existing `value` /
+   * `on` / `dest` vocabulary describes rows that display or navigate, and
+   * stretching it to cover a stateful widget would have meant a fourth
+   * half-expressive variant.
+   *
+   * Kept deliberately narrow: one field uses it. It is an escape hatch, not an
+   * invitation to move row rendering into the section files — the reason this
+   * page is consistent at all is that `FieldRow` owns the layout.
+   */
+  custom?: ReactNode | undefined
 }
 
 export interface Section {
@@ -432,8 +511,18 @@ export const EditCtx = createContext<UseEditModeResult | null>(null)
 function Switch({ on, label }: { on: boolean; label: string }) {
   const [state, setState] = useState(on)
   return (
+    /* A switch has a canonical shape — a 34x19 pill with a knob that slides the
+       width of it — and the shape is how it reads as a switch rather than as a
+       button. Growing the box to 44 would not make a bigger switch, it would
+       make a different, unrecognisable control, and the knob geometry inside is
+       tuned to these two numbers. So this is exactly the case §5 carves out:
+       keep the paint, extend the hit area underneath with `tap`, because the
+       law is the hit area and not the paint. Before this the target was 34x19 —
+       under half the required area, on a control whose whole job is to be
+       flipped by a thumb. */
     <button
       type="button"
+      className="tap"
       role="switch"
       aria-checked={state}
       aria-label={label}
@@ -478,6 +567,7 @@ export function FieldRow({ f }: { f: Field }) {
 
   return (
     <div
+      className="settings-field-row"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -488,36 +578,48 @@ export function FieldRow({ f }: { f: Field }) {
       }}
     >
       <span style={{ flex: 1, minWidth: 200 }}>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{f.label}</span>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>{f.note}</span>
+        <span className="settings-field-label" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{f.label}</span>
+        <span className="settings-field-note" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>{f.note}</span>
         {/* A product law is not "Not built" — that badge means unimplemented,
             and these are decided. The reason is shown outright rather than
             hidden behind a hover: it is the answer to the question the reader
             is about to ask, which is why there is no control. */}
         {f.readOnlyWhy && (
-          <span style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          <span className="settings-law-badge" style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
             <Icon name="lock" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
             {f.readOnlyWhy}
           </span>
         )}
         {f.readBy && (
-          <span style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          <span className="settings-law-badge" style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
             <Icon name="arrow_right" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
             Read live by {f.readBy}
           </span>
         )}
       </span>
 
-      {/* §4.3.11 — three options, each setting --ui-scale on the root. Every
-          size in §4.3.6 is rem, so one variable moves the whole app. */}
-      {f.label === 'Text size' ? (
+      {/* A caller-supplied control wins outright — see `Field.custom`. Placed
+          first so the row never renders two controls. */}
+      {f.custom !== undefined ? (
+        <span style={{ flexShrink: 0 }}>{f.custom}</span>
+      ) : /* §4.3.11 — three options, each setting --ui-scale on the root. Every
+          size in §4.3.6 is rem, so one variable moves the whole app. */
+      f.label === 'Text size' ? (
         <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           {TEXT_SIZES.map((t) => {
             const on = textSize === t.key
             return (
+              /* `controlStyle` paints 32px tall and grows its padding sideways
+                 only, so the vertical target was 32 — see the warning on the
+                 style object. `tap` is what closes that, here and at every other
+                 consumer. The three sit 6px apart, but each is wider than 44
+                 already ("Compact"/"Default"/"Large" plus 24px of padding), so
+                 the pseudo-element only inflates the short axis and no two of
+                 them reach into each other. */
               <button
                 key={t.key}
                 type="button"
+                className="tap"
                 onClick={() => {
                   setTextSize(t.key)
                   applyTextSize(t.key)
@@ -542,9 +644,13 @@ export function FieldRow({ f }: { f: Field }) {
           {(['light', 'dark'] as const).map((m) => {
             const on = theme === m
             return (
+              /* Same pair of reasons as Text size: `controlStyle` needs `tap`
+                 to reach 44 vertically, and each button carries an icon plus a
+                 word, so it is already past 44 across. */
               <button
                 key={m}
                 type="button"
+                className="tap"
                 onClick={() => setMode(m)}
                 aria-pressed={on}
                 style={{
@@ -563,8 +669,14 @@ export function FieldRow({ f }: { f: Field }) {
           })}
         </span>
       ) : f.label === 'Allow overbooking' ? (
+        /* Same pill, same reasoning as `Switch` above — kept a separate element
+           only because this one is the wired toggle and carries the write. It
+           gets `tap` for the identical reason: 34x19 of paint is right, 34x19 of
+           target is not, and this is the one switch on the page where a
+           mis-flip changes what the booking rules allow. */
         <button
           type="button"
+          className="tap"
           role="switch"
           aria-checked={allowOverbooking}
           aria-label={f.label}
@@ -591,7 +703,11 @@ export function FieldRow({ f }: { f: Field }) {
       ) : f.on !== undefined ? (
         <Switch on={f.on} label={f.label} />
       ) : f.dest ? (
-        <DestControl dest={f.dest} style={controlStyle}>
+        /* The row's own control. `tap` for the `controlStyle` reason; safe on
+           both axes here because the row is label-over-note plus 11px of
+           padding either side, so rows pitch at roughly 58 and the 44px target
+           sits inside its own row rather than reaching into the one below. */
+        <DestControl dest={f.dest} style={controlStyle} className="tap">
           {f.dest.kind === 'none' ? (
             <>
               Unavailable
@@ -608,12 +724,13 @@ export function FieldRow({ f }: { f: Field }) {
         <SettingControl k={f.settingKey} edit={edit} />
       ) : (
         <span
+          className="settings-mono"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: 7,
             minWidth: 190,
-            height: 32,
+            minHeight: 38,
             padding: '0 10px',
             borderRadius: 'var(--r-input)',
             border: '1px solid var(--input-border)',
@@ -650,8 +767,9 @@ function SettingControl({ k, edit }: { k: SettingKey; edit: UseEditModeResult })
 
   const box = {
     minWidth: 190,
-    height: 32,
-    padding: '0 10px',
+    minHeight: 44,
+    height: 44,
+    padding: '0 12px',
     borderRadius: 'var(--r-input)',
     border: `1px solid ${error ? 'var(--danger)' : 'var(--input-border)'}`,
     background: 'var(--input-bg)',
@@ -663,7 +781,7 @@ function SettingControl({ k, edit }: { k: SettingKey; edit: UseEditModeResult })
   return (
     <span style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0, alignItems: 'flex-end' }}>
       {spec.kind === 'select' ? (
-        <select id={`edit-${k}`} value={shown} onChange={(e) => edit.setValue(k, e.target.value)} style={box}>
+        <select id={`edit-${k}`} className="settings-input settings-mono" value={shown} onChange={(e) => edit.setValue(k, e.target.value)} style={box}>
           {spec.options?.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -673,6 +791,7 @@ function SettingControl({ k, edit }: { k: SettingKey; edit: UseEditModeResult })
       ) : (
         <input
           id={`edit-${k}`}
+          className="settings-input settings-mono"
           type={spec.kind === 'number' ? 'number' : 'text'}
           value={shown}
           onChange={(e) =>
@@ -771,7 +890,14 @@ export function ActivityList({ entries, moreDest }: { entries: ActivityEntry[]; 
           <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{a.when}</span>
         </div>
       ))}
-      <DestControl dest={moreDest} style={{ ...controlStyle, justifyContent: 'center', width: '100%', marginTop: 2 }}>
+      {/* `tap` rather than a taller box: this is the footer of a rail card and
+          the entries above it are plain text, so the 6px the target reaches
+          upward crosses nothing that can be clicked. */}
+      <DestControl
+        dest={moreDest}
+        style={{ ...controlStyle, justifyContent: 'center', width: '100%', marginTop: 2 }}
+        className="tap"
+      >
         View all activity logs
         {moreDest.kind === 'none' ? <NotBuilt why={moreDest.why} /> : <Icon name="arrow_right" size={13} />}
       </DestControl>
@@ -779,17 +905,36 @@ export function ActivityList({ entries, moreDest }: { entries: ActivityEntry[]; 
   )
 }
 
+/**
+ * ⚰ DEAD CODE as of 15 Aug 2026 — kept under Law 3, rendered by nothing.
+ *
+ * Its only consumer is `src/archive/SettingsOverview.tsx`, and `src/archive` is
+ * excluded from the TypeScript program by tsconfig and imported by no live
+ * file; `src/data/settings.ts` records "Overview was deleted on 15 Aug". A
+ * hit-area audit flagged these tiles, and the fix below is correct, but it can
+ * never reach a screen — noted here so the next audit does not re-litigate it.
+ * If Overview is ever restored, this is already compliant.
+ */
 export function QuickActionList({ actions }: { actions: QuickAction[] }) {
   const shown = useVisible(actions)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {shown.map((a) => (
+        /* Grown rather than coated — one of the two places in Settings where
+           `tap` would have been the WRONG tool, the other being the branches
+           tablist. These stack vertically 6px apart, so at the old 34px paint the
+           pitch was 40 — two 44px pseudo-elements would have overlapped in a
+           4px band along every seam, and the later row in the DOM wins a click
+           in that band, which on a list of shortcuts means opening the action
+           below the one aimed at. The box can simply grow here — it is a
+           full-width rail tile with nothing beside it — and §5 prefers that
+           anyway: a real 44px control beats a 34px one wearing a 44px coat. */
         <DestControl
           key={a.label}
           dest={a.dest}
           style={{
             ...controlStyle,
-            minHeight: 34,
+            minHeight: 'var(--tap)',
             width: '100%',
             justifyContent: 'flex-start',
             gap: 'var(--sp-sm)',
@@ -809,6 +954,7 @@ export function QuickActionList({ actions }: { actions: QuickAction[] }) {
 /* ── CSV, shared by the config export and the branch export ────────────── */
 
 export function downloadCsv(filename: string, rows: string[][]) {
+  recordExport({ list: `settings.${filename.replace(/\.csv$/, '')}`, module: 'Settings', rowCount: Math.max(0, rows.length - 1), ...(rows[0] ? { columns: rows[0] } : {}) })
   const csv = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')

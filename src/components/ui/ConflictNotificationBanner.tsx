@@ -37,11 +37,11 @@ export function ConflictNotificationBanner() {
       <div
         data-testid="conflict-notification-banner"
         style={{
-          background: 'var(--st-danger-bg, rgba(239, 68, 68, 0.15))',
-          color: 'var(--st-danger-fg, #ef4444)',
-          borderBottom: '1px solid var(--st-danger-fg, #ef4444)',
+          /* The danger status pair from theme.css — solid fill, its own ink. */
+          background: 'var(--st-danger-bg)',
+          color: 'var(--st-danger-fg)',
           padding: '6px 16px',
-          fontSize: 'var(--t-meta, 13px)',
+          fontSize: 'var(--t-meta)',
           fontWeight: 600,
           display: 'flex',
           alignItems: 'center',
@@ -64,15 +64,17 @@ export function ConflictNotificationBanner() {
           onClick={() => setModalOpen(true)}
           data-testid="review-conflicts-btn"
           style={{
-            background: 'var(--st-danger-fg, #ef4444)',
-            color: '#fff',
+            /* The same pair inverted. main's copy painted --st-danger-fg under
+               #fff text, which on this theme is white on white. */
+            background: 'var(--st-danger-fg)',
+            color: 'var(--st-danger-bg)',
             border: 'none',
-            borderRadius: 'var(--r-btn, 4px)',
+            borderRadius: 'var(--r-btn)',
             padding: '0 12px',
             minHeight: 44, // Law 15 minimum touch target
             minWidth: 44,
             cursor: 'pointer',
-            fontSize: 'var(--t-meta, 12px)',
+            fontSize: 'var(--t-meta)',
             fontWeight: 600,
             fontFamily: 'inherit',
             display: 'inline-flex',

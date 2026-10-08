@@ -159,6 +159,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
             </p>
             <input 
               type="text" 
+              aria-label="Two-factor authentication code"
               maxLength={6}
               value={authCode}
               onChange={(e) => setAuthCode(e.target.value.replace(/\D/g, ''))}
@@ -173,7 +174,8 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
                 border: '1px solid var(--input-border)',
                 background: 'var(--input-bg)',
                 color: 'var(--text)',
-                fontFamily: 'monospace'
+                fontFamily: 'var(--font-id, sans-serif)',
+                fontVariantNumeric: 'tabular-nums',
               }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-xl)' }}>
@@ -308,7 +310,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 9999,
+      zIndex: 'var(--z-system)' as unknown as number,
       padding: 20
     }}>
       <style>{`

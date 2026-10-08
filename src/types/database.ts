@@ -20,7 +20,7 @@ export type Json =
 
 export type OperationKind = 'Packing' | 'Handover' | 'Return' | 'Reset' | 'Cleaning'
 export type SessionState = 'Not Started' | 'In Progress' | 'Completed'
-export type DeliveryMethod = 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
+export type DeliveryMethod = 'Client Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
 /**
  * Mirrors `create type item_quantity_state` (`0001_enums.sql:42-48`) — five
  * members, `Damaged` among them.
@@ -39,8 +39,23 @@ export type DeliveryMethod = 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 
  * a Phase 1 schema call. Left as-is deliberately. See PLAN.md §4.16.
  */
 export type ItemQuantityState = 'Ready' | 'Picked Up' | 'Returned' | 'Missing' | 'Damaged'
+/** `crew_role` (0001_enums.sql:313-325) — the twelve, verbatim. The seed roster's own vocabulary is NOT this list. */
+export type CrewRoleDb =
+  | 'Rental Coordinator'
+  | 'Warehouse Staff'
+  | 'Driver'
+  | 'Camera Assistant'
+  | 'Delivery Staff'
+  | 'Director'
+  | 'DoP'
+  | 'Focus Puller'
+  | 'Gaffer'
+  | 'Grip'
+  | 'Drone Pilot'
+  | 'Sound Recordist'
 export type PackingLineState = 'Pending' | 'Packed' | 'Partial' | 'Missing' | 'Not Required' | 'Replaced'
 export type PhysicalCondition = 'Excellent' | 'Good' | 'Fair' | 'Damaged' | 'Not Inspected'
+export type SignatureRole = 'Receiver' | 'Warehouse staff' | 'Driver' | 'Witness' | 'Returning person'
 
 /* ── operations enums (0001_enums.sql), typed 12 Aug 2026 ──────────────────
  *
@@ -64,6 +79,12 @@ export type InspectionState = 'Pending' | 'Inspected'
 export type ItemCondition = 'Excellent' | 'Good' | 'Fair' | 'Damaged' | 'Lost'
 /** `0001_enums.sql:96-101`. Mandatory alongside a Not Returned reason. */
 export type NotReturnedDecision = 'Still expected' | 'Charge replacement' | 'Insurance claim' | 'Write off'
+/** `0001_enums.sql:117-120`. Return inspection is before the client signs off; Cleaning is after, and raises a case. */
+export type DamageSource = 'Return inspection' | 'Cleaning'
+/** `0001_enums.sql:111-114`. Pending charges do not enter Total Deductions. */
+export type DamageApprovalState = 'Pending Approval' | 'Approved'
+/** `0001_enums.sql:104-108`. Absorb and Defer to Insurance satisfy the gate without a charge. */
+export type DamageDisposition = 'Charge Client' | 'Absorb' | 'Defer to Insurance'
 /** `0001_enums.sql:221-226`. The four are mutually exclusive and sum to the queue total. */
 export type CleaningQueueState = 'Waiting' | 'Cleaning' | 'QC' | 'Ready'
 /** `0001_enums.sql:229-234`. Set per item, never per batch. */
@@ -129,7 +150,24 @@ export type PaymentType = 'Advance Payment' | 'Security Deposit' | 'Refund'
 export type DepositMovementType = 'Received' | 'Released' | 'Applied'
 export type DepositChargeType = 'Damage' | 'Missing' | 'Late'
 export type ExpenseStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Paid' | 'Rejected' | 'Cancelled'
-export type LineKind = 'Equipment Rental' | 'Sub-Rental' | 'Services' | 'Crew Charges' | 'Transport'
+/**
+ * Live `line_kind` enum, re-read from `pg_enum` on 4 Sep 2026. `'Late Fee'` was
+ * added by `0016` and was missing here.
+ *
+ * ⚠ There is still **no `'Damage'` and no `'Missing'`**, though
+ * `charges.invoice_line_id`'s own comment promises `line_kind = 'Damage'`. A
+ * damage or missing-item charge therefore cannot become an invoice line at all
+ * (audit P1-12), which blocks `addInvoiceLine` (SPEC-P0-1 §3.2). Widening the
+ * enum is a ruling — it settles deposit-versus-invoice precedence too — so this
+ * type states what the database accepts today, not what the comment claims.
+ */
+export type LineKind =
+  | 'Equipment Rental'
+  | 'Sub-Rental'
+  | 'Services'
+  | 'Crew Charges'
+  | 'Transport'
+  | 'Late Fee'
 export type ChannelCode = 'WhatsApp' | 'Email' | 'SMS' | 'In-App'
 export type VehicleType = 'Pickup Van' | 'Mini Truck' | 'SUV' | 'Generator Vehicle'
 export type DocumentLifecycleStatus = 'Draft' | 'Pending Approval' | 'Pending Signature' | 'Signed' | 'Issued' | 'Void' | 'Expired'
@@ -607,6 +645,8 @@ export interface Database {
           warehouse_id: string
           stage: BookingStage
           stage_number: number
+          /** 0002:33,86 — "Set by the Return workspace"; stamped by the Return verb since 3 Sep 2026 (RT-01). */
+          actual_return_at: string | null
           pickup_datetime: string
           return_datetime: string
           days: number
@@ -614,6 +654,10 @@ export interface Database {
           delivery_address: string | null
           project_title: string | null
           shoot_type: string | null
+          /** 0144 — controlled project-type list; NULL for legacy rows and Drafts. */
+          project_type: string | null
+          /** 0144 — custom description, only when project_type is 'Other'. */
+          project_type_other: string | null
           location: string | null
           notes: string | null
           created_at: string
@@ -630,6 +674,7 @@ export interface Database {
           warehouse_id: string
           stage?: BookingStage
           stage_number?: number
+          actual_return_at?: string | null
           pickup_datetime: string
           return_datetime: string
           days?: number
@@ -637,6 +682,10 @@ export interface Database {
           delivery_address?: string | null
           project_title?: string | null
           shoot_type?: string | null
+          /** 0144 — controlled project-type list; NULL for legacy rows and Drafts. */
+          project_type?: string | null
+          /** 0144 — custom description, only when project_type is 'Other'. */
+          project_type_other?: string | null
           location?: string | null
           notes?: string | null
           created_at?: string
@@ -672,6 +721,8 @@ export interface Database {
           is_reversal: boolean
           approved_by: string | null
           reason: string | null
+          /** 0155 — written only on a Close that skipped an unresolved deposit. */
+          deposit_skip_reason: string | null
           audit_event_id: string | null
           occurred_at: string
           actor_id: string
@@ -689,6 +740,7 @@ export interface Database {
           is_reversal?: boolean
           approved_by?: string | null
           reason?: string | null
+          deposit_skip_reason?: string | null
           audit_event_id?: string | null
           occurred_at?: string
           actor_id: string
@@ -737,66 +789,94 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['booking_lines']['Insert']>
       }
 
-      booking_line_units: {
+      /** `0002_bookings.sql:314-340` — priced crew on a booking. Declared the day New Rental started writing it (BUG_AUDIT_LIFECYCLE NR-02). */
+      booking_crew_lines: {
         Row: {
           id: string
           client_uuid: string
-          booking_line_id: string
-          asset_id: string | null
-          qty: number
-          unit_state: ItemQuantityState
-          is_required: boolean
-          packed: boolean
-          packed_at: string | null
-          packed_by: string | null
-          packing_session_id: string | null
-          handover_session_id: string | null
-          return_session_id: string | null
-          returned_at: string | null
-          condition: string | null
-          missing_reason: string | null
-          damaged: boolean
-          reset_done_at: string | null
-          cleaning_done_at: string | null
+          booking_id: string
+          crew_member_id: string | null
+          name: string
+          crew_role: CrewRoleDb
+          phone: string | null
+          day_rate: number
+          days: number
+          overtime: number
+          accommodation: number
+          meals: number
+          voided_at: string | null
           created_at: string
           created_by: string
         }
         Insert: {
           id?: string
           client_uuid: string
-          booking_line_id: string
-          asset_id?: string | null
-          qty?: number
-          unit_state?: ItemQuantityState
-          is_required?: boolean
-          packed?: boolean
-          packed_at?: string | null
-          packed_by?: string | null
-          packing_session_id?: string | null
-          handover_session_id?: string | null
-          return_session_id?: string | null
-          returned_at?: string | null
-          condition?: string | null
-          missing_reason?: string | null
-          damaged?: boolean
-          reset_done_at?: string | null
-          cleaning_done_at?: string | null
+          booking_id: string
+          crew_member_id?: string | null
+          name: string
+          crew_role: CrewRoleDb
+          phone?: string | null
+          day_rate?: number
+          days?: number
+          overtime?: number
+          accommodation?: number
+          meals?: number
+          voided_at?: string | null
           created_at?: string
           created_by: string
         }
-        Update: Partial<Database['public']['Tables']['booking_line_units']['Insert']>
+        Update: Partial<Database['public']['Tables']['booking_crew_lines']['Insert']>
+      }
+
+      /** `0002_bookings.sql:373-395` — one transport row per booking (`booking_id` unique). */
+      booking_transport: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_id: string
+          vehicle: string | null
+          number_plate: string | null
+          driver_id: string | null
+          driver_contact: string | null
+          delivery_charge: number
+          fuel_charge: number
+          zero_charge_override_by: string | null
+          zero_charge_override_reason: string | null
+          special_instructions: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_id: string
+          vehicle?: string | null
+          number_plate?: string | null
+          driver_id?: string | null
+          driver_contact?: string | null
+          delivery_charge?: number
+          fuel_charge?: number
+          zero_charge_override_by?: string | null
+          zero_charge_override_reason?: string | null
+          special_instructions?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Database['public']['Tables']['booking_transport']['Insert']>
       }
 
       invoices: {
         Row: {
           id: string
           client_uuid: string
-          invoice_no: string
+          /** R-15 — NULL while Draft; minted at issue. */
+          invoice_no: string | null
           booking_id: string
           client_id: string
           branch_id: string
           status: InvoiceStatus
-          issue_date: string
+          /** R-15 — NULL until issued. */
+          issue_date: string | null
           due_date: string
           currency: string
           subtotal: number
@@ -822,12 +902,12 @@ export interface Database {
         Insert: {
           id?: string
           client_uuid: string
-          invoice_no: string
+          invoice_no?: string | null
           booking_id: string
           client_id: string
           branch_id: string
           status?: InvoiceStatus
-          issue_date?: string
+          issue_date?: string | null
           due_date: string
           currency?: string
           subtotal?: number
@@ -851,6 +931,58 @@ export interface Database {
           updated_by?: string | null
         }
         Update: Partial<Database['public']['Tables']['invoices']['Insert']>
+      }
+
+      /**
+       * Added 4 Sep 2026. This table was **absent from this file entirely**,
+       * so `idempotentInsert('invoice_lines', …)` did not typecheck and
+       * SPEC-P0-1 §3.1's "one `invoice_lines` row per `booking_lines` row" had
+       * no typed route. Columns read from the live `information_schema` on
+       * 4 Sep, not from a migration file.
+       *
+       * ⚠ Note for whoever regenerates types: the `booking_lines` block above
+       * describes THIS table's shape (`line_kind`, `quantity`, `unit_rate`,
+       * `discount_percent`, `line_total`), not `booking_lines`'s. Live
+       * `booking_lines` carries `line_type`, `qty`, `rate`, `discount_amount`,
+       * `is_included`, `bundle_id`, `supplier_*` and `voided_at`, and has no
+       * `unit_id`, `line_kind` or `item_state` at all. The two were swapped.
+       * Left alone here because correcting it would change the type of a table
+       * other code already writes through, which is a separate, testable change.
+       */
+      invoice_lines: {
+        Row: {
+          id: string
+          client_uuid: string
+          invoice_id: string
+          line_kind: LineKind
+          description: string
+          quantity: number
+          days: number
+          unit_rate: number
+          discount_percent: number
+          discount_reason: string | null
+          discount_approved_by: string | null
+          line_total: number
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          invoice_id: string
+          line_kind?: LineKind
+          description: string
+          quantity?: number
+          days?: number
+          unit_rate?: number
+          discount_percent?: number
+          discount_reason?: string | null
+          discount_approved_by?: string | null
+          line_total?: number
+          sort_order?: number
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['invoice_lines']['Insert']>
       }
 
       payments: {
@@ -1212,6 +1344,121 @@ export interface Database {
        * a line outlives any one session, so the session is recorded as
        * `first_session_id` / `completed_session_id` instead.
        */
+      /**
+       * `0002_bookings.sql:225-262` — one row per physical unit committed to a
+       * line, carrying the per-item quantity state. Declared here the day the
+       * floor verbs started WRITING it (BUG_AUDIT_LIFECYCLE X-03); until then
+       * nothing in `src/` updated the table, so it had no Update shape to need.
+       * Only the columns the floor writes are typed; `released_at` /
+       * `released_by` (0076) are read-only from here — the freeze trigger makes
+       * a released row immutable, so they are never in a patch.
+       */
+      booking_line_units: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_line_id: string
+          asset_id: string | null
+          qty: number
+          unit_state: ItemQuantityState
+          is_required: boolean
+          packed: boolean
+          packed_at: string | null
+          packed_by: string | null
+          packing_session_id: string | null
+          handover_session_id: string | null
+          return_session_id: string | null
+          returned_at: string | null
+          condition: string | null
+          missing_reason: string | null
+          damaged: boolean
+          reset_done_at: string | null
+          cleaning_done_at: string | null
+          released_at: string | null
+          released_by: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_line_id: string
+          asset_id?: string | null
+          qty?: number
+          unit_state?: ItemQuantityState
+          is_required?: boolean
+          packed?: boolean
+          packed_at?: string | null
+          packed_by?: string | null
+          packing_session_id?: string | null
+          handover_session_id?: string | null
+          return_session_id?: string | null
+          returned_at?: string | null
+          condition?: string | null
+          missing_reason?: string | null
+          damaged?: boolean
+          reset_done_at?: string | null
+          cleaning_done_at?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Omit<Database['public']['Tables']['booking_line_units']['Insert'], 'client_uuid' | 'created_by'>>
+      }
+
+      /**
+       * `0003_operations.sql:449-481`. Declared the day the Return verb started
+       * WRITING it (BUG_AUDIT_LIFECYCLE RT-02). `estimated_cost` is typed but
+       * never written from the OS: `0034` revokes SELECT on it from
+       * `authenticated` and `0003:488` reserves it for the approver.
+       */
+      damage_findings: {
+        Row: {
+          id: string
+          client_uuid: string
+          source: DamageSource
+          return_line_id: string | null
+          cleaning_queue_entry_id: string | null
+          unit_id: string
+          damage_type: string
+          description: string
+          severity: string
+          estimated_cost: number | null
+          approval_state: DamageApprovalState
+          approved_by: string | null
+          approved_at: string | null
+          disposition: DamageDisposition | null
+          case_id: string | null
+          charge_id: string | null
+          voided_at: string | null
+          created_at: string
+          created_by: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          source: DamageSource
+          return_line_id?: string | null
+          cleaning_queue_entry_id?: string | null
+          unit_id: string
+          damage_type: string
+          description: string
+          severity: string
+          estimated_cost?: number | null
+          approval_state?: DamageApprovalState
+          approved_by?: string | null
+          approved_at?: string | null
+          disposition?: DamageDisposition | null
+          case_id?: string | null
+          charge_id?: string | null
+          voided_at?: string | null
+          created_at?: string
+          created_by: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<Database['public']['Tables']['damage_findings']['Insert'], 'client_uuid' | 'created_by'>>
+      }
+
       handover_lines: {
         Row: {
           id: string
@@ -1350,6 +1597,42 @@ export interface Database {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['cleaning_queue_entries']['Insert']>
+      }
+
+      /**
+       * `0003_operations.sql:518-535`. One signature per role per session.
+       * Required for Handover sessions before stage transition (0115:320-326).
+       */
+      signatures: {
+        Row: {
+          id: string
+          client_uuid: string
+          session_id: string
+          signature_role: SignatureRole
+          signer_name: string
+          signed_at: string
+          device: string
+          signature_evidence_file_id: string | null
+          is_required: boolean
+          sealed_at: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          session_id: string
+          signature_role: SignatureRole
+          signer_name: string
+          signed_at: string
+          device: string
+          signature_evidence_file_id?: string | null
+          is_required: boolean
+          sealed_at?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Database['public']['Tables']['signatures']['Insert']>
       }
     }
   }

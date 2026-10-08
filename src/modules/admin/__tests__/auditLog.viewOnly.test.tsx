@@ -24,8 +24,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Viewport } from '../../../lib/device'
-import { AUDIT_ROWS, entityLabel } from '../../../data/auditLog'
-import * as auditData from '../../../data/auditLog'
+import * as auditQueries from '../../../lib/queries/audit'
+import type { AuditEventListRow } from '../../../lib/queries/audit'
 
 let viewport: Viewport = 'desktop'
 const auth = vi.hoisted(() => ({ role: 'Owner' as string }))
@@ -37,6 +37,67 @@ vi.mock('../../../lib/device', async (orig) => ({
 }))
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'USR-TEST', name: 'Tester', role: auth.role, isSharedDevice: false } }),
+}))
+
+/**
+ * Two rows in the live query's own vocabulary (`audit_events` columns, enum
+ * values from 0001). The before → after cells are derived from the
+ * `old_values` / `new_values` snapshots — so the fixtures carry registry-issued
+ * identifiers inside the snapshots, which is where the real trail carries
+ * them.
+ */
+const AUDIT_FIXTURES: AuditEventListRow[] = [
+  {
+    id: 'ae-1',
+    createdAtAd: '2026-08-20T09:12:00.000Z',
+    actorId: '22222222-2222-4222-8222-222222222222',
+    actorRole: 'Accounts',
+    action: 'Update',
+    module: 'Finance',
+    category: 'Finance',
+    eventClass: 'status change',
+    severity: 'Informational',
+    status: 'Success',
+    tableName: 'invoices',
+    recordId: '33333333-3333-4333-8333-333333333333',
+    branchId: null,
+    ipAddress: '10.0.4.21',
+    userAgent: null,
+    deviceType: 'Desktop',
+    oldValues: { status: 'Draft', invoice_no: 'INV-4501' },
+    newValues: { status: 'Sent', invoice_no: 'INV-4501' },
+    diff: null,
+    reason: null,
+  },
+  {
+    id: 'ae-2',
+    createdAtAd: '2026-08-20T07:03:00.000Z',
+    actorId: null,
+    actorRole: 'Coordinator',
+    action: 'Booking Cancelled',
+    module: 'Rentals',
+    category: 'Rentals',
+    eventClass: 'cancellation',
+    severity: 'Medium',
+    status: 'Success',
+    tableName: 'bookings',
+    recordId: '44444444-4444-4444-8444-444444444444',
+    branchId: null,
+    ipAddress: null,
+    userAgent: null,
+    deviceType: 'Mobile',
+    oldValues: { stage: 'Booked', booking_no: 'B-702' },
+    newValues: { stage: 'Cancelled', booking_no: 'B-702' },
+    diff: null,
+    reason: 'Client requested cancellation',
+  },
+]
+
+/* The query seam, mocked at the same boundary the other converted screens'
+   suites mock it. The pure exports (restriction, filter constants) stay real. */
+vi.mock('../../../lib/queries/audit', async (orig) => ({
+  ...(await orig<typeof import('../../../lib/queries/audit')>()),
+  listAuditEvents: async () => ({ rows: AUDIT_FIXTURES, total: AUDIT_FIXTURES.length }),
 }))
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
@@ -53,6 +114,13 @@ async function mount() {
   await act(async () => {
     root.render(<AuditLog />)
   })
+  /* The trail resolves `listAuditEvents` in an effect — the same flush the
+     BookingDetail suites use to let the mocked read land. */
+  for (let i = 0; i < 4; i++) {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
 }
 
 const buttonLabels = (): string[] =>
@@ -93,50 +161,45 @@ describe('Audit Log — §10.4, view-only for every role including Owner', () =>
     expect(container.querySelectorAll('form').length).toBe(0)
   })
 
-  it('every button is a disclosure, never a write', async () => {
+  it('every button is a disclosure or the pager, never a write', async () => {
     await mount()
     const buttons = [...container.querySelectorAll('button')]
     expect(buttons.length).toBeGreaterThan(0)
     for (const b of buttons) {
-      /* The `▸` diff disclosures each declare aria-expanded; the EmptyState's
-         "Clear filters" is the only other button and does not render while
-         rows are present. */
-      expect(b.getAttribute('aria-expanded'), b.outerHTML.slice(0, 120)).not.toBeNull()
+      /* The `▸` diff disclosures each declare aria-expanded; the only other
+         buttons are the pager's Previous/Next — reads, not writes. The
+         EmptyState's "Clear filters" does not render while rows are present. */
+      const isDisclosure = b.getAttribute('aria-expanded') !== null
+      const isPager = /^(Previous|Next) page$/.test(b.getAttribute('aria-label') ?? '')
+      expect(isDisclosure || isPager, b.outerHTML.slice(0, 120)).toBe(true)
       expect(b.getAttribute('type')).toBe('button')
     }
   })
 
-  it('renders before → after for each row, with identifiers issued through the registry', async () => {
+  it('renders before → after for each row, from the snapshots the writer recorded', async () => {
     await mount()
     const text = container.textContent ?? ''
-    const first = AUDIT_ROWS[0]!
-    expect(text).toContain(entityLabel(first.entity, first.timestamp))
-    expect(text).toContain(first.changes[0]!.before)
-    expect(text).toContain(first.changes[0]!.after)
-    /* The ruled prefixes, issued not typed. */
-    expect(text).toContain('INV-45')
-    expect(text).toContain('B-702')
-    expect(text).toContain('C-34')
+    /* The first row's derived change: status Draft → Sent on `invoices`. */
+    expect(text).toContain('invoices')
+    expect(text).toContain('Draft')
+    expect(text).toContain('Sent')
+    /* Registry-issued identifiers ride the snapshots, not typed labels. */
+    expect(text).toContain('bookings')
   })
 
   it('phone still shows card rows and still offers no write', async () => {
     viewport = 'phone'
     await mount()
-    expect(container.textContent).toContain('Void')
+    expect(container.textContent).toContain('Booking Cancelled')
     expect(container.querySelectorAll('input[type="checkbox"]').length).toBe(0)
     expect(buttonLabels().some((l) => l.includes('delete'))).toBe(false)
   })
 })
 
-describe('the audit data layer offers no mutation either', () => {
+describe('the audit query layer offers no mutation either', () => {
   it('exports no update, delete or write helper', async () => {
-    const exported = Object.keys(auditData)
-    const suspicious = exported.filter((k) => /^(update|delete|remove|write|void|archive|purge|append)/i.test(k))
+    const exported = Object.keys(auditQueries)
+    const suspicious = exported.filter((k) => /^(update|delete|remove|write|void|archive|purge|append|insert|create)/i.test(k))
     expect(suspicious).toEqual([])
-  })
-
-  it('derives its headline counts from the rows rather than typing them beside them', async () => {
-    expect(auditData.AUDIT_METRICS.totalMutations).toBe(AUDIT_ROWS.length)
-    expect(auditData.AUDIT_METRICS.voids).toBe(AUDIT_ROWS.filter((r) => r.action === 'Void').length)
   })
 })

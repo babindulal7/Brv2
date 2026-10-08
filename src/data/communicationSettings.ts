@@ -1,6 +1,7 @@
 import type { IconName } from '../components/ui/Icon'
 import type { Slice } from '../components/ui/Charts'
 import type { StatusKey } from '../lib/status'
+import { grouped } from '../lib/money'
 import { CLIENTS_DATA } from './clients'
 
 /**
@@ -219,11 +220,11 @@ export const DELIVERY_SLICES: Slice[] = [
   {
     label: 'Delivered',
     value: QUEUE.delivered,
-    display: QUEUE.delivered.toLocaleString('en-IN'),
+    display: grouped(QUEUE.delivered),
     percent: pct(QUEUE.delivered, TOTAL_HANDLED),
   },
-  { label: 'In flight', value: IN_FLIGHT, display: IN_FLIGHT.toLocaleString('en-IN'), percent: pct(IN_FLIGHT, TOTAL_HANDLED) },
-  { label: 'Failed', value: QUEUE.failed, display: QUEUE.failed.toLocaleString('en-IN'), percent: pct(QUEUE.failed, TOTAL_HANDLED) },
+  { label: 'In flight', value: IN_FLIGHT, display: grouped(IN_FLIGHT), percent: pct(IN_FLIGHT, TOTAL_HANDLED) },
+  { label: 'Failed', value: QUEUE.failed, display: grouped(QUEUE.failed), percent: pct(QUEUE.failed, TOTAL_HANDLED) },
 ]
 
 /* ── channel mix ───────────────────────────────────────────────────────── */
@@ -240,7 +241,7 @@ export const CHANNEL_VOLUME: Record<Channel, number> = {
 export const CHANNEL_SLICES: Slice[] = CHANNEL_ORDER.map((c) => ({
   label: CHANNEL_LABEL[c],
   value: CHANNEL_VOLUME[c],
-  display: CHANNEL_VOLUME[c].toLocaleString('en-IN'),
+  display: grouped(CHANNEL_VOLUME[c]),
   percent: pct(CHANNEL_VOLUME[c], TOTAL_HANDLED),
 }))
 
@@ -483,7 +484,7 @@ export const ALERTS: Alert[] = [
   {
     id: 'al-failed',
     text: 'Failed messages this month',
-    meta: `${QUEUE.failed.toLocaleString('en-IN')} · ${FAILED_RATE}`,
+    meta: `${grouped(QUEUE.failed)} · ${FAILED_RATE}`,
     tone: 'danger',
     icon: 'alert_triangle',
     dest: TO('/notifications/sms'),
@@ -605,7 +606,7 @@ export const SEED_ERRORS: string[] = (() => {
 
   const mix = CHANNEL_ORDER.reduce((s, c) => s + CHANNEL_VOLUME[c], 0)
   if (mix !== TOTAL_HANDLED) {
-    errs.push(`Channel Usage sums to ${mix.toLocaleString('en-IN')}; the queue handled ${TOTAL_HANDLED.toLocaleString('en-IN')}.`)
+    errs.push(`Channel Usage sums to ${grouped(mix)}; the queue handled ${grouped(TOTAL_HANDLED)}.`)
   }
 
   if (QUEUE.read > QUEUE.delivered) errs.push('More messages were read than delivered.')

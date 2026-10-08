@@ -4,7 +4,8 @@ import type { BookingStatus, Flag } from '../lib/workflow'
 import { rupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { formatAd } from '../lib/bs'
-import { clockPad } from '../lib/format'
+import { displayProjectType } from '../lib/projectTypes'
+import { clockPad, deliveryTypeLabel } from '../lib/format'
 import { canViewMoneyField } from '../lib/fieldGating'
 import type { GateContext } from '../lib/fieldGating'
 import type { IntelField, IntelGlance, IntelGroup } from '../components/ui/IntelCard'
@@ -18,8 +19,8 @@ import { supabase } from '../lib/supabase'
 import { SUB_RENTAL_LINE_TYPES, isSubRentalBooking, type SubRentedLine } from './booking'
 import {
   ACTIVE_RENTALS_FILTERS,
-  NOW_AD,
-  TODAY_DAY_AD,
+  businessDayAd,
+  businessNowAd,
   avatarToneFor,
   civilDaysBetween,
   dotTone,
@@ -43,7 +44,7 @@ import {
  * - **`KPIS` / `kpisFor`** — six hand-typed strings (52 · 14 · 11 · Rs 142,000 ·
  *   84% · 5) sitting above an eight-row seed, with hand-typed sub-lines ("8
  *   Pending • 6 Completed") nothing derived. Four of the six are real counts and
- *   are now four count queries (`RENTAL_KPI_FILTERS` below, rendered by
+ *   are now four count queries (`rentalKpiFilters()` below, rendered by
  *   `RentalsList.tsx`). **Payment Due** and **Utilization** are gone rather than
  *   dashed: no query in `lib/queries/` produces either, and a card whose value
  *   can only ever be a dash is a promise the screen cannot keep. Both figures
@@ -368,23 +369,15 @@ export const ROWS: RentalRow[] = [
  * which is real, and `deposit_required`, which is real **and money** — see
  * `RENTAL_DEPOSIT_NOTE`.
  */
-export const OPTIONAL_COLUMNS = ['Items', 'Pickup', 'Return', 'Deposit'] as const
+export const OPTIONAL_COLUMNS = ['Items', 'Pickup', 'Return', 'Total Amount'] as const
 export type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number]
 
 export const ROWS_PER_PAGE = [5, 10, 20, 50] as const
 
-/**
- * Why the Deposit column is opt-in.
- *
- * `bookings.deposit_required` is **unmasked money on a base table** — there is
- * no `bookings_v`, and `bookings_select` is `auth_is_staff()`, which includes
- * Warehouse, Technician and Driver. `listBookings` therefore only selects it
- * when the caller passes `withDeposit`, and the caller must gate on
- * `useCanViewMoney()`. `RentalsList.tsx` does exactly that; nothing in Postgres
- * would stop it if it did not.
- */
-export const RENTAL_DEPOSIT_NOTE =
-  'Deposit required, from the booking row. The rental total and the outstanding balance are the Financial Engine’s and are not on a list row.'
+export const RENTAL_TOTAL_NOTE =
+  'Total Amount from the booking invoices / live calculation.'
+
+export const RENTAL_DEPOSIT_NOTE = RENTAL_TOTAL_NOTE
 
 /* ── the twelve quick-filter chips ─────────────────────────────────────── */
 
@@ -403,6 +396,8 @@ export type ChipKey =
    * ("do not rename an identifier") is untouched by it.
    */
   | 'All'
+  | 'Pickups Today'
+  | 'Returns Today'
   | 'Tomorrow'
   | 'Next 7 Days'
   | 'Upcoming'
@@ -440,7 +435,58 @@ export interface RentalChip {
  * prevent."
  */
 export const PAYMENT_DUE_UNAVAILABLE =
-  'Payment Due needs an outstanding balance. bookings carries none — deposit_required is the deposit required, payments (0006:176) is not joined by listBookings, and rental total minus payments is the Financial Engine’s figure, deliberately kept off the list row (Law 1).'
+  /* Payment Due needs an outstanding balance. bookings carries none — deposit_required is the deposit required, payments (0006:176) is not joined by listBookings, and rental total minus payments is the Financial Engine’s figure, deliberately kept off the list row (Law 1). */ "Payment-due filtering is not available on this list. Check the invoice balance in Finance."
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * THE SUB-RENTAL CHIP — rulings §11.1, ruled 13 Aug 2026
+ *
+ * ⛔ This block used to be `SUB_RENTAL_UNAVAILABLE`, a sentence explaining why
+ * the chip shipped `disabled`. §11.1 closed the question it was waiting on:
+ *
+ *   > A line is sub-rented. A booking counts as sub-rental **if any of its
+ *   > lines is**. `LineItem` gains the field. `RentalRow` does **not**: the
+ *   > booking-level answer is computed from its lines, never written.
+ *
+ * So the rule now lives in exactly one place — `data/booking.ts`'s
+ * {@link isSubRentalBooking} over {@link SUB_RENTAL_LINE_TYPES} — and this
+ * module's job is to answer it for a **list** rather than for one booking.
+ *
+ * ## Why it is a set of ids and not a filter on `bookings`
+ *
+ * There is no sub-rental column on `bookings` and there must not be one (that
+ * is the ruling). The fact lives on `booking_lines.line_type`
+ * (`0001_enums.sql:301`, `0002_bookings.sql:129`). Selecting bookings by it in
+ * ONE round trip needs `booking_lines!inner(...)` plus a `referencedTable`
+ * -scoped filter — `listBookings`' select string does not carry `!inner` and
+ * `applyListFilters` builds unscoped clauses only.
+ *
+ * So the question is asked of `booking_lines_v` directly, and its answer — a
+ * set of `bookings.id` — is handed to `listBookings` as an ordinary
+ * `chips: { id: [...] }` group, which `applyListFilters` turns into
+ * `id in (…)`. That keeps the narrowing **server-side**, which is the property
+ * that matters: `withCount` still counts the matching set, and the pager still
+ * walks pages the predicate saw. A client-side narrow of the fetched page —
+ * the thing the old comment correctly refused — would leave "Showing 1 to 8 of
+ * 214" over three rows.
+ *
+ * ## Two honest limits, stated rather than hidden
+ *
+ * 1. **It is two round trips, and the id list rides in the URL.** At a few
+ *    hundred sub-rental bookings that is fine; at tens of thousands PostgREST
+ *    would answer 414. That failure is loud, not silent, and the structural fix
+ *    is one column: add `line_type` to `listBookings`' `booking_lines ( id, qty )`
+ *    embed and make it `!inner` for this chip. That file is another pass's;
+ *    fold this into it when it lands.
+ * 2. **The live corpus currently holds zero sub-rental lines** — verified
+ *    16 Aug 2026: `select line_type, count(*) from booking_lines` returns
+ *    `Equipment 419` and nothing else. So the chip selects and honestly
+ *    reports no matches. It is **not** back-filled from a hand-written array
+ *    of booking numbers to make the screen look busier: that would paint
+ *    "Sub-rented — external gear" on live bookings nobody computed it for,
+ *    which is the fabricated-figure rule, not a cosmetic one. Seeding real
+ *    lines is a migration (`lib/seed.ts` → `supabase/migrations`) and needs
+ *    approval; see the report.
+ * ═══════════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════════════════════════
  * THE SUB-RENTAL CHIP — rulings §11.1, ruled 13 Aug 2026
@@ -531,25 +577,38 @@ const SUB_RENTAL_PAGE = 1000
  */
 const SUB_RENTAL_MAX_PAGES = 200
 
-export async function subRentalBookingIds(): Promise<readonly string[] | null> {
+export async function subRentalBookingIds(forBookingIds?: readonly string[]): Promise<readonly string[] | null> {
   const data: { booking_id: string | null; line_type: string | null }[] = []
 
-  for (let page = 0; page < SUB_RENTAL_MAX_PAGES; page++) {
-    const from = page * SUB_RENTAL_PAGE
+  if (forBookingIds !== undefined) {
+    if (forBookingIds.length === 0) return []
     const { data: rows, error } = await supabase
       .from('booking_lines_v')
       .select('booking_id, line_type')
       .in('line_type', [...SUB_RENTAL_LINE_TYPES])
+      .in('booking_id', [...forBookingIds])
       .is('voided_at', null)
-      .order('booking_id', { ascending: true })
-      .range(from, from + SUB_RENTAL_PAGE - 1)
 
     if (error || !rows) return null
     data.push(...rows)
-    /* A short page is the end of the set. A full one is not proof of more, but
-       asking again costs one round trip and guessing costs correctness. */
-    if (rows.length < SUB_RENTAL_PAGE) break
-    if (page === SUB_RENTAL_MAX_PAGES - 1) return null
+  } else {
+    for (let page = 0; page < SUB_RENTAL_MAX_PAGES; page++) {
+      const from = page * SUB_RENTAL_PAGE
+      const { data: rows, error } = await supabase
+        .from('booking_lines_v')
+        .select('booking_id, line_type')
+        .in('line_type', [...SUB_RENTAL_LINE_TYPES])
+        .is('voided_at', null)
+        .order('booking_id', { ascending: true })
+        .range(from, from + SUB_RENTAL_PAGE - 1)
+
+      if (error || !rows) return null
+      data.push(...rows)
+      /* A short page is the end of the set. A full one is not proof of more, but
+         asking again costs one round trip and guessing costs correctness. */
+      if (rows.length < SUB_RENTAL_PAGE) break
+      if (page === SUB_RENTAL_MAX_PAGES - 1) return null
+    }
   }
 
   /*
@@ -573,7 +632,7 @@ export async function subRentalBookingIds(): Promise<readonly string[] | null> {
 
 /** What the footer says about the chip, so the sentence has one home. */
 export const SUB_RENTAL_NOTE =
-  'Sub-Rental is a line-level fact (booking_lines.line_type) — a booking counts as sub-rental when any of its lines does, and the chip narrows the query server-side on that derived set'
+  /* Sub-Rental is a line-level fact (booking_lines.line_type) — a booking counts as sub-rental when any of its lines does, and the chip narrows the query server-side on that derived set */ "Includes rentals with equipment supplied by another rental house."
 
 /** While the derived set is still in flight. Short-lived, but never silent. */
 export const SUB_RENTAL_PENDING =
@@ -621,6 +680,8 @@ export function chipsFor(canSeeMoney: boolean): RentalChip[] {
  */
 export const CHIP_MEANS: Record<ChipKey, string> = {
   All: 'every booking — the reset-to-everything scope, not a date filter',
+  'Pickups Today': 'bookings going out in the current operational day (the Today screen Pickups list, same set)',
+  'Returns Today': 'bookings due back in the current operational day (the Today screen Returns list, same set)',
   Tomorrow: 'bookings picking up tomorrow',
   'Next 7 Days': 'bookings picking up in the next seven days, today included',
   Upcoming: 'bookings at Quote, Booked or Packed — not yet handed over',
@@ -668,22 +729,10 @@ function boundsFrom(namedSet: (dayAd: string) => ListFilters, range: DayRange): 
   return { column: lo.column, fromAd: lo.fromAd, toAd: hi.toAd }
 }
 
-function dayRangeOf(period: LivePeriod): DayRange {
-  const r = periodRange(period, TODAY_DAY_AD)
+function dayRangeOf(period: LivePeriod, dayAd: string): DayRange {
+  const r = periodRange(period, dayAd)
   if (!r) throw new Error(`periodRange("${period}") has no range; only "All" answers null`)
   return r
-}
-
-/** Resolved once, at import, against the app's single operating day (`lib/bs.ts`'s `TODAY`). */
-const TOMORROW = dayRangeOf('Tomorrow')
-const NEXT_SEVEN = dayRangeOf('Next 7 Days')
-
-const PICKUP_TOMORROW = boundsFrom(todaysOutgoing, TOMORROW)
-const PICKUP_NEXT_SEVEN = boundsFrom(todaysOutgoing, NEXT_SEVEN)
-/** `return_at <= end of tomorrow`, with no lower bound — anything already due counts. */
-const RETURN_BY_TOMORROW: DateRange = {
-  column: 'return_at',
-  toAd: boundsFrom(todaysIncoming, TOMORROW).toAd,
 }
 
 /**
@@ -729,7 +778,27 @@ function customBounds(range: CustomRange): DateRange | undefined {
   }
 }
 
+/**
+ * ⛔ The three day-bounded chips used to read module-scope `PICKUP_TOMORROW` /
+ * `PICKUP_NEXT_SEVEN` / `RETURN_BY_TOMORROW`, built once at import from
+ * `TODAY_DAY_AD` (X-05). A tablet left on this list across midnight kept the
+ * *previous* day's bounds under chips still labelled Tomorrow and Next 7 Days.
+ *
+ * They are derived per call now, and from `nowAd` itself rather than from a
+ * second reading of the clock, so the day these chips bound and the instant the
+ * Overdue chip compares against can never be two different days.
+ */
 function chipFilters(chip: ChipKey, custom: CustomRange, nowAd: string): ListFilters {
+  const dayAd = businessDayAd(new Date(nowAd))
+  const tomorrow = dayRangeOf('Tomorrow', dayAd)
+  const pickupTomorrow = boundsFrom(todaysOutgoing, tomorrow)
+  const pickupNextSeven = boundsFrom(todaysOutgoing, dayRangeOf('Next 7 Days', dayAd))
+  /** `return_at <= end of tomorrow`, with no lower bound — anything already due counts. */
+  const returnByTomorrow: DateRange = {
+    column: 'return_at',
+    toAd: boundsFrom(todaysIncoming, tomorrow).toAd,
+  }
+
   switch (chip) {
     // `All` is the **default scope**, not a date filter: the render shows rows
     // dated 2 Jul – 2 Aug under it, and `matchesChip` returned `true`
@@ -737,10 +806,16 @@ function chipFilters(chip: ChipKey, custom: CustomRange, nowAd: string): ListFil
     // does (`04_RENTALS.md` §4.1 draws it as `(All)`).
     case 'All':
       return bySortedPickup()
+    /* G2 (RULING 2026-10-07): the very named sets Today's Pickups / Returns panels read — a saved view and
+       a dashboard card are one definition, so they cannot disagree about what "today" is. */
+    case 'Pickups Today':
+      return todaysOutgoing(dayAd)
+    case 'Returns Today':
+      return todaysIncoming(dayAd)
     case 'Tomorrow':
-      return bySortedPickup({ dateRange: PICKUP_TOMORROW })
+      return bySortedPickup({ dateRange: pickupTomorrow })
     case 'Next 7 Days':
-      return bySortedPickup({ dateRange: PICKUP_NEXT_SEVEN })
+      return bySortedPickup({ dateRange: pickupNextSeven })
     // Not yet handed over. A three-stage union, not a stage.
     case 'Upcoming':
       return bySortedPickup({ chips: { stage: ['Quote', 'Booked', 'Packed'] satisfies BookingStatus[] } })
@@ -753,7 +828,7 @@ function chipFilters(chip: ChipKey, custom: CustomRange, nowAd: string): ListFil
       return {
         chips: { stage: ['On Rent'] satisfies BookingStatus[] },
         presence: { cancelled_at: false, actual_return_at: false },
-        dateRange: RETURN_BY_TOMORROW,
+        dateRange: returnByTomorrow,
         sort: { column: 'return_at', ascending: true },
       }
     // Retired label, live stage. `Inspection` was one of the old thirteen and
@@ -848,15 +923,21 @@ function narrowSubRental(query: RentalsQuery, sub: SubRentalNarrowing): RentalsQ
  * replacing it.
  *
  * `nowAd` is a parameter rather than a `Date.now()` call so the mapping stays
- * pure and testable; the screen passes `data/today.ts`'s `NOW_AD`, which is
- * `lib/bs.ts`'s single operating instant — the same one Today, the Calendar and
- * Pulse read, so no two screens can disagree about what day it is.
+ * pure and testable. It is an **INSTANT** — the Overdue chip is exactly
+ * `overdue(nowAd)` and that set compares `return_at` against a `timestamptz`.
+ *
+ * ⛔ The default was `data/today.ts`'s `NOW_AD`, a module-scope constant holding
+ * midnight UTC of the operating day (X-06). Two faults in one value: it was a
+ * DAY MARKER (05:45 in Kathmandu, so the Overdue chip and KPI silently dropped
+ * every booking that fell due earlier the same day, and `toRentalListRow`'s
+ * "Late today" state could never be reached), and it was frozen at import. The
+ * default now resolves at the call.
  */
 export function rentalsQuery(
   chip: ChipKey,
   custom: CustomRange,
   statuses: readonly BookingStatus[],
-  nowAd: string = NOW_AD,
+  nowAd: string = businessNowAd(),
   subRental: SubRentalNarrowing = SUB_RENTAL_OFF,
 ): RentalsQuery {
   return narrowSubRental(narrowStages(chipFilters(chip, custom, nowAd), statuses), subRental)
@@ -875,19 +956,40 @@ export function rentalsQuery(
  *
  * `Payment Due` (Rs 142,000) and `Utilization` (84%) are absent rather than
  * dashed. No query in `lib/queries/` produces either.
+ *
+ * ## ⛔ Why this is a function of `nowAd` and no longer a constant
+ *
+ * It was `RENTAL_KPI_FILTERS`, an object built at import from `TODAY_DAY_AD`
+ * and `NOW_AD`. Three of the four figures are labelled by the day — Pickups
+ * Today, Returns Today, Overdue — so a tablet left on this list across midnight
+ * kept yesterday's counts under today's headings, and the Overdue count was
+ * measured against 05:45 rather than against now (X-05, X-06).
+ *
+ * Taking the instant as an argument moves the decision to the caller, which
+ * renders it, exactly as `data/calendar.ts`'s `railBookingCounts` does. The day
+ * the two "today" counts bound is derived from that same instant, so the three
+ * cards cannot end up on two different days. `useList` keys its effect on the
+ * VALUE of the filter set, not its identity, so rebuilding these objects costs
+ * nothing and re-queries only when the answer actually changes.
  */
 const COUNT_PAGE: ListFilters['page'] = { index: 0, size: 1 }
 
-export const RENTAL_KPI_FILTERS = {
-  /** Everything currently with a client. Shared verbatim with Today's own card. */
-  active: { ...ACTIVE_RENTALS_FILTERS, page: COUNT_PAGE },
-  /** Today ▸ Outgoing — pickups on the operating day that have not left yet. */
-  pickups: { ...todaysOutgoing(TODAY_DAY_AD), page: COUNT_PAGE },
-  /** Today ▸ Incoming — returns due on the operating day, still out. */
-  returns: { ...todaysIncoming(TODAY_DAY_AD), page: COUNT_PAGE },
-  /** Due back before now and never actually returned. */
-  overdue: { ...overdue(NOW_AD), page: COUNT_PAGE },
-} as const satisfies Record<string, ListFilters>
+export function rentalKpiFilters(nowAd: string = businessNowAd()): Record<
+  'active' | 'pickups' | 'returns' | 'overdue',
+  ListFilters
+> {
+  const dayAd = businessDayAd(new Date(nowAd))
+  return {
+    /** Everything currently with a client. Shared verbatim with Today's own card. */
+    active: { ...ACTIVE_RENTALS_FILTERS, page: COUNT_PAGE },
+    /** Today ▸ Outgoing — pickups on the operating day that have not left yet. */
+    pickups: { ...todaysOutgoing(dayAd), page: COUNT_PAGE },
+    /** Today ▸ Incoming — returns due on the operating day, still out. */
+    returns: { ...todaysIncoming(dayAd), page: COUNT_PAGE },
+    /** Due back before **now** and never actually returned. An instant, not a day. */
+    overdue: { ...overdue(nowAd), page: COUNT_PAGE },
+  }
+}
 
 /* ── raw row → the shape the table renders ─────────────────────────────── */
 
@@ -920,6 +1022,15 @@ export interface RentalListRow {
   avatarTone: StatusKey
   /** `bookings.project`, nullable (0002:28). Renders as an explicit non-value. */
   project: string | null
+  /**
+   * `bookings.project_type` + `project_type_other` (0144) — the ALREADY-DISPLAYED
+   * answer, resolved once here so no screen re-derives it. `Other` renders its
+   * custom text; anything unlisted or null renders the unset dash. Neutral by
+   * construction: color stays reserved for operational state (spec §3).
+   */
+  projectTypeDisplay: string
+  /** The raw stored type, for filtering/sorting by the controlled value. */
+  projectTypeValue: string | null
   /** `bookings.pickup_location`, nullable free text — never the branch name. */
   pickupLocation: string | null
   /** `bookings.return_location`, nullable. */
@@ -951,9 +1062,9 @@ export interface RentalListRow {
   progress: number
   progressTone: BrandKey
   /** `pickup_at`, split into the date and the Kathmandu wall clock. */
-  pickup: { date: string; time: string }
+  pickup: { date: string; time: string; ad?: string }
   /** `return_at`, same split. */
-  ret: { date: string; time: string }
+  ret: { date: string; time: string; ad?: string }
   /** `bookings.delivery_type`. An enum member, not UI copy (Law 17). */
   deliveryType: BookingListRow['deliveryType']
   /** `bookings.quote_expires_at`, rendered. `null` means none was set. */
@@ -963,6 +1074,8 @@ export interface RentalListRow {
    * is what a money-blind session must produce — not "no deposit".
    */
   deposit: Paisa | null
+  /** Total Amount for the rental booking (from invoices / rental calculation). `null` when not asked. */
+  totalAmount?: Paisa | null
   /**
    * Does this booking carry externally-sourced (sub-rented) gear?
    *
@@ -987,8 +1100,8 @@ export interface RentalListRow {
 }
 
 /** "31 Jul 2026" + "09:00 AM", both rendered in Kathmandu (Law 7). */
-function stampOf(instantAd: string): { date: string; time: string } {
-  return { date: formatAd(new Date(instantAd)), time: clockPad(kathmanduMinutes(instantAd)) }
+function stampOf(instantAd: string): { date: string; time: string; ad: string } {
+  return { date: formatAd(new Date(instantAd)), time: clockPad(kathmanduMinutes(instantAd)), ad: instantAd }
 }
 
 /**
@@ -999,6 +1112,19 @@ function stampOf(instantAd: string): { date: string; time: string } {
  * `actual_return_at` still null — so a row cannot be overdue in the chip and on
  * time in the table.
  *
+ * ⛔ `nowAd` defaulted to `data/today.ts`'s `NOW_AD` — midnight UTC of the
+ * operating day, i.e. 05:45 in Kathmandu (X-06). `lateDays` is
+ * `civilDaysBetween(return_at, nowAd)`, so a booking that fell due at 09:00 this
+ * morning came back as *not overdue at all*. The default is the real instant
+ * now.
+ *
+ * (An earlier note here also claimed the `'Late today'` wording was unreachable
+ * under the old anchor. It was not: a booking due at 02:00 NPT is both before
+ * 05:45 — so the predicate accepts it — and on the same Kathmandu civil day, so
+ * `civilDaysBetween` returns 0. The overnight window is small, but the note
+ * rendered. Left written down because a "this branch is dead" claim is exactly
+ * the kind a later reader deletes code on.)
+ *
  * `Due Soon` is deliberately NOT derived, even though the seed carried it: it
  * needs a "how soon is soon" window no spec in this repo states, and inventing
  * one puts an amber badge on a booking for a reason nobody chose. `VIP` needs a
@@ -1006,7 +1132,7 @@ function stampOf(instantAd: string): { date: string; time: string } {
  */
 export function toRentalListRow(
   row: BookingListRow,
-  nowAd: string = NOW_AD,
+  nowAd: string = businessNowAd(),
   /**
    * The derived sub-rental set, or `null` while it is unknown. Passed in rather
    * than fetched here so the mapping stays pure — and so the one answer the
@@ -1030,6 +1156,8 @@ export function toRentalListRow(
     monogram: monogramOf(row.clientName),
     avatarTone: avatarToneFor(row.clientId),
     project: row.project,
+    projectTypeDisplay: displayProjectType(row.projectType, row.projectTypeOther),
+    projectTypeValue: row.projectType,
     pickupLocation: row.pickupLocation,
     returnLocation: row.returnLocation,
     itemCount: row.itemCount,
@@ -1039,6 +1167,10 @@ export function toRentalListRow(
     flags,
     ...(isOverdue
       ? { statusNote: lateDays > 0 ? `${lateDays} day${lateDays === 1 ? '' : 's'} late` : 'Late today' }
+      : row.stage === 'Quote' && !row.isCancelled && row.quoteExpiresAtAd && row.quoteExpiresAtAd < nowAd
+        ? { statusNote: 'Quote expired' }
+      : row.stage === 'Quote' && !row.isCancelled && row.pickupAtAd < nowAd
+        ? { statusNote: 'Pickup date passed' }
       : {}),
     isCancelled: row.isCancelled,
     isClosed: row.isClosed,
@@ -1057,6 +1189,8 @@ export function toRentalListRow(
     deliveryType: row.deliveryType,
     quoteExpires: row.quoteExpiresAtAd ? formatAd(new Date(row.quoteExpiresAtAd)) : null,
     deposit: row.depositRequired,
+    // A deposit is a liability (Law 5); it cannot stand in for a rental total.
+    totalAmount: row.totalAmount ?? null,
     // §11.1 — derived from the lines, never a column. `null` while the set is
     // unknown; deliberately NOT defaulted to `false`, which would assert "no
     // external gear" from a question nobody asked. See the field's own comment.
@@ -1114,6 +1248,9 @@ export function withSubRental(row: RentalListRow, subRentedBookingIds: ReadonlyS
  */
 export function rentalGlance(row: RentalListRow, gctx: GateContext): IntelGlance {
   const lines = [
+    /* Project Type sits under the client/project subtitle (spec §20) — one
+       neutral line, never a status-colored badge (spec §3). */
+    row.projectTypeDisplay,
     `Pickup ${row.pickup.date} · ${row.pickup.time}`,
     `Return ${row.ret.date} · ${row.ret.time}`,
     `${row.itemCount} item${row.itemCount === 1 ? '' : 's'}`,
@@ -1147,13 +1284,24 @@ export function rentalDetailGroups(row: RentalListRow, gctx: GateContext): Intel
     fields: [
       { label: 'Client', value: row.client, trigger: { label: 'Open', to: `/clients/${row.clientId}` } },
       { label: 'Project', value: row.project ?? '—' },
+      /* Spec §21 — name and kind stay separate fields, never combined. */
+      { label: 'Project type', value: row.projectTypeDisplay },
       { label: 'Pickup', value: `${row.pickup.date} · ${row.pickup.time}` },
       { label: 'Pickup location', value: row.pickupLocation ?? '—' },
       { label: 'Return', value: `${row.ret.date} · ${row.ret.time}` },
       { label: 'Return location', value: row.returnLocation ?? '—' },
-      // An enum member, not UI copy — 'Customer Pickup' is the delivery_type
-      // value and Law 17's ban on the word is about copy, not about data.
-      { label: 'Delivery', value: row.deliveryType },
+      // ⛔ This printed `row.deliveryType` raw. It is the stored
+      // `bookings.delivery_type` enum, whose first member is spelled
+      // 'Customer Pickup' (`0001_enums.sql:280`) — and these groups ARE
+      // rendered: `RentalsList.tsx` passes them to the Intel card as
+      // `detail`. So the banned word reached the DOM (Law 17).
+      //
+      // `deliveryTypeLabel` is the one sanctioned enum→copy crossing.
+      // The ROW field stays the enum on purpose (see its own doc
+      // comment): logic that compares the stored value — e.g.
+      // `driverSignatureRequired` in `HandoverWorkspace.tsx` — must never
+      // be handed the label, which matches no enum member.
+      { label: 'Delivery', value: deliveryTypeLabel(row.deliveryType) },
       { label: 'Items', value: `${row.itemCount} unit${row.itemCount === 1 ? '' : 's'} across live lines` },
       { label: 'Created', value: row.createdOn },
       {

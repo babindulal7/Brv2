@@ -64,16 +64,11 @@ const SLOT_MIN = 44
  * `toggleScanner()`, which opens the one `ScannerFab` panel. There is exactly one
  * scanner in the app and this is a second trigger for it, not a second scanner.
  *
- * TODO(decision) — **the FAB and the Scan slot are both visible on a phone.**
- * The shell block's prose says the FAB "exists at every width — not phone-only",
- * but its ASCII draws the floating `(⦿)` on desktop and tablet only, and on the
- * phone shows `⦿` solely as the centre bar slot. Read one way that is two
- * scanner buttons on the same screen, sixteen pixels apart; read the other, the
- * prose means what it says. Nothing here is width-gated, so both render — the
- * reversible choice, since hiding the FAB below 768 later is one condition in
- * `ScannerFab.tsx` while re-adding it after shipping is a support ticket.
- * **Ruling needed:** does the floating FAB hide on a phone once the bar carries
- * Scan?
+ * ## AUD-014 (Ruled): Single scan entry point on phone
+ * The floating FAB button is hidden below 768px (`!phone` in `ScannerFab.tsx`).
+ * On mobile/phone viewports, the bottom bar's centre Scan slot is the single,
+ * thumb-reachable entry point to open the Scanner sheet. On desktop and tablet,
+ * the floating FAB is rendered at the bottom-right corner.
  */
 export default function BottomBar({ active }: { active: string }) {
   const { user } = useAuth()
@@ -82,10 +77,7 @@ export default function BottomBar({ active }: { active: string }) {
      arrow would re-run the trap (and re-lock body scroll) on every render. */
   const closeMore = useCallback(() => setMoreOpen(false), [])
 
-  const slots = bottomBarSlots(user?.role)
-  /* The same most-specific-wins rule the Sidebar uses, from the same function —
-     otherwise `/rentals/new` lights the Rentals slot on a phone and nothing on
-     a desktop, which is two different answers to one question. */
+  const slots: BottomBarSlot[] = bottomBarSlots(user?.role)
   const activeTo = activeNavTo(permittedNav(user?.role), active)
 
   return (
@@ -105,7 +97,11 @@ export default function BottomBar({ active }: { active: string }) {
              full box and the labels sit over the home indicator again. */
           gridTemplateRows: `${BOTTOM_BAR_HEIGHT}px`,
           alignContent: 'start',
+          /* v4.2 §4 — chrome glass, same reasoning as Header.tsx: content
+             scrolls under this fixed bar, so the 0.88 tint needs the blur. */
           background: 'var(--sidebar)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
           borderTop: '1px solid var(--border)',
           zIndex: 50,
         }}

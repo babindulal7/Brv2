@@ -30,6 +30,7 @@
  */
 
 import type { JobName } from '../lib/workflow'
+import { captureError } from '../lib/monitoring'
 
 /* ── §3.1 / §7.1 — the two small vocabularies this job introduces ────────── */
 
@@ -56,9 +57,6 @@ export const PROBLEM_ROUTE: Record<Exclude<ProblemState, 'No Problems'>, string>
 
 export type Category = 'Camera' | 'Lens' | 'Battery' | 'Media' | 'Monitor' | 'Rig' | 'Audio' | 'Accessory'
 
-/** §4 — one of the four computed inputs to `priorityTier`. */
-export type Demand = 'today' | 'tomorrow' | 'future'
-
 export interface Unit {
   id: string
   category: Category
@@ -71,18 +69,20 @@ export interface Unit {
   needsReset: boolean
   assignedTo: string
   /**
-   * §4's priority table is forward-looking — "needed for a booking today",
-   * "VIP booking" — about the *next* booking this physical unit is needed
-   * for, not `B-715`, the booking it is returning from. There is no
-   * next-booking schedule in the seed yet, so these three are held directly
-   * per unit rather than derived from `BOOKING.vip`, which would be a
-   * category error (this booking's VIP-ness says nothing about who needs the
-   * item next). `waitingMinutes` is the one input that *is* about this queue.
+   * How long this unit has been sitting in the queue.
+   *
+   * ⚠ **The last survivor of §4's priority table, and the only one that was
+   * ever real.** `demand`, `vip` and `rush` sat beside it until 16 Aug 2026,
+   * hand-typed per unit because — as the comment here used to admit — §4's
+   * table is forward-looking, about the *next* booking a unit is needed for,
+   * and no next-booking schedule existed to derive them from. PLAN.md §4.31(3)
+   * dropped all three rather than keep inventing them.
+   *
+   * This one stayed because it is about *this* queue and it has a real source.
+   * It is rendered as Queue Time, with `queueTimeTone` carrying the urgency
+   * the Priority flag used to duplicate.
    */
-  demand: Demand
   waitingMinutes: number
-  vip: boolean
-  rush: boolean
   /** Photos already attached. §11 — optional for routine cleaning. */
   evidence: number
 }
@@ -139,19 +139,32 @@ export function allTasksFor(u: Unit): string[] {
   return [...cleanTasksFor(u), ...resetTasksFor(u)]
 }
 
-/* ── §4 priority — computed, never hand-set ───────────────────────────────── */
-
-export type PriorityTier = 'High' | 'Medium' | 'Low'
-
-export function priorityTier(u: Unit): PriorityTier {
-  if (u.demand === 'today' || u.waitingMinutes > 240 || u.vip || u.rush) return 'High'
-  if (u.demand === 'tomorrow') return 'Medium'
-  return 'Low'
-}
-/** §3.2 — "Priority" as shown in the chip row is the High tier. Never hand-set, never in the state sum. */
-export function isPriority(u: Unit): boolean {
-  return priorityTier(u) === 'High'
-}
+/* ── §4 priority — REMOVED 16 Aug 2026, PLAN.md §4.31(3) ──────────────────────
+ *
+ * `PriorityTier`, `priorityTier` and `isPriority` used to live here. All three
+ * are gone, and this note stands in their place because their absence is a
+ * ruling and not an oversight.
+ *
+ * `priorityTier` had four inputs: `demand`, `vip`, `rush` and `waitingMinutes`.
+ * **Three of them had no column anywhere in the schema** — they were typed by
+ * hand onto all 18 seed units, and §4's table they came from is forward-looking
+ * (about the *next* booking a unit is needed for) with no next-booking schedule
+ * to derive them from. The ruling dropped them rather than keep a queue whose
+ * ordering nobody could explain or reproduce.
+ *
+ * That left `waitingMinutes > 240` as the only surviving clause — which is
+ * exactly `queueTimeTone(m) === 'danger'`, already rendered on every row as
+ * Queue Time. So a Priority flag reduced to that clause would have been a
+ * second control saying precisely what the first one says, and the queue lost
+ * nothing by dropping it: the urgency is still on screen, in the column that
+ * was always derived from real data.
+ *
+ * ⚠ If prioritisation is wanted back, `queueTimeTone` is NOT the thing to
+ * extend. Derive it from the next booking's pickup date — `queue entry →
+ * product_units.id → inventory_reservations.asset_id → bookings.pickup_at` —
+ * which is the alternative §4.31(3) passed over and the one that needs no new
+ * column. Do not re-add a hand-set flag.
+ */
 
 /** Queue Time colour, §4: red past 4h, amber past 2h, gray below. */
 export function queueTimeTone(minutes: number): 'danger' | 'progress' | 'neutral' {
@@ -170,25 +183,25 @@ export function queueTimeTone(minutes: number): 'danger' | 'progress' | 'neutral
  * points at ("In Cleaning until 16:00"): this is that cleaning.
  */
 export const UNITS: Unit[] = [
-  { id: 'u01', category: 'Camera', name: 'Sony FX3 Camera Body', serial: 'SN102', required: true, location: 'A2-01', needsClean: true, needsReset: true, assignedTo: 'Sagar Maharjan', demand: 'today', waitingMinutes: 320, vip: false, rush: false, evidence: 0 },
-  { id: 'u02', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-001', required: true, location: 'B1-01', needsClean: true, needsReset: true, assignedTo: 'Sagar Maharjan', demand: 'today', waitingMinutes: 250, vip: false, rush: false, evidence: 0 },
-  { id: 'u03', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-002', required: true, location: 'B1-02', needsClean: true, needsReset: true, assignedTo: 'Bikash Thapa', demand: 'tomorrow', waitingMinutes: 95, vip: false, rush: false, evidence: 0 },
-  { id: 'u04', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-003', required: true, location: 'B1-03', needsClean: true, needsReset: true, assignedTo: 'Bikash Thapa', demand: 'tomorrow', waitingMinutes: 60, vip: false, rush: false, evidence: 0 },
-  { id: 'u05', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-004', required: true, location: 'B1-04', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', demand: 'future', waitingMinutes: 40, vip: false, rush: false, evidence: 0 },
-  { id: 'u06', category: 'Media', name: '256GB CFexpress Type A', serial: 'SN-CFX-001', required: true, location: 'B2-01', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', demand: 'today', waitingMinutes: 50, vip: false, rush: true, evidence: 0 },
-  { id: 'u07', category: 'Media', name: '256GB CFexpress Type A', serial: 'SN-CFX-002', required: true, location: 'B2-02', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', demand: 'future', waitingMinutes: 45, vip: false, rush: false, evidence: 0 },
-  { id: 'u08', category: 'Lens', name: 'NISI 35mm T1.9', serial: 'SN-LEN-035', required: true, location: 'C1-01', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', demand: 'future', waitingMinutes: 30, vip: false, rush: false, evidence: 0 },
-  { id: 'u09', category: 'Lens', name: 'NISI 50mm T1.9', serial: 'SN-LEN-050', required: true, location: 'C1-02', needsClean: true, needsReset: false, assignedTo: 'Sagar Maharjan', demand: 'future', waitingMinutes: 28, vip: false, rush: false, evidence: 0 },
+  { id: 'u01', category: 'Camera', name: 'Sony FX3 Camera Body', serial: 'SN102', required: true, location: 'A2-01', needsClean: true, needsReset: true, assignedTo: 'Sagar Maharjan', waitingMinutes: 320, evidence: 0 },
+  { id: 'u02', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-001', required: true, location: 'B1-01', needsClean: true, needsReset: true, assignedTo: 'Sagar Maharjan', waitingMinutes: 250, evidence: 0 },
+  { id: 'u03', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-002', required: true, location: 'B1-02', needsClean: true, needsReset: true, assignedTo: 'Bikash Thapa', waitingMinutes: 95, evidence: 0 },
+  { id: 'u04', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-003', required: true, location: 'B1-03', needsClean: true, needsReset: true, assignedTo: 'Bikash Thapa', waitingMinutes: 60, evidence: 0 },
+  { id: 'u05', category: 'Battery', name: 'NP-FZ100 Battery', serial: 'SN-BAT-004', required: true, location: 'B1-04', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', waitingMinutes: 40, evidence: 0 },
+  { id: 'u06', category: 'Media', name: '256GB CFexpress Type A', serial: 'SN-CFX-001', required: true, location: 'B2-01', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', waitingMinutes: 50, evidence: 0 },
+  { id: 'u07', category: 'Media', name: '256GB CFexpress Type A', serial: 'SN-CFX-002', required: true, location: 'B2-02', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', waitingMinutes: 45, evidence: 0 },
+  { id: 'u08', category: 'Lens', name: 'NISI 35mm T1.9', serial: 'SN-LEN-035', required: true, location: 'C1-01', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', waitingMinutes: 30, evidence: 0 },
+  { id: 'u09', category: 'Lens', name: 'NISI 50mm T1.9', serial: 'SN-LEN-050', required: true, location: 'C1-02', needsClean: true, needsReset: false, assignedTo: 'Sagar Maharjan', waitingMinutes: 28, evidence: 0 },
   // §7.2 continuity — this is the unit packing.ts's u10 calls "In Cleaning until 16:00".
-  { id: 'u10', category: 'Lens', name: 'NISI 85mm T1.9', serial: 'SN-LEN-085', required: true, location: 'C1-03', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', demand: 'tomorrow', waitingMinutes: 15, vip: false, rush: false, evidence: 0 },
-  { id: 'u11', category: 'Monitor', name: 'Portkeys BM5 III', serial: 'SN-MON-001', required: true, location: 'D1-03', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', demand: 'today', waitingMinutes: 20, vip: true, rush: false, evidence: 0 },
-  { id: 'u12', category: 'Rig', name: 'Monitor Arm', serial: 'SN-MON-002', required: false, location: 'D1-03', needsClean: true, needsReset: false, assignedTo: 'Niraj Karki', demand: 'future', waitingMinutes: 18, vip: false, rush: false, evidence: 0 },
-  { id: 'u13', category: 'Rig', name: 'SmallRig Cage', serial: 'SN-RIG-001', required: true, location: 'E1-01', needsClean: true, needsReset: false, assignedTo: 'Sagar Maharjan', demand: 'tomorrow', waitingMinutes: 12, vip: false, rush: false, evidence: 0 },
-  { id: 'u14', category: 'Rig', name: 'Top Handle', serial: 'SN-RIG-002', required: false, location: 'E1-01', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', demand: 'future', waitingMinutes: 10, vip: false, rush: false, evidence: 0 },
-  { id: 'u15', category: 'Audio', name: 'Rode NTG5 Shotgun', serial: 'SN-AUD-001', required: true, location: 'F1-02', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', demand: 'future', waitingMinutes: 25, vip: false, rush: false, evidence: 0 },
-  { id: 'u16', category: 'Audio', name: 'Boom Pole', serial: 'SN-AUD-002', required: false, location: 'F1-02', needsClean: true, needsReset: false, assignedTo: 'Niraj Karki', demand: 'future', waitingMinutes: 22, vip: false, rush: false, evidence: 0 },
-  { id: 'u17', category: 'Accessory', name: 'BNC Cable 3m', serial: '—', required: true, location: 'G1-05', needsClean: true, needsReset: false, assignedTo: 'Sagar Maharjan', demand: 'future', waitingMinutes: 8, vip: false, rush: false, evidence: 0 },
-  { id: 'u18', category: 'Accessory', name: 'Pelican 1610 Case', serial: 'SN-ACC-002', required: true, location: 'G1-05', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', demand: 'future', waitingMinutes: 5, vip: false, rush: false, evidence: 0 },
+  { id: 'u10', category: 'Lens', name: 'NISI 85mm T1.9', serial: 'SN-LEN-085', required: true, location: 'C1-03', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', waitingMinutes: 15, evidence: 0 },
+  { id: 'u11', category: 'Monitor', name: 'Portkeys BM5 III', serial: 'SN-MON-001', required: true, location: 'D1-03', needsClean: true, needsReset: true, assignedTo: 'Niraj Karki', waitingMinutes: 20, evidence: 0 },
+  { id: 'u12', category: 'Rig', name: 'Monitor Arm', serial: 'SN-MON-002', required: false, location: 'D1-03', needsClean: true, needsReset: false, assignedTo: 'Niraj Karki', waitingMinutes: 18, evidence: 0 },
+  { id: 'u13', category: 'Rig', name: 'SmallRig Cage', serial: 'SN-RIG-001', required: true, location: 'E1-01', needsClean: true, needsReset: false, assignedTo: 'Sagar Maharjan', waitingMinutes: 12, evidence: 0 },
+  { id: 'u14', category: 'Rig', name: 'Top Handle', serial: 'SN-RIG-002', required: false, location: 'E1-01', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', waitingMinutes: 10, evidence: 0 },
+  { id: 'u15', category: 'Audio', name: 'Rode NTG5 Shotgun', serial: 'SN-AUD-001', required: true, location: 'F1-02', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', waitingMinutes: 25, evidence: 0 },
+  { id: 'u16', category: 'Audio', name: 'Boom Pole', serial: 'SN-AUD-002', required: false, location: 'F1-02', needsClean: true, needsReset: false, assignedTo: 'Niraj Karki', waitingMinutes: 22, evidence: 0 },
+  { id: 'u17', category: 'Accessory', name: 'BNC Cable 3m', serial: '—', required: true, location: 'G1-05', needsClean: true, needsReset: false, assignedTo: 'Sagar Maharjan', waitingMinutes: 8, evidence: 0 },
+  { id: 'u18', category: 'Accessory', name: 'Pelican 1610 Case', serial: 'SN-ACC-002', required: true, location: 'G1-05', needsClean: true, needsReset: false, assignedTo: 'Bikash Thapa', waitingMinutes: 5, evidence: 0 },
 ]
 
 export const TOTAL_ITEMS = UNITS.length
@@ -233,7 +246,10 @@ export const RESET_SEED_ERROR: string | null = (() => {
     : `Reset seed data does not reconcile: ${problems.join('; ')}. Counts on this screen cannot be trusted — see src/data/reset.ts.`
 })()
 
-if (RESET_SEED_ERROR) console.error(RESET_SEED_ERROR)
+if (RESET_SEED_ERROR) {
+  console.error(RESET_SEED_ERROR)
+  captureError(new Error(RESET_SEED_ERROR), { where: 'seed.reset' })
+}
 
 /* ── misc seed reference data ─────────────────────────────────────────────── */
 

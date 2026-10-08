@@ -95,7 +95,7 @@ export function ClientHealthReasons({
             alignItems: 'flex-start',
             gap: 6,
             fontSize: 'var(--t-meta)',
-            color: r.severity === 'critical' ? 'var(--danger-text)' : 'var(--warning-text)',
+            color: r.severity === 'critical' ? 'var(--danger-text)' : 'var(--ready-text)',
           }}
         >
           <span style={{ display: 'inline-flex', paddingTop: 1, flexShrink: 0 }}>

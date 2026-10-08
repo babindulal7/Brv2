@@ -1,71 +1,278 @@
-import { useState, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useMemo, useEffect } from 'react'
+import { recordExport } from '../../lib/exportAudit'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { PageHeader } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
+import { PageShell } from '../../components/ui/PageShell'
 import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { PageBody } from '../../components/ui/PageBody'
-import { useToast } from '../../components/ui/Toast'
+import { Unavailable } from '../../components/ui/Unavailable'
+import { Badge } from '../../components/ui/Badge'
+import Icon from '../../components/ui/Icon'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { useAuth } from '../../lib/auth'
-import { isStaff } from '../../lib/rbac'
-import { toBs, formatBs } from '../../lib/bs'
-
-export interface CasesWorkspaceProps {
-  loading?: boolean | undefined
-  error?: string | null | undefined
-  onRetry?: (() => void) | undefined
-}
-import { findClientIdByBooking } from '../../data/clients'
+import { formatBsOrAd } from '../../lib/bs'
+import { useViewport } from '../../lib/device'
 import {
-  CASES,
+  listCases,
+  findClientIdByBooking,
+  CASE_STATUS_META,
+  CASE_PRIORITY_META,
   CASE_WORKSPACE_ROUTE,
-  STATUS_COUNTS,
+  statusCounts,
   openCasesCount,
   awaitingDecisionCount,
   exposurePaisa,
   recoveredThisMonthPaisa,
   outstandingOf,
+  ageDays,
+  NEW_CASE_UNAVAILABLE_REASON,
   type Case,
   type CaseStatus,
   type CasePriority,
-} from '../../data/cases'
-import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
+} from '../../lib/queries/cases'
+import { IconPlus, IconDownload } from '@tabler/icons-react'
+import { LogCaseModal } from './modals/LogCaseModal'
+import { ResolveCaseModal } from './modals/ResolveCaseModal'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 
-/** Age in whole days from openedAd to today (lib/bs TODAY is fixed to 31 Jul 2026). */
-function ageDaysOf(c: Case): number {
-  const MS_PER_DAY = 86_400_000
-  // TODAY from lib/bs is 2026-07-31 UTC-midnight; use it via the module-level CASES constant
-  // which already imports it. We just compare against the same epoch.
-  const todayMs = Date.UTC(2026, 6, 31) // 31 Jul 2026 — matches lib/bs TODAY
-  return Math.floor((todayMs - c.openedAd.getTime()) / MS_PER_DAY)
+function exportCasesCsv(rows: Case[], canViewMoney: boolean) {
+  const head = ['Case ID', 'Title', 'Type', 'Booking', 'Client', 'Priority', 'Status', 'Opened Date', 'Days Open']
+  if (canViewMoney) head.push('Assessed Loss (NPR)', 'Charged Client (NPR)', 'Deposit Applied (NPR)', 'Outstanding (NPR)')
+  const body = rows.map((c) => {
+    const cells = [
+      c.id,
+      c.title,
+      c.type,
+      c.linked?.linkedRecordId ?? '',
+      c.counterpartyName,
+      c.priority,
+      c.status,
+      c.openedAd instanceof Date ? c.openedAd.toISOString().slice(0, 10) : String(c.openedAd),
+      String(ageDays(c.openedAd)),
+    ]
+    if (canViewMoney) {
+      cells.push(
+        c.assessedPaisa ? formatMoney(c.assessedPaisa) : '',
+        c.chargedToClientPaisa ? formatMoney(c.chargedToClientPaisa) : '',
+        c.depositAppliedPaisa ? formatMoney(c.depositAppliedPaisa) : '',
+        formatMoney(outstandingOf(c)),
+      )
+    }
+    return cells
+  })
+  const csv = [head, ...body]
+    .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  recordExport({ list: 'cases', module: 'Operations', rowCount: rows.length, columns: head })
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cases-report-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
+/* Age comes from the shared `ageDays` in `data/cases.ts`, computed against the
+ * one operating day (`getBusinessToday()` in `lib/bs.ts`). This file used to
+ * carry its own frozen clock — §11 of Foundation exists to stop exactly that:
+ * the age a case shows here and the age the escalation rules read must be the
+ * same number. */
+
+/**
+ * The two status renderers this screen used to hand-roll, now delegating to
+ * <Badge> — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component rendering the
+ * §4 map from lib/status; every screen inherits."
+ *
+ * They replace `getPriorityColor()` and `getStatusColor()`, two switches that
+ * returned raw CSS variables and painted a coloured DOT beside coloured TYPE.
+ * §4 has no such treatment — every status is a solid block — but the deeper
+ * problem was that they were a SECOND opinion. `data/cases.ts` already owns
+ * the Cases vocabulary in `CASE_STATUS_META` / `CASE_PRIORITY_META`, which the
+ * sibling `CasesQueue.tsx` reads, and the two opinions disagreed:
+ *
+ *  - **Low** was `var(--info)` (blue) here. The meta moved it to gray for a
+ *    documented reason recorded at `data/cases.ts:158` — green/blue "reads as
+ *    good" on a priority column, which is not what low priority means.
+ *  - **Closed** was `var(--good)` (green) here and gray in the meta. §2 gives
+ *    green one meaning — "home & ready / settled" — and a closed case is
+ *    neither; it is over.
+ *  - **In Progress** was blue in both, but only the meta carries the `solid`
+ *    flag that separates it from Under Review, which is blue too.
+ *
+ * Rather than fix three colours in a switch that would drift again, both
+ * wrappers now read the same meta the queue reads. One vocabulary, two
+ * screens; a hue can no longer mean one thing in the list and another in the
+ * workspace.
+ */
+function CaseStatusBadge({ status }: { status: CaseStatus }) {
+  const m = CASE_STATUS_META[status]
+  return <Badge tone={m.token} label={status} icon={<Icon name={m.icon} size={11} fill={m.solid === true} />} size="sm" />
+}
+
+function CasePriorityBadge({ priority }: { priority: CasePriority }) {
+  const m = CASE_PRIORITY_META[priority]
+  return <Badge tone={m.token} label={priority} icon={<Icon name={m.icon} size={11} fill={m.solid === true} />} size="sm" />
+}
+
+/**
+ * The BS date where the engine can name one, the **English date** otherwise.
+ * This returned `'—'` outside the BS table, which claimed the case had no
+ * opened-on date at all when the AD instant was in hand — see `lib/bs.ts`
+ * `formatBsOrAd`, which is the one place that rule lives.
+ */
 function createdBsOf(c: Case): string {
-  const bs = toBs(c.openedAd)
-  return bs ? formatBs(bs) : '—'
+  return formatBsOrAd(c.openedAd)
 }
 
 
 type FilterKey = CaseStatus | 'All'
 
-export function CasesWorkspace({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: CasesWorkspaceProps = {}) {
-  const { user } = useAuth()
-  const isStaffMember = user ? isStaff(user.role) : true
-  const { showSuccessToast } = useToast()
+/* §5.1 — the URL is the state. `?status=` carries the chip and `?q=` the
+ * search, so a filtered view is linkable, shareable, and survives a reload —
+ * the OperationsQueues `patch()` pattern. `Cancelled` is mapped even though no
+ * chip renders it (a declared `CaseStatus` a bookmarked URL may still name);
+ * anything unrecognised falls back to All rather than silently matching
+ * nothing. */
+const STATUS_URL_KEY: Record<Exclude<FilterKey, 'All'>, string> = {
+  Open: 'open',
+  'In Progress': 'in-progress',
+  'Under Review': 'under-review',
+  'Awaiting Decision': 'awaiting-decision',
+  Resolved: 'resolved',
+  Closed: 'closed',
+  Cancelled: 'cancelled',
+}
+
+function statusFromParam(value: string | null): FilterKey {
+  if (!value) return 'All'
+  for (const [status, key] of Object.entries(STATUS_URL_KEY) as [Exclude<FilterKey, 'All'>, string][]) {
+    if (key === value) return status
+  }
+  return 'All'
+}
+
+export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
 
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
+  const [params, setParams] = useSearchParams()
+  /*
+   * `/inventory/cases/:id` — the URL names one case. The per-case workspace
+   * has no field list yet (`CASE_WORKSPACE_ROUTE` in data/cases.ts, §10), so
+   * until it does this route is the queue narrowed to that one row, and says
+   * so. It used to render the full list and ignore the id entirely — the URL
+   * lied (TODO_SWEEP_2026-09-02.md A5).
+   */
+  const { id: routeCaseId } = useParams<{ id?: string }>()
+  const searchQuery = params.get('q') ?? ''
+  const activeFilter = statusFromParam(params.get('status'))
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
+  const [selectedCaseForResolve, setSelectedCaseForResolve] = useState<Case | null>(null)
+  const [casesList, setCasesList] = useState<Case[]>([])
+  const [casesLoading, setCasesLoading] = useState(true)
+  const [casesError, setCasesError] = useState<string | null>(null)
+  const [readVersion, setReadVersion] = useState(0)
+  const countsKnown = !casesLoading && casesError === null
+
+  useEffect(() => {
+    let mounted = true
+    setCasesLoading(true)
+    setCasesError(null)
+    listCases().then((res) => {
+      if (mounted) {
+        setCasesList(res.rows)
+      }
+    }).catch((error: unknown) => {
+      if (mounted) setCasesError(error instanceof Error ? error.message : 'Cases could not be loaded.')
+    }).finally(() => {
+      if (mounted) setCasesLoading(false)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [readVersion])
+
+  /**
+   * **RS-09 — one row per case id, however many times this screen is told
+   * about the case.**
+   *
+   * `LogCaseModal` announces a new case TWICE, from one press: it awaits
+   * `DomainEvents.emit(DISCREPANCY_FLAGGED, { case: newCase })`, which
+   * `EventBus.emit` hands to its subscribers synchronously — it calls every
+   * handler in a `handlers.map(...)` and only then awaits what they returned
+   * (`events/eventBus.ts`) — and then calls `onSuccess(newCase)` with the same
+   * object (`modals/LogCaseModal.tsx`, the `emit` and the `onSuccess` in one
+   * `handleSubmit`). The subscriber below rejected the repeat; the `onSuccess`
+   * append did not, so the second copy landed under the SAME `c.id` — two
+   * `<tr>`s sharing one React key, and one extra case in every figure derived
+   * from this list.
+   *
+   * **What actually happens on that second write, since Law 8 is the frame:**
+   * nothing reaches the data layer at all. There is no case-creation action
+   * (`NEW_CASE_UNAVAILABLE_REASON`, `data/cases.ts`), neither path carries a
+   * `client_uuid`, and no INSERT is attempted — so the unique-key rejection
+   * that Law 8 relies on never gets the chance to run, and the duplicate is
+   * only ever a screen fact. Rejecting it is this screen's job for as long as
+   * the list is local, which is what this helper does: both notifications go
+   * through it, and a case already in the list is replaced, not repeated.
+   *
+   * Neither opener is reachable today — both `Log Incident` and `Export` are
+   * `disabled` inside `<Unavailable>` below — so this is a latent defect that
+   * arms itself the moment the action exists, not a live one.
+   */
+  const upsertCase = (next: Case) =>
+    setCasesList((prev) => [next, ...prev.filter((c) => c.id !== next.id)])
+
+  useDomainEvent<{ case?: Case }>(EVENT_TYPES.DISCREPANCY_FLAGGED, (payload) => {
+    if (payload?.case) upsertCase(payload.case)
+  })
+
+  /* Merge-write one or more params; `null` deletes a key. `replace: true`
+   * keeps chip flicks and search keystrokes out of the history stack
+   * (OperationsQueues.tsx patch()). */
+  const patch = (next: Record<string, string | null>) => {
+    const merged = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(next)) {
+      if (v === null) merged.delete(k)
+      else merged.set(k, v)
+    }
+    /* A chip flick or a keystroke while the URL names one case is a request
+       for the queue again — leave the single-case view rather than filtering
+       inside it, where every chip but one would show nothing. */
+    if (routeCaseId) {
+      navigate({ pathname: '/inventory/cases', search: merged.toString() ? `?${merged}` : '' }, { replace: true })
+      return
+    }
+    setParams(merged, { replace: true })
+  }
+
+  const setActiveFilter = (f: FilterKey) => patch({ status: f === 'All' ? null : STATUS_URL_KEY[f] })
+
+  const [searchInput, setSearchInput] = useState(searchQuery)
+
+  useEffect(() => {
+    setSearchInput(searchQuery)
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (searchInput === searchQuery) return
+    const timer = setTimeout(() => {
+      patch({ q: searchInput || null })
+    }, 200)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounced search sync to URL
+  }, [searchInput, searchQuery])
 
   const filteredCases = useMemo(() => {
-    return CASES.filter((c) => {
+    return casesList.filter((c) => {
+      if (routeCaseId) return c.id === routeCaseId
       if (activeFilter !== 'All' && c.status !== activeFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -82,7 +289,38 @@ export function CasesWorkspace({
       }
       return true
     })
-  }, [searchQuery, activeFilter])
+    /* `casesList` was missing here: a case logged through the domain event
+       above landed in state but not on screen until a chip was flicked. */
+  }, [casesList, routeCaseId, searchQuery, activeFilter])
+
+  /**
+   * **RS-09 — the strip, the chips and the table now count the same array.**
+   *
+   * The KPIs called `openCasesCount()` / `awaitingDecisionCount()` /
+   * `exposurePaisa()` / `recoveredThisMonthPaisa()` with no argument and the
+   * chips read the module-level `STATUS_COUNTS`, and every one of those closes
+   * over the frozen `CASES` seed — `STATUS_COUNTS` is literally
+   * `statusCounts()` evaluated at import (`data/cases.ts:882`), and each
+   * helper defaults its parameter to `CASES`. So a case added to state
+   * appeared in the table below while every figure above it stayed at the seed
+   * number: the screen contradicted itself in one glance.
+   *
+   * `data/cases.ts` already wrote each of these to take the list to count
+   * (`cases: Case[] = CASES`) for exactly this reason — the default was the
+   * convenience, not the contract. Passing `casesList` is all that was needed;
+   * no formula is restated here (Law 1).
+   */
+  const counts = useMemo(
+    () => ({
+      total: casesList.length,
+      byStatus: statusCounts(casesList),
+      open: openCasesCount(casesList),
+      awaitingDecision: awaitingDecisionCount(casesList),
+      exposure: exposurePaisa(casesList),
+      recoveredThisMonth: recoveredThisMonthPaisa(casesList),
+    }),
+    [casesList],
+  )
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) setSelectedRowIds(new Set(filteredCases.map((c) => c.id)))
@@ -96,57 +334,60 @@ export function CasesWorkspace({
     setSelectedRowIds(next)
   }
 
-  const getPriorityColor = (priority: CasePriority) => {
-    switch (priority) {
-      case 'Critical': return 'var(--bad)'
-      case 'High': return 'var(--bad)'
-      case 'Medium': return 'var(--warn)'
-      case 'Low': return 'var(--info)'
-    }
-  }
-
-  const getStatusColor = (status: CaseStatus) => {
-    switch (status) {
-      case 'Resolved':
-      case 'Closed':
-        return 'var(--good)'
-      case 'Cancelled':
-        return 'var(--muted)'
-      case 'Awaiting Decision':
-      case 'Under Review':
-        return 'var(--warn)'
-      case 'In Progress':
-        return 'var(--info)'
-      case 'Open':
-      default:
-        return 'var(--text)'
-    }
-  }
-
-  /* ── restricted state for non-staff ────────────────────────────────── */
-  if (!isStaffMember) {
-    return (
-      <PageBody
-        restricted={true}
-        restrictedReason="Incident and damage cases are for Babin Rentals staff only."
-        restrictedRequiredRole="Staff"
-        noun="cases"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  return (
+  const content = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* KPIs — derived from canonical CASES array, never hand-typed (§3 / AUDIT_FINDINGS P1 #13) */}
-      <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', gap: 14 }}>
+      {/* The one `<h1>` on the route — this screen opened straight on the KPI
+          strip, the only queue in the app without a title landmark (A7). */}
+      {!embedded && (
+        <PageHeader
+          breadcrumb={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to="/operations" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="chevron_left" size={14} />
+                Operations
+              </Link>
+              <span>›</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>Cases</span>
+            </div>
+          }
+          title="Cases"
+        />
+      )}
+
+      {routeCaseId && (
+        <Card padding="md">
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+            <Icon name="info" size={18} style={{ color: 'var(--text2)', flexShrink: 0, marginTop: 2 }} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                Showing case <span className="identifier">{routeCaseId}</span>
+              </div>
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', maxWidth: '70ch', lineHeight: 1.5 }}>
+                The per-case workspace has no field list yet, so this address shows the queue narrowed to
+                the one case it names. The other rows are hidden here, not gone.
+              </p>
+            </div>
+            {filteredCases[0] && filteredCases[0].status !== 'Resolved' && filteredCases[0].status !== 'Closed' && (
+              <Button variant="primary" onClick={() => setSelectedCaseForResolve(filteredCases[0] ?? null)}>
+                Resolve Case
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => navigate('/inventory/cases')}>
+              Show all cases
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* KPIs — derived from the list the table renders, never hand-typed
+          (§3 / AUDIT_FINDINGS P1 #13) and never from the frozen seed (RS-09). */}
+      <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, 1fr)' : (money ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)'), gap: 14 }}>
         <Card padding="md">
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Open Cases
           </span>
           <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
-            {openCasesCount()}
+            {countsKnown ? counts.open : '—'}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             All active & unresolved
@@ -156,8 +397,8 @@ export function CasesWorkspace({
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Awaiting Decision
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--warn)', marginTop: 'var(--sp-xs)' }}>
-            {awaitingDecisionCount()}
+          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: countsKnown && counts.awaitingDecision > 0 ? 'var(--ready-text)' : 'var(--text2)', marginTop: 'var(--sp-xs)' }}>
+            {countsKnown ? counts.awaitingDecision : '—'}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             Ready for manager review
@@ -168,8 +409,8 @@ export function CasesWorkspace({
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
               Exposure
             </span>
-            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 'var(--sp-xs)' }}>
-              {formatMoney(exposurePaisa())}
+            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: countsKnown && counts.exposure > 0 ? 'var(--bad)' : 'var(--text2)', marginTop: 'var(--sp-xs)' }}>
+              {countsKnown ? formatMoney(counts.exposure) : '—'}
             </div>
             <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
               Assessed value of open cases
@@ -181,8 +422,8 @@ export function CasesWorkspace({
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
               Recovered This Month
             </span>
-            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 'var(--sp-xs)' }}>
-              {formatMoney(recoveredThisMonthPaisa())}
+            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: countsKnown && counts.recoveredThisMonth > 0 ? 'var(--good)' : 'var(--text2)', marginTop: 'var(--sp-xs)' }}>
+              {countsKnown ? formatMoney(counts.recoveredThisMonth) : '—'}
             </div>
             <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
               Charged, claimed, and settled
@@ -192,30 +433,47 @@ export function CasesWorkspace({
       </div>
 
       {/* Toolbar & Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
+        <div
+          className="rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            width: phone ? '100%' : 'auto',
+            maxWidth: phone ? '100%' : 'calc(100% - 500px)',
+            paddingBottom: phone ? 4 : 0,
+          }}
+        >
           {([
-            { label: 'All', count: CASES.length },
-            { label: 'Open', count: STATUS_COUNTS['Open'] },
-            { label: 'In Progress', count: STATUS_COUNTS['In Progress'] },
-            { label: 'Under Review', count: STATUS_COUNTS['Under Review'] },
-            { label: 'Awaiting Decision', count: STATUS_COUNTS['Awaiting Decision'] },
-            { label: 'Resolved', count: STATUS_COUNTS['Resolved'] },
-            { label: 'Closed', count: STATUS_COUNTS['Closed'] },
+            { label: 'All', count: counts.total },
+            { label: 'Open', count: counts.byStatus['Open'] },
+            { label: 'In Progress', count: counts.byStatus['In Progress'] },
+            { label: 'Under Review', count: counts.byStatus['Under Review'] },
+            { label: 'Awaiting Decision', count: counts.byStatus['Awaiting Decision'] },
+            { label: 'Resolved', count: counts.byStatus['Resolved'] },
+            { label: 'Closed', count: counts.byStatus['Closed'] },
           ] as const).map((chip) => (
             <button
               key={chip.label}
               onClick={() => setActiveFilter(chip.label as FilterKey)}
               style={{
-                padding: '6px 14px',
+                minHeight: 44,
+                padding: '0 14px',
                 borderRadius: 'var(--r-modal)',
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: 'pointer',
                 border: activeFilter === chip.label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
                 background: activeFilter === chip.label ? 'var(--nav-active-accent)' : 'var(--card)',
-                color: activeFilter === chip.label ? '#ffffff' : 'var(--text)',
+                color: activeFilter === chip.label ? 'var(--on-primary)' : 'var(--text)',
                 transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
               }}
             >
               {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 'var(--sp-xs)' }}>{chip.count}</span>
@@ -223,58 +481,85 @@ export function CasesWorkspace({
           ))}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 240 }}>
-            <Input
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: phone ? 'wrap' : 'nowrap', width: phone ? '100%' : 'auto', flexShrink: 0 }}>
+          <div style={{ flex: phone ? '1 1 100%' : '1 1 360px', width: phone ? '100%' : 360, minWidth: phone ? '100%' : 280, maxWidth: 520 }}>
+            <SearchInput
               placeholder="Search ID, title, client…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<IconSearch size={16} />}
+              value={searchInput}
+              onChange={setSearchInput}
+              onClear={() => {
+                setSearchInput('')
+                patch({ q: null })
+              }}
+              onSearchSubmit={(val) => patch({ q: val || null })}
             />
           </div>
-          <Button
-            variant="secondary"
-            onClick={() => showSuccessToast('Exporting', 'Generating cases report...')}
-            icon={<IconDownload size={16} />}
-          >
-            Export
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => showSuccessToast('New Case', 'Opening case logging workspace')}
-            icon={<IconPlus size={16} />}
-          >
-            Log Incident
-          </Button>
+          {/* Both were success-toasts for work that never happened — the exact
+              fabrication src/actions/core.ts §1 names. Unbuilt renders as
+              Unavailable with the honest sentence, never as a fake success. */}
+          {!phone && (
+            <Button
+              variant="secondary"
+              icon={<IconDownload size={16} />}
+              style={{ flexShrink: 0 }}
+              onClick={() => {
+                const toExport =
+                  selectedRowIds.size > 0
+                    ? filteredCases.filter((c) => selectedRowIds.has(c.id))
+                    : filteredCases
+                exportCasesCsv(toExport, money)
+              }}
+              title={selectedRowIds.size > 0 ? `Export ${selectedRowIds.size} selected cases` : 'Export filtered cases'}
+            >
+              Export{selectedRowIds.size > 0 ? ` (${selectedRowIds.size})` : ''}
+            </Button>
+          )}
+          {/* RS-06 — LogCaseModal mints CASE-2026-${random}, writes nothing and
+              closes as a success. Until a case-creation action exists the
+              opener is Unavailable with the reason data/cases.ts already
+              states; the modal stays mounted below, unreachable from here. */}
+          {!phone && (
+            <Unavailable reason={NEW_CASE_UNAVAILABLE_REASON}>
+              <Button variant="primary" icon={<IconPlus size={16} />} disabled style={{ flexShrink: 0 }} onClick={() => setIsLogCaseOpen(true)}>
+                Log Incident
+              </Button>
+            </Unavailable>
+          )}
         </div>
       </div>
 
       {/* Main Table */}
       <Card padding="none" style={{ overflow: 'hidden' }}>
+        {/* From main's d7ca3bc: the table goes through PageBody, so loading
+            and a failed read outrank "No cases found". Before, a slow or
+            failed `listCases` showed the empty state under the error. */}
         <PageBody
-          {...(propLoading !== undefined ? { loading: propLoading } : {})}
-          {...(propError !== undefined && propError !== null ? { error: propError } : {})}
-          {...(propOnRetry ? { onRetry: propOnRetry } : {})}
+          loading={casesLoading}
+          error={casesError}
+          onRetry={() => setReadVersion((v) => v + 1)}
           hasRows={filteredCases.length > 0}
           empty={filteredCases.length === 0}
-          emptyIsFiltered={searchQuery.trim() !== '' || activeFilter !== 'All'}
-          onClearFilters={() => {
-            setActiveFilter('All')
-            setSearchQuery('')
-          }}
+          emptyIsFiltered={Boolean(routeCaseId) || searchQuery.trim() !== '' || activeFilter !== 'All'}
+          onClearFilters={() => (routeCaseId ? navigate('/inventory/cases') : patch({ status: null, q: null }))}
+          {...(routeCaseId ? { clearLabel: 'Show all cases' } : {})}
           noun="cases"
           skeleton="table"
           skeletonRows={5}
-          emptyTitle="No cases found"
-          emptyMessage="Adjust your filters or search query to find incident cases."
+          emptyTitle={routeCaseId ? `No case matches ${routeCaseId}` : 'No cases found'}
+          emptyMessage={
+            routeCaseId
+              ? 'Nothing in the queue carries this case ID. It may have been renumbered, or the link that brought you here is stale.'
+              : 'Adjust your filters or search query to find incident cases.'
+          }
         >
-          <div style={{ overflowX: 'auto' }}>
+          <DataTableShell ariaLabel="Incident cases">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ width: 36, padding: '12px 14px' }}>
                     <input
                       type="checkbox"
+                      aria-label="Select all cases"
                       checked={selectedRowIds.size === filteredCases.length && filteredCases.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}
@@ -299,6 +584,7 @@ export function CasesWorkspace({
                     <td style={{ padding: '12px 14px' }}>
                       <input
                         type="checkbox"
+                        aria-label={`Select case ${c.id}`}
                         checked={selectedRowIds.has(c.id)}
                         onChange={() => handleToggleRow(c.id)}
                         style={{ accentColor: 'var(--nav-active-accent)' }}
@@ -343,13 +629,10 @@ export function CasesWorkspace({
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: getPriorityColor(c.priority), fontWeight: 600 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-                        {c.priority}
-                      </span>
+                      <CasePriorityBadge priority={c.priority} />
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 600, color: getStatusColor(c.status) }}>{c.status}</div>
+                      <CaseStatusBadge status={c.status} />
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.disposition ?? '—'}</div>
                     </td>
                     {money && (
@@ -363,25 +646,65 @@ export function CasesWorkspace({
                       </td>
                     )}
                     <td style={{ padding: '12px 14px' }}>
-                      <div className="figure" style={{ fontWeight: 500, color: ageDaysOf(c) > 14 ? 'var(--warn)' : 'var(--text)' }}>
-                        {ageDaysOf(c)} Days
+                      <div className="figure" style={{ fontWeight: 500, color: ageDays(c.openedAd) > 14 ? 'var(--ready-text)' : 'var(--text)' }}>
+                        {ageDays(c.openedAd)} Days
                       </div>
                       <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                         {createdBsOf(c)}
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <Button variant="secondary" size="sm" onClick={() => navigate(CASE_WORKSPACE_ROUTE(c.id))}>
-                        Open Case
-                      </Button>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        {c.status !== 'Resolved' && c.status !== 'Closed' && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => setSelectedCaseForResolve(c)}
+                          >
+                            Resolve
+                          </Button>
+                        )}
+                        <Button variant="secondary" size="sm" onClick={() => navigate(CASE_WORKSPACE_ROUTE(c.id))}>
+                          Open Case
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         </PageBody>
       </Card>
+
+      <LogCaseModal
+        isOpen={isLogCaseOpen}
+        onClose={() => setIsLogCaseOpen(false)}
+        onSuccess={(newCase: Case) => upsertCase(newCase)}
+      />
+
+      {selectedCaseForResolve && (
+        <ResolveCaseModal
+          isOpen={Boolean(selectedCaseForResolve)}
+          onClose={() => setSelectedCaseForResolve(null)}
+          caseItem={selectedCaseForResolve}
+          onSuccess={(caseId, targetStatus, resolution) => {
+            setCasesList((prev) =>
+              prev.map((item) =>
+                item.id === caseId
+                  ? { ...item, status: targetStatus, disposition: resolution }
+                  : item,
+              ),
+            )
+          }}
+        />
+      )}
     </div>
   )
+
+  if (embedded) {
+    return content
+  }
+
+  return <PageShell width="full">{content}</PageShell>
 }

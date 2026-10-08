@@ -129,37 +129,42 @@ vi.mock('../../../lib/dataAccess', () => ({
   },
 }))
 
-/* ── Auto Assign Serials ────────────────────────────────────────────────────
+/* ── Availability: the two READS Confirm has left ───────────────────────────
  *
- * Stubbed here on purpose. `lib/availability` (the rule) and
- * `lib/queries/availability` (the range round-trip) each have their own suite
- * driven by execution; what THIS file has to prove is the ORDERING Confirm
- * imposes on them — reserve first, move the stage second, and give the units
- * back if the stage does not move. Reproducing a unit corpus through the `db`
- * stub would test the stub.
+ * RULING 2026-09-08 (R-26). Until 8 Sep this stub also carried
+ * `reserveAssignedUnits` and `releaseReservations`, because Confirm wrote the
+ * holds itself and then compensated if the stage did not move. Postgres writes
+ * them now, from the Booked transition (`0100`), so what is left on this side is
+ * a plan, a courtesy collision check, and a read-back — and this file's job is
+ * unchanged: prove the ORDER Confirm imposes on them, not re-test them.
+ *
+ * `describeCollisions` is reproduced faithfully rather than stubbed to a canned
+ * string, because the sentence it builds is what an operator acts on and this
+ * file asserts on it. The real one is pinned by execution in
+ * `lib/queries/__tests__/availability.test.ts`.
  */
 const assign = vi.hoisted(() => {
   const state = {
     /** Set false to simulate a line that cannot be covered. */
     complete: true,
-    /** Reservation ids handed back by a successful reserve. */
-    reservationIds: ['res-1', 'res-2'] as string[],
-    /** Booking line unit row ids handed back by a successful reserve. */
-    unitRowIds: ['blu-1', 'blu-2'] as string[],
+    /** Unit ids the plan assigns — what the pre-check is then asked about. */
+    wantedUnits: ['unit-1', 'unit-2'] as string[],
+    /** Live holds the pre-check finds in the way. */
+    collisions: [] as Array<{ unitId: string; bookingNo: string }>,
+    /** What the database reports holding, read back after the transition. */
+    held: { units: 2, quantityHolds: 0, quantityReserved: 0 },
     /** Ordered log of every availability call, for interleaving assertions. */
     calls: [] as string[],
-    /** Rows released, with the reason given. */
-    released: [] as Array<{ ids: readonly string[]; reason: string }>,
-    /** Booking line unit rows released. */
-    releasedUnits: [] as Array<{ ids: readonly string[]; reason?: string | undefined }>,
+    /** Arguments the pre-check was handed, so the question asked can be asserted. */
+    precheckArgs: null as { assetIds: readonly string[]; excluded: string | null } | null,
   }
   function reset(): void {
     state.complete = true
-    state.reservationIds = ['res-1', 'res-2']
-    state.unitRowIds = ['blu-1', 'blu-2']
+    state.wantedUnits = ['unit-1', 'unit-2']
+    state.collisions = []
+    state.held = { units: 2, quantityHolds: 0, quantityReserved: 0 }
     state.calls = []
-    state.released = []
-    state.releasedUnits = []
+    state.precheckArgs = null
   }
   return { state, reset }
 })
@@ -168,32 +173,43 @@ vi.mock('../../../lib/queries/availability', () => {
   class AssignmentIncompleteError extends Error {
     plan: unknown
     constructor(plan: unknown) {
-      super('cannot be confirmed: not every line has units free for these dates.')
+      super('cannot be confirmed: not every line has stock free for these dates.')
       this.name = 'AssignmentIncompleteError'
       this.plan = plan
     }
   }
   return {
     AssignmentIncompleteError,
+    availabilityRules: () => ({ disqualifyingStates: new Set<string>(), bounds: 'half-open' as const }),
     planAssignment: async (bookingId: string) => {
       assign.state.calls.push('plan')
-      return { bookingId, bookingNo: 'B-715', lines: [], skipped: [], complete: assign.state.complete }
-    },
-    reserveAssignedUnits: async () => {
-      assign.state.calls.push('reserve')
       return {
-        reservationIds: assign.state.reservationIds,
-        unitRowIds: assign.state.unitRowIds,
-        units: assign.state.reservationIds.length,
+        bookingId,
+        bookingNo: 'B-715',
+        window: { fromAd: '2026-08-16T09:00:00+05:45', toAd: '2026-08-18T18:00:00+05:45' },
+        bounds: 'half-open' as const,
+        lines: assign.state.wantedUnits.map((unitId) => ({
+          kind: 'serialised' as const,
+          outcome: { assigned: [{ unitId, assetTag: unitId.toUpperCase() }] },
+        })),
+        skipped: [],
+        complete: assign.state.complete,
       }
     },
-    releaseReservations: async (ids: readonly string[], reason: string) => {
-      assign.state.calls.push('release')
-      assign.state.released.push({ ids, reason })
+    findCollidingHolds: async (assetIds: readonly string[], _w: unknown, _b: unknown, excluded: string | null) => {
+      assign.state.calls.push('precheck')
+      assign.state.precheckArgs = { assetIds, excluded }
+      return assign.state.collisions
     },
-    releaseBookingLineUnits: async (ids: readonly string[], reason?: string) => {
-      assign.state.calls.push('releaseUnits')
-      assign.state.releasedUnits.push({ ids, reason })
+    describeCollisions: (collisions: Array<{ unitId: string; bookingNo: string }>) => {
+      if (collisions.length === 0) return null
+      const bookings = [...new Set(collisions.map((c) => c.bookingNo))].sort()
+      const units = collisions.length === 1 ? '1 unit is' : `${String(collisions.length)} units are`
+      return `${units} already held for these dates by ${bookings.length === 1 ? 'booking' : 'bookings'} ${bookings.join(', ')}.`
+    },
+    readHeldForBooking: async () => {
+      assign.state.calls.push('read-back')
+      return assign.state.held
     },
   }
 })
@@ -222,6 +238,7 @@ function bookingAt(stage: string): Record<string, unknown> {
     stage,
     cancelled_at: null,
     closed_at: null,
+    project_type: 'Documentary',
   }
 }
 
@@ -429,6 +446,20 @@ describe('the refusals that precede every write', () => {
     expect(writes.state.ops).toHaveLength(0)
   })
 
+  it('refuses a Quote with no project type — the type is required to confirm', async () => {
+    db.state.responses['bookings'] = [[{ ...bookingAt('Quote'), project_type: null }]]
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/Select a project type before confirming/)
+    expect(writes.state.ops).toHaveLength(0)
+  })
+
+  it('refuses a Quote whose project-type key predates 0144 — missing is missing', async () => {
+    const { project_type: _dropped, ...legacy } = bookingAt('Quote')
+    void _dropped
+    db.state.responses['bookings'] = [[legacy]]
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/Select a project type before confirming/)
+    expect(writes.state.ops).toHaveLength(0)
+  })
+
   it('refuses offline when the context says so, before reading anything', async () => {
     setUpConfirmable()
     await expect(
@@ -599,98 +630,194 @@ describe('the dispatcher — implemented, and ruled 15 Aug 2026', () => {
   })
 })
 
-/* ── Auto Assign Serials — the ordering Confirm imposes ─────────────────────
+/* ── Reservations: R-26, the database writes them ──────────────────────────
  *
- * Added 16 Aug 2026 with the feature (PLAN.md §4.30). Until then Confirm moved
- * the stage and assigned nothing, so every booking it confirmed reached the
- * floor with no units behind it — the blocker sitting under Packing, Handover,
- * Return, Reset and Evidence equally.
- *
- * The ordering is the part that can only be wrong here, and it is wrong in a
- * way no type catches: reserve-then-transition leaves a Quote untouched when
- * gear is short, transition-then-reserve leaves a Booked booking with nothing
- * behind it. Booked is the stage the floor acts on, so the difference is real.
+ * The ordering used to be the part that could only be wrong here: reserve then
+ * transition left a Quote untouched when gear was short, transition then reserve
+ * left a Booked booking with nothing behind it. `0100` removed the choice — the
+ * hold and the stage move are one INSERT — so what this block pins now is that
+ * the app does not write, does not compensate, and asks its two reads in the
+ * right order and about the right things.
  */
-describe('Auto Assign Serials', () => {
-  it('reserves BEFORE moving the stage, so a shortfall leaves the booking at Quote', async () => {
+describe('reservations are the database\'s to write (R-26)', () => {
+  /**
+   * The assertion R-26 names by hand. Not `expect(writes)` — a source scan, so a
+   * future edit that reaches for `supabase.from('inventory_reservations').insert`
+   * anywhere in `src/actions` fails here rather than in production, whether or
+   * not this suite happens to exercise that line.
+   */
+  /**
+   * The positive control for the scan below.
+   *
+   * A source grep that finds nothing is indistinguishable from a source grep
+   * that cannot find anything, and this repo has published two dead-module
+   * findings that were really broken greps. So the patterns are pinned against
+   * the shapes they must catch AND the shapes they must not, in this file, next
+   * to the test that uses them.
+   */
+  const WRITES_THE_TABLE =
+    /\.from\(\s*['"`]inventory_reservations['"`]\s*\)[\s\S]{0,40}?\.(insert|upsert|update|delete)\(/
+  const WRITES_VIA_HELPER =
+    /(idempotentInsert|insertViaSourceSwitch|safeUpdate|updateViaSourceSwitch)\(\s*['"`]inventory_reservations['"`]/
+
+  function writesReservations(source: string): boolean {
+    return WRITES_THE_TABLE.test(source) || WRITES_VIA_HELPER.test(source)
+  }
+
+  it.each([
+    ["await supabase.from('inventory_reservations').insert(row)", true],
+    ["await supabase\n  .from('inventory_reservations')\n  .update({ released_at: at })\n  .eq('id', id)", true],
+    ["await insertViaSourceSwitch('inventory_reservations', row)", true],
+    ["await idempotentInsert('inventory_reservations', row)", true],
+    ["await safeUpdate('inventory_reservations', id, { released_at: at })", true],
+    ['/* the app no longer writes inventory_reservations at all */', false],
+    ["supabase.from('inventory_reservations').select('asset_id').is('released_at', null)", false],
+  ])('the write scan reads %j as %s', (source, expected) => {
+    expect(writesReservations(source)).toBe(expected)
+  })
+
+  it('no action anywhere writes to inventory_reservations', () => {
+    /* Vite `?raw`, NOT `node:fs`: this project ships no `@types/node`, so a
+       suite under `src/` cannot import it and `npm run typecheck` is a gate.
+       Same device `lib/__tests__/breakpoints.test.ts` uses to read a stylesheet. */
+    const sources = import.meta.glob('../../**/*.ts', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>
+
+    const offenders = Object.entries(sources)
+      .filter(([path]) => !path.includes('__tests__'))
+      .filter(([, source]) => writesReservations(source))
+      .map(([path]) => path)
+
+    expect(offenders).toEqual([])
+    /* A guard on the guard: if the glob ever stops matching, this test would
+       pass by finding nothing at all rather than by finding nothing wrong. */
+    expect(Object.keys(sources).length).toBeGreaterThan(20)
+  })
+
+  it('plans, then pre-checks, then writes the stage row — and writes nothing else', async () => {
     setUpConfirmable()
     await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
-    expect(assign.state.calls).toEqual(['plan', 'reserve'])
-    /* The stage row is written after both — insertsOn reads the write log,
-       which is only appended to by applyBookingTransition. */
+    expect(assign.state.calls).toEqual(['plan', 'precheck', 'read-back'])
     expect(insertsOn('booking_stage_transitions')).toHaveLength(1)
+    expect(insertsOn('inventory_reservations')).toHaveLength(0)
+    expect(writes.state.ops.filter((o) => o.table === 'inventory_reservations')).toEqual([])
   })
 
   it('refuses the confirm when a line cannot be covered, and writes no stage row', async () => {
     assign.state.complete = false
     setUpConfirmable()
 
-    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/not every line has units free/)
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/not every line has stock free/)
     /* 0003:1478 — "If reservation fails on any line, Confirm is rejected with
        the conflicting line named." Rejected means nothing moved. */
     expect(insertsOn('booking_stage_transitions')).toHaveLength(0)
     expect(assign.state.calls).toEqual(['plan'])
   })
 
-  it('never reserves when the booking is not a Quote — the stage guard runs first', async () => {
+  /**
+   * R-26's own test line: *"pre-check returns the colliding booking numbers"*.
+   * The operator is told which booking to ring, not `23P01 conflicting key value
+   * violates exclusion constraint`.
+   */
+  it('names the booking already holding a unit, and never reaches the transition', async () => {
+    assign.state.collisions = [
+      { unitId: 'unit-1', bookingNo: 'B-912' },
+      { unitId: 'unit-2', bookingNo: 'B-920' },
+    ]
+    setUpConfirmable()
+
+    const failure = await confirm({ id: 'B-715', clientUuid: ACTION_KEY }).catch((e: unknown) => e)
+
+    expect(String(failure)).toContain('B-912')
+    expect(String(failure)).toContain('B-920')
+    expect(String(failure)).toContain('B-715 was not confirmed')
+    expect(insertsOn('booking_stage_transitions')).toHaveLength(0)
+  })
+
+  it('asks the pre-check about the units the plan wants, and excludes the booking itself', async () => {
+    assign.state.wantedUnits = ['unit-7', 'unit-8']
+    setUpConfirmable()
+
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+
+    expect(assign.state.precheckArgs?.assetIds).toEqual(['unit-7', 'unit-8'])
+    /* Its own holds are not a conflict with itself — a re-read of a booking that
+       already holds its gear must not refuse the booking that holds it. */
+    expect(assign.state.precheckArgs?.excluded).toBe(BOOKING_ID)
+  })
+
+  it('never pre-checks when the booking is not a Quote — the stage guard runs first', async () => {
     db.state.responses['bookings'] = [[bookingAt(CONFIRM_TO)]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
 
     await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/is at/)
-    /* A repeat submit must not take a second set of units off the shelf. */
     expect(assign.state.calls).toEqual([])
   })
 
-  it('never reserves for a booking with no live lines', async () => {
+  it('never pre-checks for a booking with no live lines', async () => {
     setUpConfirmable([])
     await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/no live lines/)
     expect(assign.state.calls).toEqual([])
   })
 
-  it('reports units reserved separately from qty, because a bundle line has no serial', async () => {
-    assign.state.reservationIds = ['res-1']
-    assign.state.unitRowIds = ['blu-1']
+  /**
+   * The read-back, not the plan. The trigger reserves from `booking_line_units`
+   * and the line remainder; the plan is the app's intent. Where they differ the
+   * table is the one that is true, so the number on the screen comes from the
+   * table.
+   */
+  it('reports what the database holds, read back after the transition', async () => {
+    assign.state.held = { units: 1, quantityHolds: 0, quantityReserved: 0 }
     setUpConfirmable([{ id: LINE_A, qty: 2 }, { id: LINE_B, qty: 3 }])
 
     const { result } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+
     expect(result.units).toBe(5)
     expect(result.unitsReserved).toBe(1)
-    expect(result.unitRowsCreated).toBe(1)
   })
 
-  /*
-   * The compensation path. This is NOT atomicity — PostgREST gives a browser no
-   * transaction — but a refused transition must still give the units back, or a
-   * booking that was never confirmed keeps a camera off the shelf until someone
-   * finds it by hand.
+  /**
+   * ⭐ INV-02 from Confirm's side. On the live catalogue every product is
+   * `tracking_mode = 'Quantity'` with no `product_units` rows, so `unitsReserved`
+   * is 0 for every booking and `quantityReserved` is the number that says the
+   * booking has stock behind it. Reporting only the first would read as "nothing
+   * was held" on 204 of 204 products.
    */
-  it('releases the held units and booking line units when the stage transition is refused', async () => {
+  it('reports bulk stock held separately from serialised units', async () => {
+    assign.state.held = { units: 0, quantityHolds: 1, quantityReserved: 40 }
+    setUpConfirmable([{ id: LINE_A, qty: 40 }])
+
+    const { result, events } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+
+    expect(result.unitsReserved).toBe(0)
+    expect(result.quantityHolds).toBe(1)
+    expect(result.quantityReserved).toBe(40)
+    /* The same two figures reach the bus, so a listener is not left inferring
+       from `unitsReserved: 0` that the booking holds nothing. */
+    expect(events[0]?.payload).toMatchObject({ quantityReserved: 40, quantityHolds: 1 })
+  })
+
+  /**
+   * The compensation this file used to assert is gone, and its absence is the
+   * assertion. A confirm the database did not apply wrote no holds either — one
+   * INSERT carried both — so there is nothing to give back and nothing to strand.
+   */
+  it('strands nothing when the stage does not move, and says so', async () => {
     /* A Quote whose stage re-read never reports the move: applyBookingTransition
        returns ok, then the persistence check fails. */
     db.state.responses['bookings'] = [[bookingAt('Quote')], [{ stage: 'Quote' }]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
 
-    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/treat the booking as NOT confirmed/)
-    expect(assign.state.calls).toContain('release')
-    expect(assign.state.calls).toContain('releaseUnits')
-    expect(assign.state.released[0]?.ids).toEqual(['res-1', 'res-2'])
-    expect(assign.state.releasedUnits[0]?.ids).toEqual(['blu-1', 'blu-2'])
-  })
+    const failure = await confirm({ id: 'B-715', clientUuid: ACTION_KEY }).catch((e: unknown) => e)
 
-  it('names the booking in the release reason, so a stray hold is traceable', async () => {
-    db.state.responses['bookings'] = [[bookingAt('Quote')], [{ stage: 'Quote' }]]
-    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
-
-    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow()
-    expect(assign.state.released[0]?.reason).toContain('B-715')
-    expect(assign.state.releasedUnits[0]?.reason).toContain('B-715')
-  })
-
-  it('does not release anything on a confirm that succeeds', async () => {
-    setUpConfirmable()
-    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
-    expect(assign.state.released).toEqual([])
-    expect(assign.state.releasedUnits).toEqual([])
+    expect(String(failure)).toContain('treat the booking as NOT confirmed')
+    expect(String(failure)).toContain('Nothing is held against it')
+    expect(String(failure)).not.toContain('still live')
+    /* No release call exists to make — the read-back never runs on this path. */
+    expect(assign.state.calls).toEqual(['plan', 'precheck'])
   })
 })

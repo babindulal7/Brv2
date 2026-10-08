@@ -73,13 +73,14 @@
 
 import type { ItemState, ItemCounts, JobState, Flag } from '../lib/workflow'
 import { assertItemCounts, FLAGS } from '../lib/workflow'
+import { captureError } from '../lib/monitoring'
 
 /** A handover session runs the same three-stage lifecycle `JobState` already models — the convention `returnInspection.ts` set for this booking's other session-based job. */
 export type SessionState = JobState
 
 export type SessionId = 'S1' | 'S2'
 
-export type DeliveryMethod = 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
+export type DeliveryMethod = 'Client Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
 
 export interface HandoverUnit {
   id: string
@@ -224,7 +225,7 @@ export interface DeliveryFieldFlags {
  * Customer Pickup has no `vehicle` key to render in the first place.
  */
 export const DELIVERY_FIELDS: Record<DeliveryMethod, DeliveryFieldFlags> = {
-  'Customer Pickup': { pickupPerson: true, vehicle: false, driver: false, courier: false, address: false, warehouseStaff: true, estimatedArrival: false },
+  'Client Pickup': { pickupPerson: true, vehicle: false, driver: false, courier: false, address: false, warehouseStaff: true, estimatedArrival: false },
   'Babin Delivery': { pickupPerson: false, vehicle: true, driver: true, courier: false, address: true, warehouseStaff: true, estimatedArrival: true },
   Courier: { pickupPerson: false, vehicle: false, driver: false, courier: true, address: true, warehouseStaff: true, estimatedArrival: true },
   'Third Party': { pickupPerson: true, vehicle: true, driver: true, courier: false, address: true, warehouseStaff: true, estimatedArrival: true },
@@ -236,7 +237,7 @@ export function driverSignatureRequired(m: DeliveryMethod): boolean {
 }
 
 export const DELIVERY = {
-  method: 'Customer Pickup' as DeliveryMethod,
+  method: 'Client Pickup' as DeliveryMethod,
   pickupPerson: 'Bikash Thapa',
   pickupPersonPhone: '+977 9843927164',
   warehouseStaff: 'Sagar Maharjan',
@@ -319,7 +320,10 @@ export const HANDOVER_SEED_ERROR: string | null = (() => {
   return null
 })()
 
-if (HANDOVER_SEED_ERROR) console.error(HANDOVER_SEED_ERROR)
+if (HANDOVER_SEED_ERROR) {
+  console.error(HANDOVER_SEED_ERROR)
+  captureError(new Error(HANDOVER_SEED_ERROR), { where: 'seed.handover' })
+}
 
 /**
  * ⭐ TODO(decision) — `Handover Workflow.md` §17 leaves mandatory evidence

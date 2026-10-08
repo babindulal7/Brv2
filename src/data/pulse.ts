@@ -1,8 +1,30 @@
 import { rupees, roundHalfUp, toRupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
-import { TODAY, toBs, formatBs, formatAd, isWeekend } from '../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd, isWeekend } from '../lib/bs'
 import { UTILIZATION_PCT, REVENUE_TODAY_PAISA, COUNTS } from './today'
 import { PARENTS } from './inventory'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
+/*
+ * ⚖ X-05, considered and LEFT AS A CONSTANT — deliberately.
+ *
+ * Every figure in this file is seed: the ledger rows, the month series and the
+ * revenue totals are all generated relative to the `TODAY` above, at import.
+ * The date-range options below (`Today`, `Yesterday`, `This week`, …) select
+ * over those generated rows, so anchor and data move together and the screen is
+ * internally consistent. Making the anchor live would leave the DATA frozen and
+ * the RANGES moving — "Today" would select a day the seed has no rows for, and
+ * the Pulse report would start showing empty periods that look like quiet days.
+ *
+ * The fix for this file is wiring it to `lib/queries`, not unfreezing its clock.
+ */
+
 
 /**
  * **Reports ▸ Pulse — the seed ledger.**
@@ -77,7 +99,7 @@ function share(amount: Paisa, ratio: number): Paisa {
 
 /** "26 Jul" — the axis/label form. Full dates always go through `lib/bs.ts`. */
 export function shortAd(d: Date): string {
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kathmandu' })
+  return formatAd(d)
 }
 
 /**

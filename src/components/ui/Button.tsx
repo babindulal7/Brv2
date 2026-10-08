@@ -1,5 +1,6 @@
+import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
-import Icon from './Icon'
+import Icon, { type IconName } from './Icon'
 
 /**
  * Rewritten from Tailwind utility classNames — `bg-blue-600 hover:bg-blue-700...` —
@@ -10,11 +11,11 @@ import Icon from './Icon'
  */
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'gold'
-  size?: 'sm' | 'md' | 'lg'
-  loading?: boolean
-  icon?: ReactNode
-  iconRight?: ReactNode
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'link' | 'tertiary' | undefined
+  size?: 'sm' | 'md' | 'lg' | undefined
+  loading?: boolean | undefined
+  icon?: ReactNode | IconName | undefined
+  iconRight?: ReactNode | IconName | undefined
 }
 
 const SIZE_STYLES: Record<
@@ -27,6 +28,11 @@ const SIZE_STYLES: Record<
   lg: { minHeight: 48, padding: '0 24px', fontSize: 'var(--t-body)', gap: 10, iconSize: 18 },
 }
 
+/*
+ * No orange variant, deliberately. DESIGN_DIRECTION_SPEC_v4.2 §2.3: orange is a
+ * status hue only (the On Rent family) — "never on buttons". Blue is the one
+ * action colour; a Miraz-style `brand`/`action` orange button is a defect here.
+ */
 function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperties {
   switch (variant) {
     case 'primary':
@@ -34,7 +40,7 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
         background: 'var(--btn-primary-bg)',
         color: 'var(--btn-primary-fg)',
         border: '1px solid transparent',
-        boxShadow: 'var(--shadow-card)',
+        boxShadow: 'var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.25)',
       }
     case 'secondary':
       return {
@@ -54,6 +60,20 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
         color: 'var(--text2)',
         border: '1px solid transparent',
       }
+    case 'link':
+      return {
+        background: 'transparent',
+        color: 'var(--link)',
+        border: 'none',
+        padding: 0,
+        minWidth: 'auto',
+      }
+    case 'tertiary':
+      return {
+        background: 'var(--card2)',
+        color: 'var(--text)',
+        border: '1px solid var(--border)',
+      }
     case 'danger':
       return {
         background: 'var(--btn-danger-bg)',
@@ -61,22 +81,13 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
         border: '1px solid transparent',
         boxShadow: 'var(--shadow-card)',
       }
-    case 'gold':
-      // §4.2 "gold outline = external asset only" governs the status token, not
-      // this generic reusable primitive — a solid filled gold background is fine.
-      return {
-        background: '#d8a93a',
-        color: '#000000',
-        border: '1px solid transparent',
-        boxShadow: 'var(--shadow-card)',
-      }
   }
 }
 
-export function Button({
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   children,
-  variant = 'primary',
-  size = 'md',
+  variant = 'secondary',
+  size = 'sm',
   loading = false,
   disabled,
   icon,
@@ -84,28 +95,35 @@ export function Button({
   style,
   className,
   ...props
-}: ButtonProps) {
+}, ref) {
   const sizing = SIZE_STYLES[size]
   const isDisabled = disabled || loading
+  const isLink = variant === 'link'
+  const resolvedIcon = typeof icon === 'string' ? <Icon name={icon as IconName} size={sizing.iconSize} /> : icon
+  const resolvedIconRight = typeof iconRight === 'string' ? <Icon name={iconRight as IconName} size={sizing.iconSize} /> : iconRight
 
   return (
     <button
+      ref={ref}
       disabled={isDisabled}
-      className={['press', className].filter(Boolean).join(' ')}
+      aria-busy={loading || undefined}
+      className={['ui-button', `ui-button--${variant}`, `ui-button--${size}`, 'press', className].filter(Boolean).join(' ')}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontWeight: 600,
+        fontWeight: isLink ? 500 : 600,
         fontFamily: 'inherit',
         whiteSpace: 'nowrap',
         userSelect: 'none',
-        borderRadius: 'var(--r-btn)',
-        transition: 'background-color 150ms, opacity 150ms',
+        borderRadius: isLink ? 0 : 'var(--r-btn)',
+        transition: 'background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
         cursor: isDisabled ? 'not-allowed' : 'pointer',
-        opacity: isDisabled ? 0.5 : 1,
+        position: 'relative',
+        opacity: isDisabled ? 0.45 : 1,
         minHeight: sizing.minHeight,
-        padding: sizing.padding,
+        minWidth: 'var(--control-height, 44px)',
+        padding: isLink ? 0 : sizing.padding,
         fontSize: sizing.fontSize,
         gap: sizing.gap,
         ...variantStyle(variant),
@@ -113,13 +131,38 @@ export function Button({
       }}
       {...props}
     >
-      {loading ? (
-        <Icon name="refresh" size={sizing.iconSize} style={{ animation: 'spin 0.8s linear infinite' }} />
-      ) : (
-        icon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+      {/*
+        §5 — "loading keeps the button's width (label transparent, spinner
+        overlays) so layout never jumps."
+
+        This previously swapped the ICON SLOT for the spinner while leaving
+        `children` rendered, so a text-only button — the common case — GAINED a
+        spinner and grew wider the moment it started loading, shifting whatever
+        sat beside it. Now the label keeps its box and turns transparent, and
+        the spinner is absolutely positioned over it: the button occupies the
+        exact same rectangle loading or not.
+
+        Opacity retains the accessible name. Both icon slots keep their boxes
+        during loading, including icon-only buttons with an aria-label.
+      */}
+      {loading && (
+        <Icon
+          name="refresh"
+          size={sizing.iconSize}
+          style={{
+            animation: 'spin 0.8s linear infinite',
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
       )}
-      {children && <span>{children}</span>}
-      {!loading && iconRight && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{iconRight}</span>}
+      {resolvedIcon && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{resolvedIcon}</span>}
+      {children !== undefined && <span className="ui-button__label" style={{ opacity: loading ? 0 : 1 }}>{children}</span>}
+      {resolvedIconRight && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{resolvedIconRight}</span>}
     </button>
   )
-}
+})
+
+Button.displayName = 'Button'

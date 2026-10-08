@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 import { rupees, type Paisa } from '../money'
 import { applyListFilters, type ListFilters } from './listQuery'
-import type { ListQueryResult } from './useList'
+import { useList, type ListQueryResult, type ListResult } from './useList'
 import type { Database } from '../../types/supabase'
 import type { SortKey } from '../../data/inventory'
 
@@ -752,6 +752,11 @@ export interface InventoryListOptions extends ListFilters {
   /** Ask for the total matching count. Costs an extra planner pass, so it is opt-in. */
   withCount?: boolean
   /**
+   * Only fetch total count via HEAD request. Omits BASE_COLUMNS and units embed,
+   * returning zero row payload for facet counters.
+   */
+  headOnly?: boolean
+  /**
    * Include `daily_rate` and `replacement_value`. **Money.** Read MONEY above,
    * then pass `useCanViewMoney()` from `src/lib/moneyVisibility.ts` — never a
    * literal `true`, and never a boolean held in component state.
@@ -783,7 +788,30 @@ function narrows(filters: ListFilters, column: string): boolean {
  * and the filters cannot disagree about whether a chip is live.
  */
 export async function listInventory(opts: InventoryListOptions = {}): Promise<ListQueryResult<InventoryListRow>> {
-  const { withCount, withMoney, ...filters } = opts
+  const { withCount, withMoney, headOnly, ...filters } = opts
+
+  if (headOnly) {
+    let columns = 'id'
+    if (narrows(filters, UNIT_STATE_COLUMN)) columns += UNIT_STATE_JOIN
+    if (narrows(filters, UNIT_CONDITION_COLUMN)) columns += UNIT_CONDITION_JOIN
+
+    const base = supabase
+      .from('products_v')
+      .select(columns, { count: 'exact', head: true })
+
+    const query = applyListFilters(base, {
+      ...filters,
+      searchColumns: filters.searchColumns ?? SEARCH_COLUMNS,
+    })
+
+    const { count, error } = (await query) as unknown as {
+      error: { message: string } | null
+      count: number | null
+    }
+
+    if (error) throw new Error(`listInventory count failed: ${error.message}`)
+    return { rows: [], total: count ?? null }
+  }
 
   let columns = withMoney ? COLUMNS_WITH_MONEY : BASE_COLUMNS
   if (narrows(filters, UNIT_STATE_COLUMN)) columns += UNIT_STATE_JOIN
@@ -881,6 +909,109 @@ export async function listUnits(
   if (error) throw new Error(`listUnits failed: ${error.message}`)
 
   return { rows: (data ?? []).map(toUnitRow), total: count ?? null }
+}
+
+/* ── One asset, by whatever reference a URL carries ────────────────────────── */
+
+/** What `/inventory/:assetId` resolves to: the product plus every unit row it has. */
+export interface AssetDetailRecord {
+  product: InventoryListRow
+  /** Every unit of the product, retired included, in `asset_tag` order. `[]` for a quantity SKU. */
+  units: InventoryUnitRow[]
+  /**
+   * Set when the ref named a UNIT (a manufacturer serial or an asset tag)
+   * rather than the product's own `asset_code` — the id of that unit, so the
+   * screen can open on the row the link meant.
+   */
+  matchedUnitId: string | null
+}
+
+export interface AssetDetailOptions {
+  /** Include the money columns. **Money.** Pass `useCanViewMoney()`, never a literal — see MONEY above. */
+  withMoney?: boolean
+}
+
+/**
+ * Resolves the reference in `/inventory/:assetId` to one product and its units.
+ *
+ * The links that land on this route carry product UUIDs from Intel sessions and
+ * three public identifier vocabularies, all
+ * live today: `StockCheck.tsx` links `assetCode || serial`, every floor
+ * workspace and `BookingDetail` link a unit's serial, and the Inventory list's
+ * own rows link the `asset_code`. So the ref is tried as, in order:
+ *
+ *  1. `products.asset_code` — the route's own primary vocabulary (`EQ......`).
+ *  2. `product_units.serial_no` — nullable but unique (0004:194).
+ *  3. `product_units.asset_tag` — the NOT NULL unique unit key (0004:195, :233).
+ *
+ * The order cannot mis-resolve: `asset_code` is CHECK-constrained to
+ * `^EQ[0-9]{6}$` (0004:139-140) while an asset tag carries a suffix and a
+ * serial a different prefix entirely, so no single string matches two steps.
+ *
+ * ⚠ Deliberately NOT narrowed by `catalogue()`: that filter set exists for the
+ * list, where Archived means "left the catalogue". A DETAIL link from an old
+ * booking or a stock-check row must keep resolving after the product is
+ * archived — Law 3 keeps the row forever, and a page that 404s on it would
+ * read as deletion. Retired units are likewise returned (see RETIREMENT).
+ *
+ * Returns `null` only when a genuinely successful query matched nothing —
+ * a failed read THROWS, so "not found" and "could not load" stay two facts.
+ */
+export async function getAssetDetail(
+  ref: string,
+  opts: AssetDetailOptions = {},
+): Promise<AssetDetailRecord | null> {
+  const trimmed = ref.trim()
+  if (!trimmed) return null
+
+  const money = opts.withMoney ? { withMoney: true as const } : {}
+
+  // Intel sessions carry the stable product UUID. Resolve it without guessing
+  // an asset code or scanning units.
+  const byId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+    ? await listInventory({ chips: { id: [trimmed] }, ...money })
+    : null
+
+  // 1. The product's own asset code. `chips` → `in(asset_code, [ref])`;
+  //    `asset_code` is unique (0004:139), so this is zero rows or one.
+  const byCode = byId ? null : await listInventory({ chips: { asset_code: [trimmed] }, ...money })
+  let product = byId?.rows[0] ?? byCode?.rows[0] ?? null
+  let matchedUnitId: string | null = null
+
+  // 2./3. A unit's serial, then its asset tag. Two `.eq` lookups rather than
+  // one `.or`, because both columns are unique and the mock engine's `.or()`
+  // only speaks ilike — and a lookup that silently skipped a clause there
+  // would resolve links in production that 404 in every demo.
+  if (!product) {
+    for (const column of ['serial_no', 'asset_tag', 'barcode'] as const) {
+      const { data, error } = (await supabase
+        .from('product_units_v')
+        .select('id, product_id')
+        .eq(column, trimmed)
+        .limit(1)) as unknown as {
+        data: Array<{ id: string; product_id: string }> | null
+        error: { message: string } | null
+      }
+      if (error) throw new Error(`getAssetDetail failed: ${error.message}`)
+      const hit = data?.[0]
+      if (hit) {
+        matchedUnitId = hit.id
+        const byId = await listInventory({ chips: { id: [hit.product_id] }, ...money })
+        product = byId.rows[0] ?? null
+        break
+      }
+    }
+  }
+
+  if (!product) return null
+
+  // The units ride along rather than being a second fetch from the screen:
+  // unlike the list's per-row expansion, this page renders every tab from the
+  // full unit set (availability figures, maintenance dates, the units table),
+  // so fetching them lazily would just serialise two round-trips.
+  const units = await listUnits(product.id, money)
+
+  return { product, units: units.rows, matchedUnitId }
 }
 
 /* ── Named filter sets ────────────────────────────────────────────────────────
@@ -1033,3 +1164,110 @@ export function inventorySort(key: SortKey): { column: string; ascending: boolea
       return null
   }
 }
+
+/* ── the category list ─────────────────────────────────────────────────── */
+
+/**
+ * The categories that EXIST, which is not the list the forms were offering.
+ *
+ * `data/addBundle.ts`'s `INVENTORY_CATEGORIES` (sixteen) and
+ * `data/addEquipment.ts`'s `EQUIPMENT_CATEGORIES` (those plus 'Consumable',
+ * seventeen) are the `product_category` enum's members. `inventory_categories`
+ * holds **six** rows — Camera, Lens, Lighting, Audio, Grip, Support — seeded by
+ * `0012_seed_data.sql:115-123`, which is the ONLY insert into that table in any
+ * migration.
+ *
+ * `products.category_id` is NOT NULL against that table and `createEquipment`
+ * resolves the chosen label by name, so eleven of the seventeen offered
+ * categories refused the save **after** Add Equipment had reported every gate
+ * clear. Its error even names the gap ("a different universe"). Add Bundle's
+ * Primary Category picker fails the same way, under a hint that reads "From the
+ * Inventory category list".
+ *
+ * Reading the table is right whichever way the open question is ruled: if the
+ * other eleven enum members are later seeded as rows, a picker built from this
+ * shows them the day the migration lands, with no code change.
+ */
+export interface CategoryOption {
+  id: string
+  name: string
+  code: string
+}
+
+interface CategoryOptionRow {
+  id: string
+  name: string
+  code: string | null
+}
+
+export async function listInventoryCategories(): Promise<CategoryOption[]> {
+  const { data, error } = await supabase
+    .from('inventory_categories')
+    .select('id, name, code')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(`Could not read the category list: ${error.message}`)
+  }
+
+  return ((data ?? []) as unknown as CategoryOptionRow[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    code: r.code ?? '',
+  }))
+}
+
+async function fetchCategories(): Promise<ListQueryResult<CategoryOption>> {
+  const rows = await listInventoryCategories()
+  return { rows, total: rows.length }
+}
+
+export function useInventoryCategories(): ListResult<CategoryOption> {
+  return useList<CategoryOption>(fetchCategories, {}, { isFilteredOverride: false })
+}
+
+export {
+  stockLabel,
+  unitLocationOf,
+  INV_STYLE,
+  INV_DOT,
+  INV_ORDER,
+  INV_TONE,
+  INV_LABEL,
+  invLabel,
+  CONDITIONS,
+  CONDITION_TONE,
+  CONDITION_INK,
+  TABS,
+  TAB_SLUG,
+  tabFromSlug,
+  EQUIPMENT_CHIPS,
+  chipKey,
+  PARENTS,
+  CATEGORY_ICON,
+  CATEGORY_OPTIONS,
+  PRODUCT_CATEGORIES,
+  TRACKING_MODES,
+  FILTER_RAIL,
+  breakdownOf,
+  conditionOf,
+  inventoryGlance,
+  inventoryDetailGroups,
+  SORTS,
+  SORT_UNAVAILABLE,
+  ROWS_PER_PAGE_OPTIONS,
+} from '../../data/inventory'
+
+export type {
+  InvStatus,
+  Condition,
+  InventoryTab,
+  EquipmentChip,
+  ChildRow,
+  StatusCount,
+  ParentRow,
+  FacetKey,
+  RailRow,
+  SortKey,
+} from '../../data/inventory'

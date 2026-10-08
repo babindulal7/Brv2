@@ -13,6 +13,8 @@ import { MemoryRouter } from 'react-router-dom'
 const role = { current: 'Owner' as string }
 const canSeeMoney = { current: true }
 
+const mockDamageFindings = vi.hoisted(() => ({ current: null as unknown }))
+
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => canSeeMoney.current }))
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({
@@ -20,6 +22,19 @@ vi.mock('../../../lib/auth', () => ({
     loading: false,
     isLocked: false,
   }),
+}))
+vi.mock('../../../lib/queries/damage', async (orig) => {
+  const actual = await orig<typeof import('../../../lib/queries/damage')>()
+  return {
+    ...actual,
+    getDamageFindings: vi.fn().mockImplementation(async () => {
+      return mockDamageFindings.current !== null ? mockDamageFindings.current : actual.DAMAGE_FINDINGS
+    }),
+  }
+})
+
+vi.mock('../../../actions/inventory/resolveDamage', () => ({
+  resolveDamageFinding: vi.fn().mockResolvedValue({ id: 'DMG-2026-0041', approval_state: 'Approved' }),
 }))
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
@@ -62,6 +77,7 @@ async function typeCharge(id: string, value: string) {
 beforeEach(() => {
   role.current = 'Owner'
   canSeeMoney.current = true
+  mockDamageFindings.current = null
 })
 
 afterEach(async () => {
@@ -113,10 +129,18 @@ describe('DamageTab — the money half', () => {
     expect(approve.disabled).toBe(false)
   })
 
-  it('approving moves the unit to Maintenance and out of booking', async () => {
+  /* RS-05 (BUG_AUDIT_LIFECYCLE) — this test used to pin the sentence "moved to
+     Maintenance and is no longer available for booking". Nothing writes a
+     damage finding, a maintenance job or a unit status from this tab, so the
+     notice may not claim it; it now states that the approval lives on this
+     screen only. When an approveDamageFinding action exists, this assertion
+     flips back to the move. */
+  it('approving says the decision is recorded on this screen only — no write is claimed', async () => {
     await mount()
     await click(buttons(/Approve as/)[0])
-    expect(text()).toContain('moved to Maintenance and is no longer available for booking')
+    expect(text()).toContain('recorded on this screen only')
+    expect(text()).toContain('nothing has been written')
+    expect(text()).not.toContain('is no longer available for booking')
   })
 })
 
@@ -145,5 +169,24 @@ describe('DamageTab — §8.3', () => {
     expect(text()).toContain('Charges and deposit settlement are not shown to this role')
     expect(text()).not.toContain('Replacement value')
     expect(text()).not.toContain('Deposit held')
+  })
+
+  it('renders standard empty state when database returns no damage findings for money-blind role', async () => {
+    canSeeMoney.current = false
+    role.current = 'Warehouse'
+    mockDamageFindings.current = []
+    await mount()
+    expect(text()).toContain('No damage findings')
+    expect(text()).toContain('No active damage findings are currently recorded')
+  })
+})
+
+describe('DamageTab — empty state', () => {
+  it('renders standard empty state when database returns no damage findings', async () => {
+    mockDamageFindings.current = []
+    await mount()
+    expect(text()).toContain('Nothing waiting')
+    expect(text()).toContain('Every damage finding raised at Return has been approved or rejected')
+    expect(text()).toContain('No settled findings')
   })
 })

@@ -4,8 +4,10 @@ import { packRental } from '../packRental'
 import { handoverRental } from '../handoverRental'
 import { completeReturn } from '../returnRental'
 import { completeReset } from '../completeReset'
+import { notReturnedDecisionEndsLine } from '../floorVerb'
 import { ActionPermissionError } from '../../core'
 import { JOBS, JOB_ORDER, type JobName } from '../../../lib/workflow'
+import type { NotReturnedDecision } from '../../../types/database'
 
 /**
  * # What this suite pins
@@ -25,9 +27,12 @@ import { JOBS, JOB_ORDER, type JobName } from '../../../lib/workflow'
  *     write payload is scanned for a money column, because "we didn't select
  *     `rate`" is exactly the kind of claim that quietly stops being true.
  *  4. **The write ORDER.** Session opened `In Progress` → lines and movements →
- *     session `Completed` → stage. That order is what makes a partial failure
+ *     stage → session `Completed`. That order is what makes a partial failure
  *     leave a truthful residue instead of a booking that moved on unrecorded
- *     work, and nothing else in the codebase can check it.
+ *     work, and nothing else in the codebase can check it. The last two swapped
+ *     on 6 Sep 2026 (PK-05): sealing before the stage moved meant a refused
+ *     transition spent the one Packing session `0003:152` allows a booking, and
+ *     the booking could never be packed again.
  *  5. **The refusals.** Every `throw` below stands in for a row Postgres would
  *     reject — a reason under ten characters, a Not Returned line with no
  *     decision, a line that belongs to another booking.
@@ -124,10 +129,25 @@ const writes = vi.hoisted(() => {
   const state = {
     ops: [] as Array<{ kind: 'insert' | 'update'; table: string; id: string | null; payload: Record<string, unknown>; clientUuid?: string }>,
     seq: 0,
+    /**
+     * One table whose INSERT the database refuses.
+     *
+     * `idempotentInsert` rethrows every error that is not a `client_uuid`
+     * duplicate (`dataAccess.ts`), so this is exactly what a rejected
+     * `booking_stage_transitions` row looks like from inside `floorVerb` — a
+     * gate raised by `0090`, a stage-order or causal-order check from `0021`,
+     * or the table's own RLS. It is the only way to reach the PK-05 path.
+     */
+    refuseInsertOn: null as string | null,
+    legacyPickupEnum: false,
+    rejectedPickupInserts: 0,
   }
   function reset(): void {
     state.ops = []
     state.seq = 0
+    state.refuseInsertOn = null
+    state.legacyPickupEnum = false
+    state.rejectedPickupInserts = 0
   }
   return { state, reset }
 })
@@ -135,6 +155,13 @@ const writes = vi.hoisted(() => {
 vi.mock('../../../lib/dataAccess', () => ({
   generateClientUuid: () => `gen-${String(++writes.state.seq).padStart(4, '0')}`,
   idempotentInsert: async (table: string, payload: Record<string, unknown>) => {
+    if (table === 'operation_sessions' && writes.state.legacyPickupEnum && payload['delivery_method'] === 'Client Pickup') {
+      writes.state.rejectedPickupInserts += 1
+      throw new Error('[DataAccess] Insert failed on operation_sessions: invalid input value for enum delivery_method: "Client Pickup"')
+    }
+    if (writes.state.refuseInsertOn === table) {
+      throw new Error(`[DataAccess] Insert failed on ${table}: Gate Check Failure (simulated).`)
+    }
     writes.state.ops.push({ kind: 'insert', table, id: null, payload })
     return { data: { id: payload['id'] ?? `${table}-row`, ...payload }, error: null }
   },
@@ -257,7 +284,13 @@ describe('each verb runs at exactly one stage — JOBS[j].runsAt, not a re-typed
 
 describe('Pack — the whole shape, in the order that makes a partial failure truthful', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    /* The second element is what the stage READ-BACK in `advanceStage`
+       (RL-08 / Audit-01 P0-01) must see after the transition — `nextRows`
+       repeats the last entry forever, so a one-element queue would report
+       'Booked' for the persisted stage and the verb would rightly refuse to
+       seal. Refusal paths below never reach the read-back, so the extra row
+       changes nothing for them. */
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [
@@ -266,7 +299,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     ]
   })
 
-  it('opens the session In Progress, fills it, closes it, and only then moves the stage', async () => {
+  it('opens the session In Progress, fills it, moves the stage, and seals it last', async () => {
     const result = await packRental(
       {
         id: 'B-715',
@@ -280,13 +313,16 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
       .filter((o) => o.table !== 'audit_events')
       .map((o) => `${o.kind}:${o.table}:${String(o.payload['state'] ?? '')}`)
 
+    /* PK-05 — the seal is LAST. Everything above it can be re-attempted; a seal
+       that lands before the stage cannot be taken back, and on Pack it costs the
+       booking the only Packing session `0003:152` allows it. */
     expect(sequence).toEqual([
       'insert:operation_sessions:In Progress',
       'insert:packing_lines:Packed',
       'insert:session_line_movements:',
       'insert:session_line_movements:',
-      'update:operation_sessions:Completed',
       'insert:booking_stage_transitions:',
+      'update:operation_sessions:Completed',
     ])
 
     expect(result.sessionId).not.toBeNull()
@@ -413,7 +449,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     expect(movements[0]?.payload['unit_id']).toBeUndefined()
 
     writes.reset()
-    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
@@ -437,11 +473,144 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
   })
 })
 
+/* ── 2b · PK-05 — a refused transition must not cost the one Packing session ─ */
+
+/**
+ * `operation_sessions_one_packing_per_booking` (`0003:152`) gives a booking
+ * exactly one Packing session, ever, and only an `'In Progress'` session is
+ * resumable. So the pair of facts below is the whole bug: seal, then fail to
+ * move the stage, and the booking is unpackable forever with no rule an
+ * operator can read.
+ *
+ * `0094` (written 6 Sep 2026) does not make the refusal itself more likely — it
+ * guards *direct* writes to `bookings.stage` and exempts the SECURITY DEFINER
+ * transition function. What it removes is the escape hatch: `0021`'s column
+ * REVOKE was inert, so until now a refused transition could be papered over
+ * with a PATCH. From here, a refusal is simply a booking that did not move.
+ */
+describe('PK-05 — a refused stage transition leaves the session resumable', () => {
+  beforeEach(() => {
+    // resolve → read-back (see the Pack suite's note on the second element)
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
+    db.state.responses['operation_sessions'] = [[]]
+    db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
+  })
+
+  it('does not seal the Packing session when the transition is refused', async () => {
+    writes.state.refuseInsertOn = 'booking_stage_transitions'
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow(/still open/)
+
+    // Opened, never sealed: the update to 'Completed' is the write that would
+    // have spent the session.
+    expect(opsOn('operation_sessions').map((o) => o.kind)).toEqual(['insert'])
+    expect(insertsOn('operation_sessions')[0]?.payload['state']).toBe('In Progress')
+  })
+
+  it('does not seal when the stage cannot be read back at the new value — RL-08 / Audit-01 P0-01', async () => {
+    /* The transition INSERT resolves (the one-element bookings queue repeats
+       'Booked' forever, so the read-back after it still sees 'Booked'), yet
+       the verb must NOT seal or claim the move: a stage the database cannot
+       be SEEN to have reached is a refused stage. */
+    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow(/still open/)
+
+    // Opened, never sealed — same residue as a refusal, because it is one.
+    expect(opsOn('operation_sessions').map((o) => o.kind)).toEqual(['insert'])
+    expect(insertsOn('operation_sessions')[0]?.payload['state']).toBe('In Progress')
+  })
+
+  it('still records the pass that happened — lines, movements and an audit row', async () => {
+    writes.state.refuseInsertOn = 'booking_stage_transitions'
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow()
+
+    expect(insertsOn('packing_lines')).toHaveLength(1)
+    expect(insertsOn('session_line_movements')).toHaveLength(2)
+    // The audit row states the state the session is ACTUALLY in — not the one
+    // the verb was aiming at. A row saying 'Completed' here would be the lie.
+    const audit = insertsOn('audit_events').find((o) => o.payload['table_name'] === 'operation_sessions')
+    expect((audit?.payload['new_values'] as Record<string, unknown>)['state']).toBe('In Progress')
+  })
+
+  it('the next pack resumes that open session instead of opening a second one', async () => {
+    // What the refused pass left behind, read back on the retry.
+    db.state.responses['operation_sessions'] = [[{ id: 'sess-1', session_no: 1, state: 'In Progress' }]]
+    db.state.responses['packing_lines'] = [
+      [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }],
+      [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }],
+    ]
+
+    const result = await packRental(
+      { id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] },
+      OWNER,
+    )
+
+    expect(insertsOn('operation_sessions')).toHaveLength(0)
+    expect(result.sessionId).toBe('sess-1')
+    expect(result.sessionClosed).toBe(true)
+    expect(result.stage).toEqual({ from: 'Booked', to: 'Packed' })
+  })
+
+  it('refuses by name when the booking has already spent its one Packing session', async () => {
+    // The state the OLD order could strand a booking in, and which no code path
+    // in this repo can undo. It must read as a sentence, not as a unique-index
+    // violation from Postgres.
+    db.state.responses['operation_sessions'] = [[{ id: 'sess-1', session_no: 1, state: 'Completed' }]]
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow(/exactly one, ever/)
+
+    expect(writes.state.ops).toHaveLength(0)
+  })
+
+  it('a Handover whose transition is refused also stays open, rather than sealing a handover that did not happen', async () => {
+    // Handover may close short (0003:129 — staggered collection), so it would
+    // have sealed on the old order and left a Completed session claiming a
+    // pickup the client never took.
+    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
+    writes.state.refuseInsertOn = 'booking_stage_transitions'
+
+    await expect(
+      handoverRental({ bookingId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER),
+    ).rejects.toThrow(/still open/)
+
+    expect(opsOn('operation_sessions').map((o) => o.kind)).toEqual(['insert'])
+  })
+
+  it('a Handover that leaves lines Remaining still seals — the refusal changes nothing there', async () => {
+    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
+    db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Remaining' }]]
+
+    const result = await handoverRental(
+      { bookingId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] },
+      OWNER,
+    )
+
+    expect(result.stage).toBeNull()
+    expect(result.sessionClosed).toBe(true)
+    expect(opsOn('operation_sessions')[1]?.payload['state']).toBe('Completed')
+  })
+})
+
 /* ── 3 · bookings.stage is never written directly ───────────────────────── */
 
 describe('the stage moves through the transition trigger and nothing else', () => {
   it('never writes the bookings table, and the transition it does write matches JOBS', async () => {
-    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    // resolve → stage read-back (RL-08) — the second element is the moved stage
+    db.state.responses['bookings'] = [[bookingAt('Packed')], [bookingAt('On Rent')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
@@ -458,6 +627,41 @@ describe('the stage moves through the transition trigger and nothing else', () =
     expect(transition?.['actor_id']).toBe(OWNER.userId)
     expect(transition?.['actor_role']).toBe(OWNER.role)
     expect(transition?.['branch_id']).toBe(BRANCH_ID)
+  })
+
+  it('writes signatures to signatures table before stage transition when provided', async () => {
+    db.state.responses['bookings'] = [[bookingAt('Packed')], [bookingAt('On Rent')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['operation_sessions'] = [[]]
+    db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
+
+    const nowIso = new Date().toISOString()
+    await handoverRental(
+      {
+        bookingId: 'B-715',
+        lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }],
+        signatures: [
+          { role: 'Receiver', signerName: 'Alice Client', signedAt: nowIso, isRequired: true },
+          { role: 'Warehouse staff', signerName: 'Bob Staff', signedAt: nowIso, isRequired: true },
+        ],
+      },
+      OWNER,
+    )
+
+    const sigWrites = insertsOn('signatures')
+    expect(sigWrites).toHaveLength(2)
+    expect(sigWrites[0]?.payload['signature_role']).toBe('Receiver')
+    expect(sigWrites[0]?.payload['signer_name']).toBe('Alice Client')
+    expect(sigWrites[0]?.payload['created_by']).toBe(OWNER.userId)
+
+    expect(sigWrites[1]?.payload['signature_role']).toBe('Warehouse staff')
+    expect(sigWrites[1]?.payload['signer_name']).toBe('Bob Staff')
+
+    // Signatures written before booking_stage_transitions
+    const sigIndex = writes.state.ops.findIndex((o) => o.table === 'signatures')
+    const transitionIndex = writes.state.ops.findIndex((o) => o.table === 'booking_stage_transitions')
+    expect(sigIndex).toBeGreaterThan(-1)
+    expect(transitionIndex).toBeGreaterThan(sigIndex)
   })
 })
 
@@ -478,7 +682,7 @@ describe('Law 6 — the floor verbs touch no money', () => {
   ]
 
   it('names no money column in any SELECT, and carries none in any write payload', async () => {
-    db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+    db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
@@ -507,7 +711,9 @@ describe('Law 6 — the floor verbs touch no money', () => {
 
 describe('Handover', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    // resolve → stage read-back (RL-08); the staged/partial flows below simply
+    // never consume the second element, because no transition is attempted.
+    db.state.responses['bookings'] = [[bookingAt('Packed')], [bookingAt('On Rent')]]
     db.state.responses['booking_lines'] = [
       [
         { id: LINE_A, qty: 2 },
@@ -538,6 +744,58 @@ describe('Handover', () => {
     const session = insertsOn('operation_sessions')[0]?.payload
     expect(session?.['operation']).toBe('Handover')
     expect(session?.['delivery_method']).toBe('Babin Delivery')
+  })
+
+  it('retries Client Pickup with the legacy session enum only when that enum rejects it', async () => {
+    db.state.responses['bookings'] = [
+      [{ ...bookingAt('Packed'), delivery_type: 'Client Pickup' }],
+      [bookingAt('On Rent')],
+    ]
+    db.state.responses['handover_lines'] = [
+      [],
+      [
+        { id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' },
+        { id: 'hl-2', booking_line_id: LINE_B, state: 'Picked Up' },
+      ],
+    ]
+    writes.state.legacyPickupEnum = true
+
+    await handoverRental({
+      bookingId: 'B-715',
+      lines: [
+        { bookingLineId: LINE_A, unitIds: ['u1', 'u2'] },
+        { bookingLineId: LINE_B, unitIds: ['u3'] },
+      ],
+    }, OWNER)
+
+    expect(writes.state.rejectedPickupInserts).toBe(1)
+    expect(insertsOn('operation_sessions')).toHaveLength(1)
+    expect(insertsOn('operation_sessions')[0]?.payload['delivery_method']).toBe('Customer Pickup')
+  })
+
+  it('writes Client Pickup directly when the session enum accepts it', async () => {
+    db.state.responses['bookings'] = [
+      [{ ...bookingAt('Packed'), delivery_type: 'Client Pickup' }],
+      [bookingAt('On Rent')],
+    ]
+    db.state.responses['handover_lines'] = [
+      [],
+      [
+        { id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' },
+        { id: 'hl-2', booking_line_id: LINE_B, state: 'Picked Up' },
+      ],
+    ]
+
+    await handoverRental({
+      bookingId: 'B-715',
+      lines: [
+        { bookingLineId: LINE_A, unitIds: ['u1', 'u2'] },
+        { bookingLineId: LINE_B, unitIds: ['u3'] },
+      ],
+    }, OWNER)
+
+    expect(writes.state.rejectedPickupInserts).toBe(0)
+    expect(insertsOn('operation_sessions')[0]?.payload['delivery_method']).toBe('Client Pickup')
   })
 
   it('marks movements Picked Up, one row per scanned unit, with its serial', async () => {
@@ -661,7 +919,8 @@ describe('Handover', () => {
 
 describe('Return', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+    // resolve → stage read-back (RL-08); holds short of terminal never read it.
+    db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
   })
@@ -719,8 +978,122 @@ describe('Return', () => {
     expect(rows[1]?.payload['inspection_state']).toBeUndefined() // column default: 'Pending'
   })
 
+  /* ── RT-02 · damage found at Return becomes a row, not a note ─────────── */
+
+  it('raises one damage_findings row per damaged unit, parented on the return line', async () => {
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [
+          {
+            bookingLineId: LINE_A,
+            unitIds: ['u1', 'u2'],
+            condition: 'Damaged',
+            damage: [
+              { unitId: 'u1', condition: 'Damaged', description: '  Lens mount cracked; will not seat.  ' },
+              { unitId: 'u2', condition: 'Lost', description: 'Battery door missing on return.' },
+            ],
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    const found = insertsOn('damage_findings')
+    expect(found).toHaveLength(2)
+    expect(result.damageFindings).toBe(2)
+
+    const returnLineId = insertsOn('return_lines')[0]?.payload['id']
+    expect(returnLineId).toBeDefined()
+
+    const first = found[0]?.payload ?? {}
+    expect(first['source']).toBe('Return inspection')
+    // 0003:471 — exactly one parent, and it must match the source.
+    expect(first['return_line_id']).toBe(returnLineId)
+    expect(first['cleaning_queue_entry_id']).toBeUndefined()
+    expect(first['unit_id']).toBe('u1')
+    expect(first['damage_type']).toBe('Damaged')
+    expect(first['description']).toBe('Lens mount cracked; will not seat.')
+    // Law 6 / 0003:488 — the approver's field, never written by a floor verb.
+    expect(first['estimated_cost']).toBeUndefined()
+    // The column default is 'Pending Approval'; the verb does not restate it.
+    expect(first['approval_state']).toBeUndefined()
+    expect(String(first['severity'])).toMatch(/no severity scale is ruled/)
+
+    expect(found[1]?.payload['unit_id']).toBe('u2')
+    expect(found[1]?.payload['damage_type']).toBe('Lost')
+  })
+
+  it('raises nothing when no unit was damaged', async () => {
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
+      OWNER,
+    )
+    expect(insertsOn('damage_findings')).toHaveLength(0)
+    expect(result.damageFindings).toBe(0)
+  })
+
+  it('does not await a Consumable-tracked line with no return row (0141)', async () => {
+    db.state.responses['booking_lines'] = [
+      [
+        { id: LINE_A, qty: 1, line_type: 'Equipment', product_id: 'p-a', products: null },
+        { id: LINE_B, qty: 2, line_type: 'Equipment', product_id: 'p-b', products: { tracking_mode: 'Consumable' } },
+      ],
+    ]
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
+      OWNER,
+    )
+    // The gaffer tape has no return row and is not named in stageHeldBy: it
+    // was consumed at Handover (0142) and the Return gate agrees (0141).
+    expect(result.stageHeldBy).toEqual([])
+  })
+
+  it('refuses a damage finding with no description — that is a NOT NULL column, not a form rule', async () => {
+    await expect(
+      completeReturn(
+        {
+          rentalId: 'B-715',
+          lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], damage: [{ unitId: 'u1', condition: 'Damaged', description: '   ' }] }],
+        },
+        OWNER,
+      ),
+    ).rejects.toThrow(/no description/)
+    expect(insertsOn('damage_findings')).toHaveLength(0)
+  })
+
+  it('refuses two findings against the same unit on one line', async () => {
+    await expect(
+      completeReturn(
+        {
+          rentalId: 'B-715',
+          lines: [
+            {
+              bookingLineId: LINE_A,
+              unitIds: ['u1'],
+              damage: [
+                { unitId: 'u1', condition: 'Damaged', description: 'Cracked housing.' },
+                { unitId: 'u1', condition: 'Lost', description: 'Also the cap.' },
+              ],
+            },
+          ],
+        },
+        OWNER,
+      ),
+    ).rejects.toThrow(/two damage findings/)
+  })
+
   it('records a Not Returned line with its reason and decision, and moves nothing', async () => {
-    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned' }]]
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Write off' }],
+    ]
 
     const result = await completeReturn(
       {
@@ -729,8 +1102,8 @@ describe('Return', () => {
           {
             bookingLineId: LINE_A,
             outcome: 'missing',
-            reason: 'Client says it is still on the shoot floor',
-            notReturnedDecision: 'Still expected',
+            reason: 'Client confirms it was destroyed on site',
+            notReturnedDecision: 'Write off',
           },
         ],
       },
@@ -739,11 +1112,23 @@ describe('Return', () => {
 
     const line = insertsOn('return_lines')[0]?.payload
     expect(line?.['state']).toBe('Not Returned')
-    expect(line?.['not_returned_decision']).toBe('Still expected')
+    expect(line?.['not_returned_decision']).toBe('Write off')
     // Absence is never converted into a state (0003:630) — nothing moved.
     expect(insertsOn('session_line_movements')).toHaveLength(0)
-    // Not Returned is terminal for this verb, so the stage still moves.
+    // 'Write off' ends the line, so the booking's return is finished.
     expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+  })
+
+  it('refuses a damage finding on a verb that is not Return', async () => {
+    await expect(
+      packRental(
+        {
+          id: 'B-715',
+          lines: [{ bookingLineId: LINE_A, damage: [{ unitId: 'u1', condition: 'Damaged', description: 'Cracked housing.' }] }],
+        },
+        OWNER,
+      ),
+    ).rejects.toThrow(/Return inspection only/)
   })
 
   it('holds the stage while a line is still Outstanding', async () => {
@@ -757,6 +1142,236 @@ describe('Return', () => {
     expect(insertsOn('return_lines')[0]?.payload['state']).toBe('Outstanding')
     expect(result.stage).toBeNull()
     expect(result.stageHeldBy).toEqual([LINE_A])
+    // RT-01 — the gear is still out, so no actual-return instant is stamped.
+    expect(opsOn('bookings')).toHaveLength(0)
+  })
+
+  it('stamps bookings.actual_return_at once, at the session that moves the booking to Returned (RT-01)', async () => {
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }], occurredAt: '2026-08-12T05:00:00.000Z', clientUuid: 'act-1' },
+      OWNER,
+    )
+    expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+    const stamps = opsOn('bookings')
+    expect(stamps).toHaveLength(1)
+    expect(stamps[0]).toMatchObject({ kind: 'update', payload: { actual_return_at: '2026-08-12T05:00:00.000Z' }, clientUuid: 'act-1' })
+  })
+})
+
+/* ── 6b · RT-03 — "Not Returned" is not always finished ─────────────────── */
+
+/**
+ * # The positive control
+ *
+ * Restoring the rule this replaces — terminality read off `return_lines.state`
+ * alone, i.e. `TERMINAL_LINE_STATES.Return.includes(row.state)` as the whole
+ * answer — turns the first two cases below red: the stage moves to Returned,
+ * `stageHeldBy` empties, and `bookings.actual_return_at` is stamped on gear that
+ * is still with the client. That is the defect, and these are the tests that
+ * would have caught it.
+ *
+ * The rule is `0003:399` — "any unresolved Not Returned blocks Stage 10
+ * Completed" — with `0015:116` mapping the retired `'Completed'` onto the
+ * canonical `Returned`. The last case is the half that makes the fix safe rather
+ * than merely correct: the booking is left On Rent, so the Return workspace
+ * still opens and the expected item can actually be received. A booking that
+ * could not leave Returned is what this replaces; a booking that cannot leave On
+ * Rent would be the same bug wearing a different stage.
+ */
+describe('RT-03 — a line that is still expected back is not a finished line', () => {
+  beforeEach(() => {
+    db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['operation_sessions'] = [[]]
+  })
+
+  it("holds the stage on a Not Returned line whose decision is 'Still expected'", async () => {
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' }],
+    ]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [
+          {
+            bookingLineId: LINE_A,
+            outcome: 'missing',
+            reason: 'Still on the shoot floor, client bringing it tomorrow',
+            notReturnedDecision: 'Still expected',
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    expect(insertsOn('return_lines')[0]?.payload['not_returned_decision']).toBe('Still expected')
+    expect(result.stage).toBeNull()
+    expect(result.stageHeldBy).toEqual([LINE_A])
+    // The gear is still out, so no actual-return instant is stamped (RT-01's rule).
+    expect(opsOn('bookings')).toHaveLength(0)
+    // Return is multi-session (0003:129): this session is a finished session.
+    expect(result.sessionClosed).toBe(true)
+  })
+
+  it('reads the decision off the line table, so an earlier session holds the stage too', async () => {
+    // Nothing about LINE_A is named in THIS call — it was declared Not Returned
+    // / Still expected by an earlier session and the row is still that. The
+    // terminality question asks about every live line, not only the named ones.
+    db.state.responses['booking_lines'] = [
+      [
+        { id: LINE_A, qty: 1 },
+        { id: LINE_B, qty: 1 },
+      ],
+    ]
+    db.state.responses['return_lines'] = [
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' }],
+      [
+        { id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' },
+        { id: 'rl-2', booking_line_id: LINE_B, state: 'Returned', not_returned_decision: null },
+      ],
+    ]
+
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_B, unitIds: ['u2'], condition: 'Good' }] },
+      OWNER,
+    )
+
+    expect(result.stage).toBeNull()
+    expect(result.stageHeldBy).toEqual([LINE_A])
+    expect(opsOn('bookings')).toHaveLength(0)
+  })
+
+  it('holds the stage on a Not Returned line with no decision at all', async () => {
+    /* `return_lines_not_returned_needs_reason_and_decision` (0003:378) should
+       make this row impossible, so this pins the DIRECTION of the defensive
+       branch rather than a reachable state: nothing has been decided, so nothing
+       is resolved. Holding at On Rent is the recoverable side — the line can
+       still be received or re-declared. */
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: null }],
+    ]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [
+          {
+            bookingLineId: LINE_A,
+            outcome: 'missing',
+            reason: 'Not on the van and not on the shelf',
+            notReturnedDecision: 'Still expected',
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    expect(result.stage).toBeNull()
+    expect(result.stageHeldBy).toEqual([LINE_A])
+  })
+
+  it('the three decisions that end the line still move the stage', async () => {
+    for (const decision of ['Charge replacement', 'Insurance claim', 'Write off'] as const) {
+      db.reset()
+      writes.reset()
+      db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
+      db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+      db.state.responses['operation_sessions'] = [[]]
+      db.state.responses['return_lines'] = [
+        [],
+        [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: decision }],
+      ]
+
+      const result = await completeReturn(
+        {
+          rentalId: 'B-715',
+          lines: [
+            {
+              bookingLineId: LINE_A,
+              outcome: 'missing',
+              reason: `Decision recorded on the floor: ${decision}`,
+              notReturnedDecision: decision,
+            },
+          ],
+        },
+        OWNER,
+      )
+
+      expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+      expect(result.stageHeldBy).toEqual([])
+    }
+  })
+
+  it('a later session receives the expected item, and THAT session moves the stage', async () => {
+    // The state the first session left: one Return session, Completed, and a
+    // return_lines row still Not Returned / Still expected.
+    db.state.responses['operation_sessions'] = [[{ id: 'sess-1', session_no: 1, state: 'Completed', notes: null }]]
+    db.state.responses['return_lines'] = [
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' }],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned', not_returned_decision: 'Still expected' }],
+    ]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }],
+        occurredAt: '2026-09-07T09:00:00.000Z',
+        clientUuid: 'act-2',
+      },
+      OWNER,
+    )
+
+    // A second session beside the first, not a resumed one (0003:85).
+    expect(insertsOn('operation_sessions')[0]?.payload['session_no']).toBe(2)
+    // The line row is UPDATEd — `unique (booking_line_id)` (0003:376) means
+    // there is one row per line for the whole booking, not one per session.
+    expect(insertsOn('return_lines')).toHaveLength(0)
+    expect(opsOn('return_lines')[0]).toMatchObject({ kind: 'update', id: 'rl-1', payload: { state: 'Returned' } })
+
+    expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+    expect(opsOn('bookings')).toHaveLength(1)
+    expect(opsOn('bookings')[0]).toMatchObject({ payload: { actual_return_at: '2026-09-07T09:00:00.000Z' } })
+  })
+
+  it('names the decision column in the return_lines read, and no money column with it', async () => {
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned', not_returned_decision: null }],
+    ]
+    await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
+      OWNER,
+    )
+
+    const reads = db.state.calls.filter((c) => c.table === 'return_lines')
+    expect(reads.length).toBeGreaterThan(0)
+    for (const read of reads) {
+      const columns = read.columns.split(',').map((c) => c.trim())
+      expect(columns).toContain('not_returned_decision')
+      // Law 6 — the extra column is an enum, and the list is still spelled out.
+      expect(read.columns).not.toContain('*')
+    }
+  })
+
+  it('every member of not_returned_decision has an answer, and only one of them holds the line', () => {
+    /* Keyed on the enum in `floorVerb.ts`, so a fifth member fails `tsc` there.
+       This pins the VALUES: flipping 'Still expected' back to terminal — the
+       whole of RT-03 — fails here as well as in the behaviour tests above. */
+    const decisions: readonly NotReturnedDecision[] = [
+      'Still expected',
+      'Charge replacement',
+      'Insurance claim',
+      'Write off',
+    ]
+    const holds = decisions.filter((d) => !notReturnedDecisionEndsLine(d))
+    expect(holds).toEqual(['Still expected'])
+    expect(notReturnedDecisionEndsLine(null)).toBe(false)
   })
 })
 
@@ -850,6 +1465,87 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
     expect(Object.keys(updates[0]?.payload ?? {})).not.toContain('state')
   })
 
+  it('records a Reset exception and raises a Cleaning damage finding', async () => {
+    db.state.responses['cleaning_queue_entries'] = [
+      [
+        { id: 'cq-1', unit_id: 'u1', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+        { id: 'cq-2', unit_id: 'u2', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+      ],
+    ]
+
+    const result = await completeReset(
+      {
+        id: 'B-715',
+        resetEntries: [
+          { unitId: 'u1' },
+          {
+            unitId: 'u2',
+            problemState: 'Damaged',
+            damageType: 'Structural',
+            damageSeverity: 'High',
+            problemReason: 'Tripod collar cracked through; will not hold.',
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    // The exception is routed, so it is NOT counted as reset — but it IS recorded.
+    expect(result.unitsReset).toBe(1)
+    expect(result.damageFindings).toBe(1)
+
+    const updates = opsOn('cleaning_queue_entries')
+    const routed = updates.find((o) => o.id === 'cq-2')
+    expect(routed?.payload['problem_state']).toBe('Damaged')
+    // 0003:895 — a routed item is not stamped reset.
+    expect(routed?.payload['reset_completed_at']).toBeUndefined()
+    expect(updates.find((o) => o.id === 'cq-1')?.payload['reset_completed_at']).toBeDefined()
+
+    const finding = insertsOn('damage_findings')[0]?.payload ?? {}
+    expect(finding['source']).toBe('Cleaning')
+    // 0003:474 — a Cleaning finding hangs off the queue entry, never a return line.
+    expect(finding['cleaning_queue_entry_id']).toBe('cq-2')
+    expect(finding['return_line_id']).toBeUndefined()
+    expect(finding['unit_id']).toBe('u2')
+    expect(finding['damage_type']).toBe('Structural')
+    expect(finding['severity']).toBe('High')
+    expect(finding['description']).toBe('Tripod collar cracked through; will not hold.')
+    expect(finding['estimated_cost']).toBeUndefined()
+    // TODO(decision) in the engine: no case is raised because nothing creates one.
+    expect(finding['case_id']).toBeUndefined()
+  })
+
+  it('refuses a Damaged reset entry with no description', async () => {
+    await expect(
+      completeReset({ id: 'B-715', resetEntries: [{ unitId: 'u1', problemState: 'Damaged', problemReason: '  ' }] }, OWNER),
+    ).rejects.toThrow(/marked Damaged with no description/)
+    expect(insertsOn('damage_findings')).toHaveLength(0)
+  })
+
+  it('records Missing Item and Needs Repair without raising a damage finding', async () => {
+    db.state.responses['cleaning_queue_entries'] = [
+      [
+        { id: 'cq-1', unit_id: 'u1', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+        { id: 'cq-2', unit_id: 'u2', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+      ],
+    ]
+
+    const result = await completeReset(
+      {
+        id: 'B-715',
+        resetEntries: [
+          { unitId: 'u1', problemState: 'Missing Item' },
+          { unitId: 'u2', problemState: 'Needs Repair' },
+        ],
+      },
+      OWNER,
+    )
+
+    expect(result.unitsReset).toBe(0)
+    expect(result.damageFindings).toBe(0)
+    expect(opsOn('cleaning_queue_entries').map((o) => o.payload['problem_state'])).toEqual(['Missing Item', 'Needs Repair'])
+  })
+
   it('refuses a unit that is not in this booking reset queue', async () => {
     db.state.responses['cleaning_queue_entries'] = [
       [{ id: 'cq-1', unit_id: 'unit-1', requires_reset: true, reset_completed_at: null }],
@@ -885,7 +1581,7 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
 
 describe('the dispatcher — implemented, and gated on a capability that actually resolves', () => {
   function setUpPack(): void {
-    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
@@ -936,7 +1632,8 @@ describe('one shape, four verbs', () => {
     for (const { job, run } of cases) {
       db.reset()
       writes.reset()
-      db.state.responses['bookings'] = [[bookingAt(JOBS[job].runsAt)]]
+      // resolve (runsAt) → stage read-back (the stage the verb sets)
+      db.state.responses['bookings'] = [[bookingAt(JOBS[job].runsAt)], [bookingAt(JOBS[job].sets as string)]]
       db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
       db.state.responses['operation_sessions'] = [[]]
       db.state.responses[LINE_TABLE[job]] = [
@@ -951,7 +1648,24 @@ describe('one shape, four verbs', () => {
       for (const other of Object.values(LINE_TABLE)) {
         if (other !== LINE_TABLE[job]) expect(tables.has(other)).toBe(false)
       }
-      expect(tables.has('cleaning_queue_entries')).toBe(false)
+      /*
+       * The cleaning queue is RETURN's to fill, and only Return's.
+       *
+       * This asserted `false` for all three verbs until 25 Aug 2026, which was
+       * right when nothing raised queue rows at all. `floorVerb.ts` §5b then
+       * gave Return that job, for a stated reason: `completeResetQueue` has
+       * always required a queue row to exist before it will record a reset,
+       * nothing created one, so Complete Reset was refused on every real
+       * booking and a rental could not be closed. Gear coming back is what puts
+       * an item in the queue, so Return is where the row belongs — and the
+       * `queued` field on the verb's result documents it as "Return only".
+       *
+       * So the invariant is not "nobody writes it", it is "only Return does".
+       * Kept as a real guard rather than deleted: Pack and Handover raising a
+       * queue row would mean gear entering the cleaning queue before it has
+       * left the warehouse.
+       */
+      expect(tables.has('cleaning_queue_entries')).toBe(job === 'Return')
     }
   })
 })

@@ -1,13 +1,33 @@
-import { Fragment, useId, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { recordExport } from '../../lib/exportAudit'
+import { canExportClientPii } from '../../lib/rbac'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, Rail } from '../../components/ui/Page'
+import { SearchInput } from '../../components/ui'
 import type { Kpi } from '../../components/ui/Page'
+import {
+  ActiveFilterChips,
+  FilterDrawer,
+  FilterOptionList,
+  filterGroupStyle,
+} from '../../components/ui/FilterDrawer'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { BsAdDate } from '../../components/ui/BsAdDate'
+import { Pagination } from '../../components/ui/Pagination'
+import type { ActiveFilter } from '../../components/ui/FilterDrawer'
+import {
+  clientFacetsFor,
+  applyFacets,
+  optionsOf,
+  facetCountsOf,
+  selectionCount,
+  type FacetSelection,
+} from './clientFacets'
 import { Modal } from '../../components/ui/Modal'
-import { PageBody } from '../../components/ui/PageBody'
-import { ErrorBanner } from '../../components/ui/StateViews'
+import { DataTableShell } from '../../components/ui/DataTable'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { STATUS, STATUS_ICON } from '../../lib/status'
@@ -16,14 +36,16 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { canRecordPayment } from '../../lib/rbac'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { canBlockClient } from '../../lib/rbac'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewPII } from '../../lib/fieldGating'
 import { shouldFlipUp } from '../../lib/menuFlip'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
 import {
+  clientGlance,
+  clientDetailGroups,
   TIER_TONE,
   clientMetrics,
   CLIENT_ROWS_PER_PAGE,
@@ -31,9 +53,32 @@ import {
   evaluateCreditStop,
   readOverdueStopDays,
   type ClientRecord,
-  type ClientType,
   type CreditStopVerdict,
-} from '../../data/clients'
+} from '../../lib/queries/clients'
+import './clients.css'
+
+/* ── last-rental sort key ──────────────────────────────────────────────── */
+
+const AD_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+/** Sort sentinel for a client with no rental yet — see the comparator below. */
+const NO_RENTAL = Number.NEGATIVE_INFINITY
+
+/**
+ * Parses the `"18 Jul 2026"` label `ClientRecord.lastRentalAd` carries into a
+ * UTC epoch for sorting — the same hand parser `ClientCombobox` uses for its
+ * recent-clients order, because `Date.parse` is engine-dependent for non-ISO
+ * strings. `null` on `'—'` or anything unexpected.
+ */
+function parseAdLabel(label: string | undefined): number | null {
+  if (!label) return null
+  const m = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/.exec(label.trim())
+  if (!m) return null
+  const [, d, mon, y] = m
+  const monthIndex = AD_MONTHS.indexOf((mon ?? '').slice(0, 3).toLowerCase())
+  if (monthIndex < 0 || !d || !y) return null
+  return Date.UTC(Number(y), monthIndex, Number(d))
+}
 
 /* ── filters ───────────────────────────────────────────────────────────── */
 
@@ -51,31 +96,90 @@ import {
  * these), and Blocked / On Stop moved to `overlays` below, which intersect with
  * whatever is selected here.
  *
- * There is no `(Active)` chip, and inventing one would be worse than the
- * omission: `ClientRecord` carries no deactivation field at all
+ * ## `active` here is the BOOKING sense, not the account sense
+ *
+ * ⚠ Read this before adding anything else called "Active". The `active` member
+ * selects clients with at least one booking that is neither Closed nor
+ * cancelled — see the KPI note further down for the whole chain back to
+ * `active_bookings_count`. It says nothing about whether the ACCOUNT is active.
+ *
+ * There is still no client-STATUS Active chip, and inventing one would be worse
+ * than the omission: `ClientRecord` carries no deactivation field at all
  * (`deactivatedAtAd` lives on `ClientProfile`, which the directory never
- * fetches), so an Active chip would select exactly what `All` already selects
- * and lie about doing something. Reported rather than faked.
+ * fetches), so a status-Active chip would select exactly what `All` already
+ * selects and lie about doing something. Reported rather than faked.
+ *
+ * TODO(decision): the chip strip reads All · Organisation · Individual ·
+ * Unassigned · Active · Payment Due · VIP, and in that company a bare "Active"
+ * can be read as the account sense the paragraph above says does not exist.
+ * The label was ruled in the 5–6 Sep session and is recorded in this repo at
+ * `BUG_AUDIT_LIFECYCLE_2026-09-02.md` under CL-04 — cite that, not this
+ * comment. It replaced "On Rent", which was a claim about one of five stages.
+ * Whether it should be QUALIFIED — "Active Rentals", the wording the table
+ * column and the CSV header now use — is a separate product call, so it is
+ * asked here, not decided.
  */
-type StatusKey = 'onRent' | 'paymentDue' | 'vip'
+type FilterKey = 'all' | 'active' | 'paymentDue' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
 
 /**
- * The filter rail's two facet families. Within a family the ticks OR (Organisation
- * or Individual); across families they AND (Organisation that is On Rent). An
- * empty family filters nothing — no ticks means every type, every status.
+ * §18 — the directory's filter state IS the query string, the same contract
+ * RentalsList and OperationsQueues keep: refresh keeps the filters, Back
+ * undoes one decision, and "every organisation with a payment due" is a link
+ * rather than a screenshot. `?filter=` carries the one exclusive chip,
+ * `?blocked=1` / `?stop=1` carry the two intersecting overlays (two params
+ * because they are two independent booleans, exactly as the chips render
+ * them), and `?q=` carries the search — the param other surfaces already
+ * hand in (the Membership tab's row action navigates to `/clients?q=<name>`).
+ *
+ * Wire values are lowercase words rather than the internal camelCase keys,
+ * mirroring `URL_KEY` in `data/operations.ts` — a URL is read and edited by
+ * people, and `?filter=organisation` survives that better than `?filter=typeOrg`.
  */
-interface Facets {
-  types: ClientType[]
-  statuses: StatusKey[]
+const FILTER_PARAM: Record<Exclude<FilterKey, 'all'>, string> = {
+  typeOrg: 'organisation',
+  typeInd: 'individual',
+  typeUnassigned: 'unassigned',
+  active: 'active',
+  paymentDue: 'payment-due',
+  vip: 'vip',
 }
 
-const NO_FACETS: Facets = { types: [], statuses: [] }
-
-const STATUS_MATCH: Record<StatusKey, (c: ClientRecord) => boolean> = {
-  onRent: (c) => c.currentRentalsCount > 0,
-  paymentDue: (c) => c.outstandingPaisa > 0,
-  vip: (c) => Boolean(c.isVip),
+/**
+ * A query string is user input in the most literal sense — a bookmark, a
+ * hand-edited URL — so it is validated, never trusted. An unknown value
+ * selects nothing (`all`), the same fallback `Clients.tsx` applies to `?tab=`.
+ *
+ * Law 6 — `payment-due` answers *who owes us money*. A money-blind session
+ * opening a bookmarked `?filter=payment-due` gets the unfiltered list, the
+ * same absence the chip itself keeps for that role: the filter must not run
+ * for a session that may not know the answer.
+ */
+/**
+ * Wire values this screen used to mint, kept readable forever.
+ *
+ * CL-04 renamed the chip's wire value `on-rent` → `active`. A query string is
+ * the one piece of this UI that OUTLIVES the build: it sits in bookmarks, in
+ * pasted links and in WhatsApp messages. Without this map an old link did not
+ * fail loudly — `filterFromParam` returns `all` for anything it does not
+ * recognise, so it silently showed the UNFILTERED directory under a URL that
+ * named a filter, which is the same class of quiet lie CL-04 was raised about.
+ */
+const LEGACY_FILTER_PARAM: Record<string, Exclude<FilterKey, 'all'>> = {
+  'on-rent': 'active',
 }
+
+function filterFromParam(raw: string | null, money: boolean): FilterKey {
+  if (!raw) return 'all'
+  const legacy = LEGACY_FILTER_PARAM[raw]
+  if (legacy) return legacy === 'paymentDue' && !money ? 'all' : legacy
+  const hit = (Object.entries(FILTER_PARAM) as Array<[Exclude<FilterKey, 'all'>, string]>).find(
+    ([, wire]) => wire === raw,
+  )
+  if (!hit) return 'all'
+  if (hit[0] === 'paymentDue' && !money) return 'all'
+  return hit[0]
+}
+
 type ViewKey = 'Table' | 'Cards'
 type SortKey = 'name' | 'type' | 'membership' | 'rentals' | 'outstanding' | 'deposit' | 'lastRental'
 type Density = 'comfortable' | 'compact'
@@ -112,12 +216,12 @@ interface SavedView {
  * bookmark.
  */
 const SAVED_VIEWS: SavedView[] = [
-  { label: 'VIP Clients', facets: { statuses: ['vip'] }, sort: { key: 'name', dir: 'asc' } },
-  { label: 'Payment Due', facets: { statuses: ['paymentDue'] }, sort: { key: 'outstanding', dir: 'desc' }, money: true },
-  { label: 'On Rent', facets: { statuses: ['onRent'] }, sort: { key: 'rentals', dir: 'desc' } },
-  { label: 'Recently Added', sort: { key: 'lastRental', dir: 'desc' } },
+  { label: 'VIP Clients', filter: 'vip', sort: { key: 'name', dir: 'asc' } },
+  { label: 'Payment Due', filter: 'paymentDue', sort: { key: 'outstanding', dir: 'desc' }, money: true },
+  { label: 'Open rentals', filter: 'active', sort: { key: 'rentals', dir: 'desc' } },
+  { label: 'Recently Added', filter: 'all', sort: { key: 'lastRental', dir: 'desc' } },
   /* Now an OVERLAY over every client, not a status that excludes the rest. */
-  { label: 'Blocked Clients', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
+  { label: 'Blocked Clients', filter: 'all', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
 ]
 
 type RailSection = 'type' | 'status' | 'flags' | 'views'
@@ -221,9 +325,11 @@ function CheckRow({
 }
 
 const th = {
+  textTransform: 'none' as const,
   textAlign: 'left' as const,
   padding: '9px 12px',
-  fontSize: 'var(--t-th)',
+  fontFamily: "'Outfit', var(--font-display), sans-serif",
+  fontSize: 'var(--t-meta)',
   fontWeight: 600,
   color: 'var(--text2)',
   whiteSpace: 'nowrap' as const,
@@ -256,7 +362,25 @@ function SortHeader({
   }
   const on = sort.key === sortKey
   return (
-    <th style={{ ...th, textAlign: align ?? 'left' }}>
+    /*
+      BUG-009 — the sorting itself always worked and the direction glyph below
+      is correct, but `aria-sort` was never set, so a screen reader announced
+      only "button, Client": no indication that the table was sorted by this
+      column, and none of which way. The sighted operator had the arrow; the
+      screen-reader user had nothing.
+
+      It belongs on the `<th>`, not the button — `aria-sort` is defined on the
+      column header cell, and a button is not a `columnheader`. The value is
+      derived from the same `sort` state that paints the glyph, so the two
+      cannot drift: whichever column is active reads ascending/descending, and
+      every other sortable column reads `none` (which is the ARIA way of saying
+      "sortable, not currently sorted" — omitting it would say "not sortable").
+      The non-sortable `<th>`s in the early return above stay bare, correctly.
+    */
+    <th
+      style={{ ...th, textAlign: align ?? 'left' }}
+      aria-sort={on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -269,18 +393,20 @@ function SortHeader({
           background: 'transparent',
           padding: 0,
           fontFamily: 'inherit',
-          fontSize: 'var(--t-th)',
+          fontSize: 'var(--t-meta)',
           fontWeight: 600,
-          color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+          color: on ? 'var(--text)' : 'var(--text2)',
           cursor: 'pointer',
         }}
       >
-        {label}
-        <Icon
-          name={on && sort.dir === 'asc' ? 'arrow_up' : 'arrow_down'}
-          size={11}
-          style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }}
-        />
+        <span>{label}</span>
+        {on && (
+          <Icon
+            name={sort.dir === 'asc' ? 'arrow_up' : 'arrow_down'}
+            size={12}
+            style={{ color: 'var(--text2)' }}
+          />
+        )}
       </button>
     </th>
   )
@@ -299,10 +425,23 @@ function Tone({
   tone,
   icon,
   reason,
+  entity,
 }: {
   text: string
-  tone: keyof typeof STATUS
+  /** Omitted for an `entity` mark, which takes no hue at all. */
+  tone?: keyof typeof STATUS
   icon?: IconName
+  /**
+   * This chip names an ENTITY ATTRIBUTE, not an operational state.
+   *
+   * v4.1 §2 gives each of the seven hues exactly one meaning, so spending one
+   * on a client property teaches the eye that the hue means nothing in
+   * particular. VIP is the case that forced this: it was yellow here, blue in
+   * the booking combobox and `neutral` in the canonical FLAGS map, all at the
+   * same time — and yellow ("being worked in-house") was the worst reading of
+   * the three. An entity mark is a recessed surface plus its word.
+   */
+  entity?: boolean
   /**
    * Why this chip is on the row. Rulings §11.2.3 — *"a client told they are on
    * stop will ask why"* — so the On Stop chip carries its firing limb here
@@ -312,8 +451,11 @@ function Tone({
    */
   reason?: string
 }) {
-  const c = STATUS[tone]
-  const glyph = (icon ?? STATUS_ICON[tone]) as IconName
+  const c = entity || tone === undefined ? null : STATUS[tone]
+  // No cast: `STATUS_ICON` is `Record<StatusKey, IconName>` now, so a glyph the
+  // REGISTRY does not carry fails at compile time rather than rendering red
+  // `[Icon:…]` text on this very row, which is what BUG-001 was.
+  const glyph: IconName | undefined = icon ?? (tone ? STATUS_ICON[tone] : undefined)
   return (
     <span
       {...(reason ? { title: reason, 'aria-label': `${text} — ${reason}` } : {})}
@@ -323,16 +465,21 @@ function Tone({
         gap: 4,
         height: 19,
         padding: '0 7px',
-        borderRadius: 5,
-        background: c.bg,
-        color: c.fg,
-        border: c.border ? `1px solid ${c.border}` : undefined,
+        borderRadius: 'var(--r-chip)',
+        // An entity mark takes a recessed surface and no hue; a status takes
+        // its pair. Both keep the word, so §7.4 ("never colour alone") holds
+        // either way — and holds trivially for the entity mark, which has no
+        // colour to lean on in the first place.
+        background: c ? c.bg : 'var(--surface-2)',
+        color: c ? c.fg : 'var(--text2)',
+        border: c ? (c.border ? `1px solid ${c.border}` : undefined) : '1px solid var(--border)',
         fontSize: 'var(--t-th)',
-        fontWeight: 600,
+        fontWeight: c ? 600 : 700,
+        letterSpacing: c ? undefined : '0.02em',
         whiteSpace: 'nowrap',
       }}
     >
-      <Icon name={glyph} size={10} />
+      {glyph && <Icon name={glyph} size={10} />}
       {text}
     </span>
   )
@@ -357,10 +504,28 @@ function csvCell(v: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+const CLIENT_FACET_KEYS = ['status', 'membership', 'clientType', 'orgType', 'district', 'segment', 'outstanding'] as const
+
+function parseFacetSelFromParams(searchParams: URLSearchParams): FacetSelection {
+  const result: Record<string, readonly string[]> = {}
+  for (const key of CLIENT_FACET_KEYS) {
+    const val = searchParams.get(`f_${key}`)
+    if (val) {
+      const items = val.split(',').map((s) => s.trim()).filter(Boolean)
+      if (items.length > 0) {
+        result[key] = items
+      }
+    }
+  }
+  return result
+}
+
 export function ClientsDirectory({
   clients,
   onRequestAdd,
   onBlockChanged,
+  filtersOpen: controlledFiltersOpen,
+  onFiltersOpenChange,
 }: {
   clients: ClientRecord[]
   onRequestAdd: () => void
@@ -376,52 +541,128 @@ export function ClientsDirectory({
    * `useClients().refresh`.
    */
   onBlockChanged: () => void
+  filtersOpen?: boolean
+  onFiltersOpenChange?: (open: boolean) => void
 }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const [params, setParams] = useSearchParams()
+
+  const patchParams = useCallback(
+    (next: Record<string, string | null>, replace = false) => {
+      const merged = new URLSearchParams(params)
+      for (const [k, v] of Object.entries(next)) {
+        if (v === null) merged.delete(k)
+        else merged.set(k, v)
+      }
+      setParams(merged, replace ? { replace: true } : undefined)
+    },
+    [params, setParams],
+  )
+
+  /*
+   * ── the faceted filter panel (P6) ──────────────────────────────────────
+   *
+   * Synced to the URL query string (`?f_<key>=...`), so refreshing the page
+   * or sharing the link preserves active multi-facet filters. Uses `replace: true`
+   * so checking facets does not build an unwanted history stack.
+   */
+  const facetSel: FacetSelection = useMemo(() => parseFacetSelFromParams(params), [params])
+  const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
+  const filtersOpen = controlledFiltersOpen ?? internalFiltersOpen
+  const setFiltersOpen = (open: boolean) => {
+    setInternalFiltersOpen(open)
+    onFiltersOpenChange?.(open)
+  }
+  const facets = useMemo(() => clientFacetsFor(money), [money])
+
+  const toggleFacet = useCallback(
+    (key: string, value: string) => {
+      const cur = facetSel[key] ?? []
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]
+      patchParams({ [`f_${key}`]: next.length > 0 ? next.join(',') : null }, true)
+      setPage(1)
+    },
+    [facetSel, patchParams],
+  )
   const { user } = useAuth()
   const online = useNetwork()
   // `gateContext` builds a fresh object every call — memoized on the one
   // primitive it actually derives from so `pageRowsWithIntel` below (and any
   // other memo keyed on `gctx`) doesn't invalidate on every unrelated render.
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  /*
+   * The same gate `ClientDetail` applies to the same verb (CL-06).
+   *
+   * Without it these controls are offered to every seat and refused by the
+   * dispatcher on press — `blockClient` carries `permissions: ['client.block']`
+   * and `actions/core.ts` resolves it through `rbac.canBlockClient`, which is
+   * Owner/Admin/Manager. A Coordinator or Warehouse session got an enabled
+   * button and an error, which is the shape CL-06 was raised about; fixing one
+   * surface and not the other would have left the two disagreeing about who may
+   * block a client.
+   */
+  const mayBlock = canBlockClient(user?.role ?? 'Client')
   // HIS v2.1 §4.2 — phone/email were rendering unconditionally for every role
   // before this; gated here the same way `money` already gates Outstanding/
   // Deposit, so a Warehouse or Technician session never receives the column.
   const pii = canViewPII(gctx)
   const { showSuccessToast } = useToast()
-  const [params] = useSearchParams()
   /* DEVICES.md §7 build order item 1 — below 768 the table can't be read even
      scrolled, so the phone gets the card view unconditionally (Law 13: branch
      on capability, not platform).
      Spec 8.1 draws THREE layouts, not two, so this reads the band rather than
      the phone-vs-not boolean it used to: `tabular` still decides table-vs-cards
      at 768, and `desktop` decides whether the two rails sit beside the list or
-     reflow beneath it. Rulings §7 — "collapse below 1180" is *reflow*, not
+     reflow beneath it. Rulings §7 — "collapse below 1280" is *reflow*, not
      *hide*, so at tablet the Filters/Saved Views and Client-profile content
      renders inline rather than going into `CollapsibleAside`'s handle. */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const tabular = viewport !== 'phone'
   const desktop = viewport === 'desktop'
   /** Tablet keeps the table but not nine columns of it — see the `<table>` below. */
   const narrow = viewport === 'tablet'
 
-  const [facets, setFacets] = useState<Facets>(NO_FACETS)
-  /** Open on desktop, where the rail has the room; closed below it, where the panel reflows above the list. */
-  const [openSections, setOpenSections] = useState<Record<RailSection, boolean>>(() => ({
-    type: desktop,
-    status: desktop,
-    flags: desktop,
-    views: desktop,
-  }))
-  /** Rulings §11.2.4 — Blocked and On Stop intersect the selection, never replace it. */
-  const [overlays, setOverlays] = useState<Overlays>(NO_OVERLAYS)
   /**
-   * `?q=` lets another surface hand this table a client — the Membership tab's
-   * row action uses it, so "find this member in the directory" lands on the
-   * member rather than on an unfiltered list.
+   * §18 — chip, overlays and search are DERIVED from the query string rather
+   * than mirrored into state, which is what makes Back work for free:
+   * react-router re-renders with new params on popstate and these recompute.
+   * A mirrored `useState` copy would need an effect to notice the navigation,
+   * and that effect is where the classic "Back moves the URL but not the UI"
+   * bug lives (the same reasoning as `useFilters`, which this in-browser
+   * directory cannot use because it holds no server-side `ListFilters`).
+   *
+   * ⛔ **What this replaced.** Three `useState`s — `activeFilter`, `overlays`
+   * and `searchQuery`, the last seeded from `?q=` once at mount and never
+   * written back — so a refresh dropped every chip, Back skipped over filter
+   * decisions, and a filtered list could not be handed to anyone as a link.
+   *
+   * `?q=` also stays the handoff other surfaces use — the Membership tab's
+   * row action navigates to `/clients?q=<name>`, so "find this member in the
+   * directory" lands on the member rather than on an unfiltered list.
+   *
+   * The overlays (`?blocked=` / `?stop=`) are derived the same way but
+   * further down, after `stopCheckRan` — validating `?stop=` needs it.
    */
-  const [searchQuery, setSearchQuery] = useState(() => params.get('q') ?? '')
+  const activeFilter = filterFromParam(params.get('filter'), money)
+  const searchQuery = params.get('q') ?? ''
+  const [searchInput, setSearchInput] = useState(searchQuery)
+
+  useEffect(() => {
+    setSearchInput(searchQuery)
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (searchInput === searchQuery) return
+    const timer = setTimeout(() => {
+      const midBurst = Boolean(searchQuery) && Boolean(searchInput)
+      patchParams({ q: searchInput || null }, midBurst)
+    }, 250)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounced search sync to URL
+  }, [searchInput, searchQuery])
+
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [view, setView] = useState<ViewKey>('Table')
@@ -433,6 +674,7 @@ export function ClientsDirectory({
   const [perPage, setPerPage] = useState<number>(CLIENT_ROWS_PER_PAGE[1])
   const [page, setPage] = useState(1)
   const [activeSavedView, setActiveSavedView] = useState<string | null>(null)
+  const [showKpis, setShowKpis] = useState(false)
   const [showBulkBlock, setShowBulkBlock] = useState(false)
   const [bulkBlockReason, setBulkBlockReason] = useState('')
   /** Which direction the open dialog is going. Law 3 — a block is lifted, never deleted. */
@@ -454,6 +696,11 @@ export function ClientsDirectory({
   const td = tdFor(density)
 
   const metrics = useMemo(() => clientMetrics(clients), [clients])
+  /* `clientFilterGroupsFor` is gone from this screen: it returned ten
+     `{label, icon}` pairs with no options and no predicates, which is why the
+     panel it fed could only render an "advanced filters — coming soon" row.
+     `clientFacetsFor(money)` above replaces it and carries the same Law 6 rule
+     (money-shaped groups are dropped, not rendered empty). */
 
   /**
    * **Rulings §11.2 — On Stop, derived, once.**
@@ -503,18 +750,38 @@ export function ClientsDirectory({
     () => [...stopVerdicts.values()].some((v) => !v.indeterminate),
     [stopVerdicts],
   )
-  /** The reason to show when it did not — taken from a real verdict, not written here. */
-  const stopUnavailableReason = useMemo(
-    () => [...stopVerdicts.values()][0]?.unavailable.join(' ') ?? 'No client records were read, so the on-stop check had nothing to run against.',
-    [stopVerdicts],
+
+  /**
+   * Rulings §11.2.4 — Blocked and On Stop intersect the selection, never
+   * replace it. Derived from the URL like the chip above, and declared HERE,
+   * after `stopCheckRan`, because `?stop=1` needs it: a bookmarked URL is user
+   * input like any other, and when the on-stop check could not run for this
+   * session (the ordinary money-blind case) the chip is disabled — so the URL
+   * must not do what the chip refuses. Filtering a list of indeterminate
+   * verdicts would yield zero rows and read as "nobody is on stop", the exact
+   * implication §11.2.7 exists to prevent (*do NOT default to false silently*).
+   */
+  const blockedParam = params.get('blocked') === '1'
+  const stopParam = params.get('stop') === '1'
+  /* Memoised on the two primitives. As a fresh literal every render it defeated
+     `filteredClients`' memo below — the directory re-filtered and re-sorted on
+     every keystroke anywhere on the page. */
+  const overlays: Overlays = useMemo(
+    () => ({ blocked: blockedParam, onStop: stopParam && stopCheckRan }),
+    [blockedParam, stopParam, stopCheckRan],
   )
 
   const filteredClients = useMemo(() => {
-    const rows = clients.filter((client) => {
+    let rows = clients.filter((client) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const matches =
           client.name.toLowerCase().includes(q) ||
+          // Guarded, and it never fires on a directory row: nothing fills
+          // `company` (see the search placeholder's note). Kept because it is
+          // a conditional, not a claim — it costs one falsy check and would
+          // start working the day the field has a source. The PROMISE it used
+          // to back, "…email, company, PAN…", is what was removed.
           (client.company ? client.company.toLowerCase().includes(q) : false) ||
           client.phone.toLowerCase().includes(q) ||
           client.email.toLowerCase().includes(q) ||
@@ -530,10 +797,20 @@ export function ClientsDirectory({
       if (overlays.blocked && !client.isBlocked) return false
       if (overlays.onStop && !stopVerdicts.get(client.id)?.onStop) return false
 
-      if (facets.types.length > 0 && !facets.types.includes(client.clientType)) return false
-      if (facets.statuses.length > 0 && !facets.statuses.some((s) => STATUS_MATCH[s](client))) return false
+      if (activeFilter === 'active') return client.currentRentalsCount > 0
+      if (activeFilter === 'paymentDue') return client.outstandingPaisa > 0
+      if (activeFilter === 'vip') return Boolean(client.isVip)
+      if (activeFilter === 'typeOrg') return client.clientType === 'Organisation'
+      if (activeFilter === 'typeInd') return client.clientType === 'Individual'
+      if (activeFilter === 'typeUnassigned') return client.clientType === 'Unassigned'
       return true
     })
+
+    /* The panel ANDs with everything above it, exactly as the overlays do:
+       picking "Membership: Elite" narrows whatever the chips already chose, it
+       does not replace it. Applied after the predicate pass so the facet counts
+       and the row count are computed over the same set. */
+    rows = applyFacets(rows, facets, facetSel)
 
     const dir = sort.dir === 'asc' ? 1 : -1
     const value = (c: ClientRecord): string | number => {
@@ -549,8 +826,11 @@ export function ClientsDirectory({
         case 'deposit':
           return c.depositHeldPaisa
         case 'lastRental':
-          // BS renders as YYYY/MM/DD, so lexical order is chronological.
-          return c.lastRentalBs === '—' ? '' : c.lastRentalBs
+          // `lastRentalBs` is a display label — a BS date where the engine can
+          // name one, the AD date otherwise (queries/clients.ts) — so its string
+          // order is not chronological. The record carries no ISO instant, so
+          // the AD label is parsed instead; a client with no rental sorts last.
+          return parseAdLabel(c.lastRentalAd) ?? NO_RENTAL
         default:
           return c.name
       }
@@ -559,10 +839,12 @@ export function ClientsDirectory({
     return [...rows].sort((a, b) => {
       const va = value(a)
       const vb = value(b)
+      // "No rental yet" stays at the bottom whichever way the column is sorted.
+      if (va === NO_RENTAL || vb === NO_RENTAL) return va === vb ? 0 : va === NO_RENTAL ? 1 : -1
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb)) * dir
     })
-  }, [clients, searchQuery, facets, overlays, stopVerdicts, sort])
+  }, [clients, searchQuery, activeFilter, overlays, stopVerdicts, sort, facets, facetSel])
 
   const pageCount = Math.max(1, Math.ceil(filteredClients.length / perPage))
   const current = Math.min(page, pageCount)
@@ -600,32 +882,39 @@ export function ClientsDirectory({
 
   const resetPage = () => setPage(1)
 
-  const toggleFacet = <K extends keyof Facets>(family: K, value: Facets[K][number]) => {
-    setFacets((prev) => {
-      const list = prev[family] as Array<Facets[K][number]>
-      const next = list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
-      return { ...prev, [family]: next }
-    })
+  const applyFilter = (f: FilterKey) => {
+    patchParams({ filter: f === 'all' ? null : FILTER_PARAM[f] })
     setActiveSavedView(null)
-    resetPage()
   }
 
-  const toggleSection = (s: RailSection) => setOpenSections((prev) => ({ ...prev, [s]: !prev[s] }))
-
   const toggleOverlay = (which: keyof Overlays) => {
-    setOverlays((prev) => ({ ...prev, [which]: !prev[which] }))
+    patchParams({ [which === 'blocked' ? 'blocked' : 'stop']: overlays[which] ? null : '1' })
     setActiveSavedView(null)
-    resetPage()
   }
 
   const clearAll = () => {
-    setFacets(NO_FACETS)
-    setOverlays(NO_OVERLAYS)
-    setSearchQuery('')
+    /* Every owned param in ONE write — two navigations would make "Clear all"
+       take two presses of Back to undo, which is not one action. */
+    const patch: Record<string, string | null> = { filter: null, blocked: null, stop: null, q: null }
+    for (const key of CLIENT_FACET_KEYS) {
+      patch[`f_${key}`] = null
+    }
+    patchParams(patch)
     setSort({ key: 'name', dir: 'asc' })
     setActiveSavedView(null)
-    resetPage()
   }
+
+  /**
+   * Pagination is local state, so a filter arriving by Back/Forward — which
+   * never passes through the handlers above — must still reset it. Keyed on
+   * the derived values themselves rather than on the click sites: page 4 of a
+   * freshly-narrowed two-page list would render an empty table under a live
+   * pager. (`current` below also clamps, so the intermediate render is safe.)
+   */
+  const filterSignature = `${activeFilter}|${overlays.blocked}|${overlays.onStop}|${searchQuery}`
+  useEffect(() => {
+    setPage(1)
+  }, [filterSignature])
 
   const applySortKey = (k: SortKey) => {
     setSort((prev) => (prev.key === k ? { key: k, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: 'asc' }))
@@ -647,15 +936,19 @@ export function ClientsDirectory({
 
   /** A real CSV of just the selected rows — same quoting rule as the full-directory export. */
   const exportSelected = () => {
+    // No 'Company' column — the same removal, for the same reason, that
+    // `Clients.tsx`'s full-directory export already made: `ClientRecord.company`
+    // has no source in `client_directory_v`, the mapper never sets it, and the
+    // directory only ever holds mapped rows, so every cell under that header
+    // was blank on every row.
+    /* G5 (RULING 2026-10-07): phone, email and PAN leave the building only with Owner · Admin · Manager. */
+    const pii = canExportClientPii(user?.role ?? 'Client')
     const headers = [
       'Client ID',
       'Name',
-      'Company',
       'Type',
       'Membership',
-      'Phone',
-      'Email',
-      'PAN',
+      ...(pii ? ['Phone', 'Email', 'PAN'] : []),
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
       'Status',
     ]
@@ -663,18 +956,20 @@ export function ClientsDirectory({
       [
         c.id,
         c.name,
-        c.company ?? '',
         c.clientType,
         c.membership,
-        c.phone,
-        c.email,
-        c.pan ?? '',
+        ...(pii ? [c.phone, c.email, c.pan ?? ''] : []),
         ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
-        c.isBlocked ? 'Blocked' : 'Active',
+        /* NOT "Active": since CL-04 that word means "has a booking that is
+           neither Closed nor cancelled", and this column is about the block
+           flag — a different fact about a different thing. Two senses of one
+           word in one export is a spreadsheet nobody can filter. */
+        c.isBlocked ? 'Blocked' : 'Not blocked',
       ]
         .map(csvCell)
         .join(','),
     )
+    recordExport({ list: 'clients.selected', module: 'Clients', rowCount: selectedClients.length, columns: headers, includesPii: pii })
     const blob = new Blob([[headers.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -816,7 +1111,11 @@ export function ClientsDirectory({
         run: () => navigate(booking ? `/rentals/${booking}` : '/rentals'),
       }
     }
-    return { label: 'New Rental', variant: 'primary' as const, run: () => navigate('/rentals/new') }
+    return {
+      label: 'New Rental',
+      variant: 'primary' as const,
+      run: () => navigate(`/rentals/new?clientId=${encodeURIComponent(client.id)}`),
+    }
   }
 
   const kpis: Kpi[] = [
@@ -827,12 +1126,32 @@ export function ClientsDirectory({
       accent: 'primary',
       note: 'All clients (all statuses)',
     },
+    /*
+     * ⚠ "Active", not "On Rent" — the label is bounded by what the figure can
+     * actually answer, and it is not "how many clients have gear out today".
+     *
+     * Follow the number back: `clientMetrics.onRent` counts rows with
+     * `currentRentalsCount > 0` (data/clients.ts:1044); `currentRentalsCount`
+     * is `active_bookings_count` (lib/queries/clients.ts:216); and that view
+     * column is
+     *   `count(*) filter (where b.stage <> 'Closed' and b.cancelled_at is null)`
+     * (0054_rls_backstops_and_directory_block_flag.sql:321). The canonical
+     * stages are Quote · Booked · Packed · On Rent · Returned · Closed
+     * (0054:317-319), so `<> 'Closed'` sweeps in the five non-closed stages —
+     * a quote nobody has confirmed, and a rental already returned, count here
+     * exactly as loudly as gear that is out.
+     *
+     * The column is honestly named; only the label was lying. Renaming the
+     * label is the whole fix available here: a genuine on-rent count needs a
+     * SECOND counter in the view (`b.stage = 'On Rent' and b.cancelled_at is
+     * null`), which is a migration, not a screen change.
+     */
     {
-      label: 'On Rent',
+      label: 'Open rentals',
       value: String(metrics.onRent),
       icon: 'checklist',
       accent: 'success',
-      note: 'Clients with active rentals',
+      note: 'Clients with any booking not closed or cancelled',
     },
     ...(money
       ? [
@@ -855,245 +1174,451 @@ export function ClientsDirectory({
   ]
 
   /**
-   * The rail's facet rows. Counts are over the whole directory, not over the
-   * current selection — a count says how many clients carry the condition, so
-   * it stays put while you tick.
+   * The EXCLUSIVE group — pick exactly one. Blocked has left it (Rulings
+   * §11.2.4); these counts are mutually exclusive within each family and every
+   * one of them is a subset of `All`.
    */
-  const typeRows: Array<{ label: string; value: ClientType; count: number }> = [
-    { label: 'Organisation', value: 'Organisation', count: metrics.typeOrg },
-    { label: 'Individual', value: 'Individual', count: metrics.typeInd },
-    { label: 'Unassigned', value: 'Unassigned', count: metrics.typeUnassigned },
-  ]
-
-  const statusRows: Array<{ label: string; value: StatusKey; count: number }> = [
-    { label: 'On Rent', value: 'onRent', count: metrics.onRent },
-    /* §8.3 — who owes us money is money: omitted for money-blind roles, not blanked. */
-    ...(money ? [{ label: 'Payment Due', value: 'paymentDue' as StatusKey, count: metrics.paymentDue }] : []),
-    { label: 'VIP', value: 'vip', count: metrics.vip },
+  const chips: Array<{ label: string; key: FilterKey; count: number }> = [
+    { label: 'All', key: 'all', count: metrics.total },
+    { label: 'Organisation', key: 'typeOrg', count: metrics.typeOrg },
+    { label: 'Individual', key: 'typeInd', count: metrics.typeInd },
+    { label: 'Unassigned', key: 'typeUnassigned', count: metrics.typeUnassigned },
+    { label: 'Open rentals', key: 'active', count: metrics.onRent },
+    ...(money ? [{ label: 'Payment Due', key: 'paymentDue' as FilterKey, count: metrics.paymentDue }] : []),
+    { label: 'VIP', key: 'vip', count: metrics.vip },
   ]
 
   /**
-   * Rulings §11.2.4 — the INTERSECTING overlays. Each narrows whatever else is
-   * ticked, never replaces it, and both can be on at once.
+   * The INTERSECTING overlays. Independent toggles, counted over the whole
+   * directory rather than over the current selection — an overlay describes how
+   * many clients carry that condition, not how many survive the other filters,
+   * and the two chips deliberately overlap each other.
    */
-  const overlayRows: Array<{ label: string; key: keyof Overlays; count: number; unavailable?: string }> = [
-    { label: 'Blocked', key: 'blocked', count: metrics.blocked },
-    {
-      label: 'On Stop',
-      key: 'onStop',
-      count: onStopCount,
-      ...(stopCheckRan ? {} : { unavailable: stopUnavailableReason }),
-    },
+  const primaryChipKeys: FilterKey[] = [
+    'all',
+    'active',
+    ...(money ? ['paymentDue' as FilterKey] : []),
   ]
-
-  const activeFilterCount =
-    facets.types.length + facets.statuses.length + (overlays.blocked ? 1 : 0) + (overlays.onStop ? 1 : 0)
+  const visibleChips = chips.filter((c) => primaryChipKeys.includes(c.key) || c.key === activeFilter)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <KpiStrip items={kpis} columns={kpis.length} />
+      {showKpis && <KpiStrip items={kpis} columns={kpis.length} />}
 
-      {/* ── search + view switch — every filter lives in the rail below ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative' }}>
-            <Icon name="search" size={15} style={{ color: 'var(--muted)', position: 'absolute', left: 9 }} />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                resetPage()
+      {/* ── quick filters + view switch ───────────────────────────────── */}
+      <div
+        className="client-chip-track"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-sm)',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span style={{ order: 0, marginLeft: 0, display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flex: phone ? '1 1 100%' : '1 1 360px', flexWrap: 'nowrap' }}>
+          <div style={{ flex: phone ? '1 1 0' : undefined, width: phone ? undefined : 280, minWidth: 0 }}>
+            <SearchInput
+              value={searchInput}
+              onChange={setSearchInput}
+              onClear={() => {
+                setSearchInput('')
+                patchParams({ q: null }, true)
               }}
-              placeholder="Search client, phone, email, company, PAN…"
+              onSearchSubmit={(val) => {
+                const midBurst = Boolean(searchQuery) && Boolean(val)
+                patchParams({ q: val || null }, midBurst)
+              }}
+              placeholder="Search client, phone, email, PAN…"
               aria-label="Search clients"
-              style={{
-                width: 280,
-                minHeight: 44,
-                padding: '0 10px 0 29px',
-                borderRadius: 'var(--r-input)',
-                border: '1px solid var(--input-border)',
-                background: 'var(--input-bg)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontFamily: 'inherit',
-              }}
             />
-          </label>
+          </div>
 
           {tabular &&
             (['Table', 'Cards'] as ViewKey[]).map((v) => (
               <Button
                 key={v}
                 icon={v === 'Table' ? 'queues' : 'box'}
-                variant={view === v ? 'primary' : 'secondary'}
+                variant="secondary"
+                aria-pressed={view === v}
                 onClick={() => setView(v)}
               >
                 {v}
               </Button>
             ))}
+              {!phone && (
+                <button
+                  type="button"
+                  onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
+                  aria-pressed={density === 'compact'}
+                  aria-label={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
+                  title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
+                  style={{
+                    marginLeft: 'auto',
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 'var(--r-input)',
+                    border: '1px solid var(--input-border)',
+                    background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
+                    color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
+                </button>
+              )}
+        </span>
+
+        {visibleChips.map((c) => {
+          const on = activeFilter === c.key
+          return (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => applyFilter(c.key)}
+              aria-pressed={on}
+              className={`client-filter-chip ${on ? 'is-active' : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                minHeight: 44,
+                padding: '0 11px',
+                borderRadius: 'var(--r-sm)',
+                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
+                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: on ? 600 : 500,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+                order: 2,
+              }}
+            >
+              {c.label}
+              <span
+                className="client-chip-badge figure client-mono"
+                style={{
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 5,
+                  display: 'inline-grid',
+                  placeItems: 'center',
+                  background: 'var(--card2)',
+                  color: 'var(--text)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 700,
+                  padding: '0 4px',
+                }}
+              >
+                {c.count}
+              </span>
+            </button>
+          )
+        })}
+
+        <button
+          key="blocked"
+          type="button"
+          onClick={() => toggleOverlay('blocked')}
+          aria-pressed={overlays.blocked}
+          className={`client-filter-chip ${overlays.blocked ? 'is-active' : ''}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            minHeight: 44,
+            padding: '0 11px',
+            borderRadius: 'var(--r-sm)',
+            border: `1px solid ${overlays.blocked ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+            background: overlays.blocked ? 'var(--nav-active-bg)' : 'var(--card)',
+            color: overlays.blocked ? 'var(--nav-active-accent)' : 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: overlays.blocked ? 600 : 500,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            whiteSpace: 'nowrap',
+            order: 2,
+          }}
+        >
+          <Icon name="alert_triangle" size={13} fill={overlays.blocked} />
+          Blocked
+          <span
+            className="client-chip-badge figure client-mono"
+            style={{
+              minWidth: 18,
+              height: 18,
+              borderRadius: 5,
+              display: 'inline-grid',
+              placeItems: 'center',
+              background: 'var(--card2)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 700,
+              padding: '0 4px',
+            }}
+          >
+            {metrics.blocked}
+          </span>
+        </button>
+
+        {overlays.onStop && (
+          <button
+            key="onStop"
+            type="button"
+            onClick={() => toggleOverlay('onStop')}
+            aria-pressed={overlays.onStop}
+            className={`client-filter-chip is-active`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              minHeight: 44,
+              padding: '0 11px',
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--nav-active-accent)',
+              background: 'var(--nav-active-bg)',
+              color: 'var(--nav-active-accent)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              whiteSpace: 'nowrap',
+              order: 2,
+            }}
+          >
+            <Icon name="lock" size={13} fill={true} />
+            On Stop
+            <span
+              className="client-chip-badge figure client-mono"
+              style={{
+                minWidth: 18,
+                height: 18,
+                borderRadius: 5,
+                display: 'inline-grid',
+                placeItems: 'center',
+                background: 'var(--card2)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 700,
+                padding: '0 4px',
+              }}
+            >
+              {onStopCount}
+            </span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowKpis((s) => !s)}
+          aria-expanded={showKpis}
+          aria-label={showKpis ? 'Hide client statistics' : 'Show client statistics'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            minHeight: 44,
+            padding: '0 12px',
+            borderRadius: 'var(--r-sm)',
+            border: `1px solid ${showKpis ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+            background: showKpis ? 'var(--nav-active-bg)' : 'var(--card)',
+            color: showKpis ? 'var(--nav-active-accent)' : 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            order: 3,
+          }}
+        >
+          <Icon name="chart" size={14} />
+          <span>{showKpis ? 'Hide Stats' : 'Stats'}</span>
+        </button>
+
       </div>
 
-      {/* ── filter rail + list ────────────────────────────────────────── */}
+      {/*
+        The selection, visible while the drawer is shut.
+
+        Without this the panel is a hidden mode: a list narrowed from 284 rows
+        to 9 by a facet chosen minutes ago looks like a directory that has lost
+        its clients, and the only clue is a small count on a button. Each chip
+        names the facet as well as the value ("Membership: Elite"), because
+        "Elite" alone does not say which of eight groups it came from, and
+        removing one is a single press rather than reopening the panel.
+      */}
+      <ActiveFilterChips
+        filters={facets.flatMap<ActiveFilter>((facet) =>
+          (facetSel[facet.key] ?? []).map((value) => {
+            const label = optionsOf(facet, clients).find((o) => o.value === value)?.label ?? value
+            return {
+              key: `${facet.key}:${value}`,
+              label: `${facet.label}: ${label}`,
+              onRemove: () => toggleFacet(facet.key, value),
+            }
+          }),
+        )}
+        onClearAll={clearAll}
+      />
+
+      {/* ── filters (overlay) + list ──────────────────────────────────── */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: desktop ? 'auto minmax(0,1fr)' : '1fr',
+          gridTemplateColumns: 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
       >
         {/*
-          Rulings §7 — below 1180 this content REFLOWS, it does not hide. At
-          desktop the panel sits in `SideRail` (`CollapsibleAside`, a 44px
-          handle at tablet/phone); below that it renders as a plain block that
-          `order: -1` lifts above the list, sections closed, so the filters are
-          the first thing on the warehouse tablet and on a phone rather than
-          something found after scrolling past every row.
+          The rail is gone — and Rulings §7 ("below 1280 this content REFLOWS,
+          it does not hide") is satisfied better than it was, for the reason
+          RentalsList records at its own drawer: there is no rail left to
+          collapse, and the panel is reachable from the same Filters button at
+          every width. The 210px column it used to hold cost the table 178px at
+          the app's own 1280 baseline; `FilterDrawer` is `position: fixed`, so
+          it costs zero layout and this grid is now one column.
         */}
-        <div style={desktop ? undefined : { order: -1 }}>
-          {(() => {
-            const panel = (
-              <section
-                aria-label="Filters"
-                style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}
+        <>
+        {(() => {
+          const filtersContent = (
+            <>
+          <Card
+            title="Filters"
+            action={
+              <button
+                type="button"
+                onClick={clearAll}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--link)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  padding: 0,
+                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minHeight: 48, padding: '0 14px' }}>
-                  <h2 style={{ flex: 1, margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-                    Filters
-                    {activeFilterCount > 0 && (
-                      <span className="figure" style={{ marginLeft: 6, color: 'var(--nav-active-accent)' }}>
-                        · {activeFilterCount}
-                      </span>
-                    )}
-                  </h2>
-                  {(activeFilterCount > 0 || activeSavedView !== null) && (
-                    <button
-                      type="button"
-                      onClick={clearAll}
-                      style={{
-                        minHeight: 44,
-                        border: 'none',
-                        background: 'transparent',
-                        color: 'var(--link)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        padding: 0,
-                      }}
-                    >
-                      Clear all
-                    </button>
-                  )}
-                </div>
+                Clear all
+              </button>
+            }
+            bodyStyle={{ padding: 'var(--sp-sm)' }}
+          >
+            {/*
+              What stood here was one `Unavailable` row reading "Advanced
+              filters — coming soon", standing in for nine dead rows built from
+              `CLIENT_FILTER_GROUPS` — ten `{label, icon}` pairs with no options
+              and no predicates behind them.
 
-                <FilterSection title="Client type" open={openSections.type} onToggle={() => toggleSection('type')}>
-                  {typeRows.map((r) => (
-                    <CheckRow
-                      key={r.value}
-                      label={r.label}
-                      count={r.count}
-                      checked={facets.types.includes(r.value)}
-                      onChange={() => toggleFacet('types', r.value)}
-                    />
-                  ))}
-                </FilterSection>
+              These are those filters. Every option carries a live count
+              (P6: "filters carry live counts on every option"), computed over
+              the rows already in memory rather than by a query per option:
+              this screen loads the directory once and filters in the browser,
+              so a count is a synchronous pass, not a round trip.
 
-                <FilterSection title="Status" open={openSections.status} onToggle={() => toggleSection('status')}>
-                  {statusRows.map((r) => (
-                    <CheckRow
-                      key={r.value}
-                      label={r.label}
-                      count={r.count}
-                      checked={facets.statuses.includes(r.value)}
-                      onChange={() => toggleFacet('statuses', r.value)}
-                    />
-                  ))}
-                </FilterSection>
+              A facet is counted with every OTHER facet applied but not its own
+              — `facetCountsOf`'s contract, and the same rule `FilterDrawer` §10
+              states for the server path. Picking one membership therefore
+              leaves the other memberships answering "and how many instead?"
+              rather than collapsing them all to zero.
 
-                <FilterSection title="Flags" open={openSections.flags} onToggle={() => toggleSection('flags')}>
-                  {overlayRows.map((r) => {
-                    const row = (
-                      <CheckRow
-                        label={r.label}
-                        count={r.count}
-                        checked={overlays[r.key]}
-                        onChange={() => toggleOverlay(r.key)}
-                        {...(r.unavailable ? { unavailableNote: 'check unavailable' } : {})}
-                      />
-                    )
-                    /* §11.2.7 — a limb that cannot be evaluated says the check did
-                       not run; it is not silently omitted (read as "nobody is on
-                       stop") and does not filter to an empty list. */
-                    return r.unavailable ? (
-                      <Unavailable key={r.key} reason={r.unavailable}>
-                        {row}
-                      </Unavailable>
-                    ) : (
-                      <Fragment key={r.key}>{row}</Fragment>
-                    )
-                  })}
-                </FilterSection>
+              Derived facets (Location, Segment, Organisation Type) read their
+              options off the loaded rows, so the panel can only ever offer a
+              value some client actually has — no dead control, ever.
+            */}
+            <div style={filterGroupStyle}>
+              {facets.map((facet) => {
+                const options = optionsOf(facet, clients)
+                if (options.length === 0) return null
+                const counts = facetCountsOf(facet, clients, facetSel)
+                return (
+                  <FilterOptionList
+                    key={facet.key}
+                    label={facet.label}
+                    options={options.map((o) => ({ value: o.value, label: o.label, count: counts[o.value] ?? 0 }))}
+                    selected={facetSel[facet.key] ?? []}
+                    onToggle={(v) => toggleFacet(facet.key, v)}
+                  />
+                )
+              })}
+            </div>
+          </Card>
 
-                <FilterSection title="Saved views" open={openSections.views} onToggle={() => toggleSection('views')}>
-                  {SAVED_VIEWS.filter((v) => money || !v.money).map((v) => {
-                    const on = activeSavedView === v.label
-                    return (
-                      <button
-                        key={v.label}
-                        type="button"
-                        onClick={() => {
-                          setFacets({ ...NO_FACETS, ...v.facets })
-                          /* A saved view restores the WHOLE state, overlays included —
-                             otherwise "Blocked Clients" would leave a stale On Stop
-                             overlay on and show a different list each time. */
-                          setOverlays({ ...NO_OVERLAYS, ...v.overlays })
-                          setSort(v.sort)
-                          setActiveSavedView(v.label)
-                          resetPage()
-                        }}
-                        aria-pressed={on}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 9,
-                          width: '100%',
-                          minHeight: 44,
-                          padding: '0 8px',
-                          borderRadius: 'var(--r-sm)',
-                          border: 'none',
-                          background: on ? 'var(--nav-active-bg)' : 'transparent',
-                          color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: on ? 600 : 500,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        <Icon name="flag" size={14} style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }} />
-                        <span style={{ flex: 1, textAlign: 'left' }}>{v.label}</span>
-                      </button>
-                    )
-                  })}
-                  <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-                    <Unavailable reason="Saving a view is not built yet — views are not persisted anywhere">
-                      <Button icon="plus" disabled>
-                        Save Current View
-                      </Button>
-                    </Unavailable>
-                  </div>
-                </FilterSection>
-              </section>
-            )
-            return desktop ? (
-              <SideRail width={240} label="Filters">
-                {panel}
-              </SideRail>
-            ) : (
-              panel
-            )
-          })()}
-        </div>
+          <Card title="Saved Views" bodyStyle={{ padding: 'var(--sp-sm)' }}>
+            {SAVED_VIEWS.filter((v) => money || !v.money).map((v) => {
+              const on = activeSavedView === v.label
+              return (
+                <button
+                  key={v.label}
+                  type="button"
+                  onClick={() => {
+                    /* A saved view restores the WHOLE state, overlays included —
+                       otherwise "Blocked Clients" would leave a stale On Stop
+                       overlay on and show a different list each time. One
+                       `patchParams` call, so restoring a view is one history
+                       entry and one Back undoes it whole. */
+                    const restored = { ...NO_OVERLAYS, ...v.overlays }
+                    patchParams({
+                      filter: v.filter === 'all' ? null : FILTER_PARAM[v.filter],
+                      blocked: restored.blocked ? '1' : null,
+                      stop: restored.onStop ? '1' : null,
+                    })
+                    setSort(v.sort)
+                    setActiveSavedView(v.label)
+                  }}
+                  aria-pressed={on}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 9,
+                    width: '100%',
+                    minHeight: 44,
+                    padding: '0 8px',
+                    borderRadius: 'var(--r-sm)',
+                    border: 'none',
+                    background: on ? 'var(--nav-active-bg)' : 'transparent',
+                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: on ? 600 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <Icon name="flag" size={14} style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }} />
+                  <span style={{ flex: 1, textAlign: 'left' }}>{v.label}</span>
+                </button>
+              )
+            })}
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+              <Unavailable reason="Saving a view is not built yet — views are not persisted anywhere">
+                <Button icon="plus" disabled>
+                  Save Current View
+                </Button>
+              </Unavailable>
+            </div>
+          </Card>
+            </>
+          )
+          return (
+              <FilterDrawer
+                id="clients-filters"
+                open={filtersOpen}
+                onClose={() => setFiltersOpen(false)}
+                resultCount={filteredClients.length}
+                noun="clients"
+                activeCount={selectionCount(facetSel)}
+                onClearAll={clearAll}
+                standardFooter
+                onApply={() => setFiltersOpen(false)}
+              >
+                {filtersContent}
+              </FilterDrawer>
+          )
+        })()}
+        </>
 
         <div
           style={{
@@ -1104,7 +1629,22 @@ export function ClientsDirectory({
           }}
         >
           <Card bodyStyle={{ padding: 0 }}>
-            <div
+            <AppPageToolbar
+              pagination={
+                <Pagination
+                  page={current}
+                  total={filteredClients.length}
+                  pageSize={perPage}
+                  pageSizeOptions={CLIENT_ROWS_PER_PAGE}
+                  onPageChange={setPage}
+                  onPageSizeChange={(size) => {
+                    setPerPage(size)
+                    resetPage()
+                  }}
+                />
+              }
+            />
+            {selectedRowIds.size > 0 && <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1112,16 +1652,19 @@ export function ClientsDirectory({
                 padding: '9px 14px',
                 borderBottom: '1px solid var(--border)',
                 background: 'var(--card2)',
+                /* The card body has padding 0, so this strip sits flush in the
+                   card's top corners and its own square corners painted over
+                   them — visible as a notch once --r-card went 8 -> 14 (v4.2
+                   §6). It carries the card's radius rather than the card
+                   carrying `overflow: hidden`, because the row-action menu
+                   below is absolutely positioned and clipping the card would
+                   cut it off. */
+                borderRadius: 'var(--r-card) var(--r-card) 0 0',
                 flexWrap: 'wrap',
                 fontSize: 'var(--t-meta)',
                 color: 'var(--text2)',
               }}
             >
-              <span>
-                {filteredClients.length === 0
-                  ? 'Showing 0 clients'
-                  : `Showing ${(current - 1) * perPage + 1} to ${Math.min(current * perPage, filteredClients.length)} of ${filteredClients.length} clients`}
-              </span>
               {selectedRowIds.size > 0 && (
                 <>
                   <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>
@@ -1148,7 +1691,15 @@ export function ClientsDirectory({
                   {/* Only the un-blocked ones — asking to block a client that is
                       already blocked has no write to make, and the action says so
                       rather than silently succeeding. */}
-                  {selectedClients.some((c) => !c.isBlocked) && (
+                  {/* `mayBlock` — see its definition. This file HIDES what a
+                      role may not use, where `ClientDetail` greys it with a
+                      stated reason: that is this screen's own precedent, the
+                      one `filterFromParam` already keeps for the money-blind
+                      Payment Due filter ("the filter must not run for a session
+                      that may not know the answer"). A bulk toolbar that
+                      appears only when rows are selected has nowhere to put a
+                      reason without shouting it at every selection. */}
+                  {mayBlock && selectedClients.some((c) => !c.isBlocked) && (
                     <Button
                       variant="danger"
                       icon="alert_triangle"
@@ -1159,7 +1710,7 @@ export function ClientsDirectory({
                   )}
                   {/* Law 3 — a block is lifted, never deleted, so the lift needs a
                       control of its own wherever the block has one. */}
-                  {selectedClients.some((c) => c.isBlocked) && (
+                  {mayBlock && selectedClients.some((c) => c.isBlocked) && (
                     <Button
                       icon="checklist"
                       onClick={() => openBlockDialog('unblock', selectedClients.filter((c) => c.isBlocked))}
@@ -1169,58 +1720,9 @@ export function ClientsDirectory({
                   )}
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
-                aria-pressed={density === 'compact'}
-                title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
-                style={{
-                  marginLeft: 'auto',
-                  minWidth: 44,
-                  minHeight: 44,
-                  borderRadius: 'var(--r-input)',
-                  border: '1px solid var(--input-border)',
-                  background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
-                  color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
-                  cursor: 'pointer',
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
-                <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
-              </button>
 
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                Show
-                <select
-                  value={perPage}
-                  onChange={(e) => {
-                    setPerPage(Number(e.target.value))
-                    resetPage()
-                  }}
-                  className="figure"
-                  style={{
-                    // Law 15 — 44×44 at every width, desktop included. A real
-                    // <select> the operator has to hit; it was 26px tall.
-                    minHeight: 44,
-                    padding: '0 6px',
-                    borderRadius: 7,
-                    border: '1px solid var(--border)',
-                    background: 'var(--input-bg)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {CLIENT_ROWS_PER_PAGE.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                per page
-              </label>
-            </div>
+
+            </div>}
 
             <PageBody
               empty={filteredClients.length === 0}
@@ -1238,62 +1740,55 @@ export function ClientsDirectory({
                     emptyActionLabel: 'Register a client',
                     onEmptyAction: onRequestAdd,
                   }
-                : {
-                    onClearFilters: clearAll,
-                  })}
-              noun="clients"
-            >
-              {!tabular || view === 'Cards' ? (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(258px, 1fr))',
-                  gap: 'var(--sp-md)',
-                  padding: 14,
-                }}
-              >
+                  actionLabel={emptyBecauseNoClients ? 'Register a client' : 'Clear all filters'}
+                  onAction={emptyBecauseNoClients ? onRequestAdd : clearAll}
+                />
+              </div>
+            ) : !tabular || view === 'Cards' ? (
+              <div className="client-grid-container">
                 {pageRowsWithIntel.map(({ client, glance, detail }) => {
                   const action = primaryAction(client)
                   return (
-                    <article key={client.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    <article key={client.id} className="client-bento-card">
                       <IntelCard
                         glance={glance}
                         detail={detail}
                         detailTitle={client.name}
                         detailSubtitle={`${client.id} · ${client.clientType}`}
+                        entityType="client"
+                        entityId={client.dbId ?? ''}
+                        context="client-list"
+                        gateContext={gctx}
+                        actionContext={user ? { userId: user.id, role: user.role } : null}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <div className="client-card-header">
                           <span
                             aria-hidden
+                            className="client-avatar-badge"
                             style={{
-                              width: 34,
-                              height: 34,
-                              borderRadius: 9,
-                              display: 'grid',
-                              placeItems: 'center',
                               background: STATUS[TIER_TONE[client.membership]].bg,
                               color: STATUS[TIER_TONE[client.membership]].fg,
-                              fontSize: 'var(--t-meta)',
-                              fontWeight: 700,
-                              flexShrink: 0,
+                              border: STATUS[TIER_TONE[client.membership]].border
+                                ? `1px solid ${STATUS[TIER_TONE[client.membership]].border}`
+                                : undefined,
                             }}
                           >
                             {client.name.slice(0, 2).toUpperCase()}
                           </span>
-                          <span style={{ minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span className="client-card-meta">
+                            <span className="client-card-name" data-intel-identifier>
                               {client.name}
                             </span>
-                            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                            <span className="client-card-sub">
                               {client.clientType}
                             </span>
                           </span>
                         </div>
                       </IntelCard>
 
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      <div className="client-card-tags">
                         <Tone text={client.membership} tone={TIER_TONE[client.membership]} />
-                        {client.isVip && <Tone text="VIP" tone="progress" />}
+                        {client.isVip && <Tone text="VIP" entity />}
                         {client.isBlocked && <Tone text="Blocked" tone="danger" />}
                         {/* Rulings §11.2.5 — icon + label + colour, and the
                             firing limb travels with the chip so the row can
@@ -1311,27 +1806,27 @@ export function ClientsDirectory({
                       </div>
 
                       {pii && (
-                        <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                          <div className="figure">{client.phone}</div>
-                          <div style={{ color: 'var(--muted)' }}>{client.email}</div>
+                        <div className="client-card-contact">
+                          <div className="figure client-mono" style={{ fontWeight: 600, color: 'var(--text)' }}>{client.phone}</div>
+                          <div style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{client.email}</div>
                         </div>
                       )}
 
-                      <div style={{ display: 'flex', gap: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                        <span>
-                          <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>
+                      <div className="client-card-stats">
+                        <span className="client-stat-badge">
+                          <span className="figure client-outfit" style={{ color: 'var(--text)', fontWeight: 600 }}>
                             {client.currentRentalsCount}
                           </span>{' '}
-                          on rent
+                          open
                         </span>
                         {money && client.outstandingPaisa > 0 && (
-                          <span className="figure" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
+                          <span className="figure client-outfit" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
                             {formatMoney(client.outstandingPaisa)} due
                           </span>
                         )}
                       </div>
 
-                      <div style={{ marginTop: 'auto', display: 'flex', gap: 6 }}>
+                      <div className="client-card-actions">
                         <Button variant={action.variant} onClick={action.run}>
                           {action.label}
                         </Button>
@@ -1350,8 +1845,8 @@ export function ClientsDirectory({
                 band; the dropped facts are all still on the row's IntelCard and
                 in the profile panel, so nothing becomes unreachable.
               */
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: narrow ? 620 : money ? 1180 : 900 }}>
+              <DataTableShell ariaLabel="Clients directory" data-table-scroll className="client-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: narrow ? 620 : 0 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       <th style={{ ...th, width: 30 }}>
@@ -1366,7 +1861,10 @@ export function ClientsDirectory({
                       {pii && !narrow && <SortHeader label="Contact" sort={sort} onSort={applySortKey} />}
                       {!narrow && <SortHeader label="Type" sortKey="type" sort={sort} onSort={applySortKey} />}
                       <SortHeader label="Membership" sortKey="membership" sort={sort} onSort={applySortKey} />
-                      {!narrow && <SortHeader label="Current Rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />}
+                      {/* "Active Rentals", not "Current Rentals": the figure is
+                          `active_bookings_count` — every booking that is neither
+                          Closed nor cancelled, see the KPI note above. */}
+                      {!narrow && <SortHeader label="Open rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />}
                       {money && <SortHeader label="Outstanding" sortKey="outstanding" sort={sort} onSort={applySortKey} />}
                       {money && !narrow && <SortHeader label="Deposit Held" sortKey="deposit" sort={sort} onSort={applySortKey} />}
                       {!narrow && <SortHeader label="Last Rental (BS / AD)" sortKey="lastRental" sort={sort} onSort={applySortKey} />}
@@ -1404,6 +1902,7 @@ export function ClientsDirectory({
                               setSelectedClientId(isSelected ? null : client.id)
                             }
                           }}
+                          className={`client-row ${isSelected ? 'is-selected' : ''}`}
                           style={{
                             borderBottom: '1px solid var(--border)',
                             background: isSelected ? 'var(--tr-hover)' : 'transparent',
@@ -1432,19 +1931,29 @@ export function ClientsDirectory({
                               detail={detail}
                               detailTitle={client.name}
                               detailSubtitle={`${client.id} · ${client.clientType}`}
+                              entityType="client"
+                              entityId={client.dbId ?? ''}
+                              context="client-list"
+                              gateContext={gctx}
+                              actionContext={user ? { userId: user.id, role: user.role } : null}
                             >
                               <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                                 <span
                                   aria-hidden
                                   style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 'var(--r-sm)',
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 'var(--r-badge)',
                                     display: 'grid',
                                     placeItems: 'center',
+                                    textAlign: 'center',
+                                    lineHeight: 1.05,
                                     background: STATUS[TIER_TONE[client.membership]].bg,
                                     color: STATUS[TIER_TONE[client.membership]].fg,
-                                    fontSize: 'var(--t-th)',
+                                    border: STATUS[TIER_TONE[client.membership]].border
+                                      ? `1px solid ${STATUS[TIER_TONE[client.membership]].border}`
+                                      : undefined,
+                                    fontSize: 'var(--t-meta)',
                                     fontWeight: 700,
                                     flexShrink: 0,
                                   }}
@@ -1453,8 +1962,10 @@ export function ClientsDirectory({
                                 </span>
                                 <span style={{ minWidth: 0 }}>
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>{client.name}</span>
-                                    {client.isVip && <Tone text="VIP" tone="progress" />}
+                                    <span data-intel-identifier style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                      {client.name}
+                                    </span>
+                                    {client.isVip && <Tone text="VIP" entity />}
                                     {client.isVerified && (
                                       <span
                                         title="KYC and PAN verified"
@@ -1476,7 +1987,7 @@ export function ClientsDirectory({
                                     )}
                                   </span>
                                   {client.company && (
-                                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>
+                                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 1 }}>
                                       {client.company}
                                     </span>
                                   )}
@@ -1487,7 +1998,7 @@ export function ClientsDirectory({
 
                           {pii && !narrow && (
                             <td style={td}>
-                              <span className="figure" style={{ display: 'block', color: 'var(--text)' }}>
+                              <span className="figure client-mono" style={{ display: 'block', color: 'var(--text)' }}>
                                 {client.phone}
                               </span>
                               <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -1505,11 +2016,11 @@ export function ClientsDirectory({
                           {!narrow && (
                           <td style={td}>
                             {client.currentRentalsCount > 0 ? (
-                              <span className="figure" style={{ color: 'var(--link)', fontWeight: 600 }}>
-                                {client.currentRentalsCount} on rent
+                              <span className="figure client-outfit" style={{ color: 'var(--link)', fontWeight: 600 }}>
+                                {client.currentRentalsCount} open
                               </span>
                             ) : (
-                              <span className="figure" style={{ color: 'var(--muted)' }}>
+                              <span className="figure client-outfit" style={{ color: 'var(--muted)' }}>
                                 0
                               </span>
                             )}
@@ -1519,7 +2030,7 @@ export function ClientsDirectory({
                           {money && (
                             <td style={td}>
                               {client.outstandingPaisa > 0 ? (
-                                <span className="figure" style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
+                                <span className="figure client-outfit" style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
                                   {formatMoney(client.outstandingPaisa)}
                                 </span>
                               ) : (
@@ -1532,7 +2043,7 @@ export function ClientsDirectory({
                             <td style={td}>
                               {client.depositHeldPaisa > 0 ? (
                                 <>
-                                  <span className="figure" style={{ display: 'block', color: 'var(--text)' }}>
+                                  <span className="figure client-outfit" style={{ display: 'block', color: 'var(--text)' }}>
                                     {formatMoney(client.depositHeldPaisa)}
                                   </span>
                                   {client.currentRentalsCount === 0 && (
@@ -1549,14 +2060,17 @@ export function ClientsDirectory({
 
                           {!narrow && (
                           <td style={td}>
-                            {client.lastRentalBs === '—' ? (
+                            {client.lastRentalAtAd ? <BsAdDate date={client.lastRentalAtAd} tone="booking" /> : client.lastRentalBs === '—' ? (
                               <span style={{ color: 'var(--muted)' }}>No rental yet</span>
                             ) : (
                               <>
-                                <span className="figure" style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
-                                  {client.lastRentalBs} BS
+                                {/* No " BS" appended here: `queries/clients.ts` already suffixes a
+                                    BS label, and leaves the suffix off when it fell back to the AD
+                                    date — appending it blindly stamped "BS" on an English date. */}
+                                <span className="figure client-mono" style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
+                                  {client.lastRentalBs}
                                 </span>
-                                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                                <span className="figure client-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                                   {client.lastRentalAd}
                                 </span>
                               </>
@@ -1627,7 +2141,7 @@ export function ClientsDirectory({
                                     {
                                       label: 'Start a new rental',
                                       icon: 'plus' as const,
-                                      run: () => navigate('/rentals/new'),
+                                      run: () => navigate(`/rentals/new?clientId=${encodeURIComponent(client.id)}`),
                                     },
                                     ...(client.activeBookings[0]
                                       ? [
@@ -1685,33 +2199,24 @@ export function ClientsDirectory({
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
             </PageBody>
 
+            {/* From main's d7ca3bc: no "Page 1 of 1" under an empty state. */}
             {filteredClients.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--sp-md)',
-                  padding: '10px 14px',
-                  flexWrap: 'wrap',
-                  fontSize: 'var(--t-meta)',
-                  color: 'var(--text2)',
-                  borderTop: '1px solid var(--border)',
-                }}
-              >
-                <span>
-                  Page <span className="figure">{current}</span> of <span className="figure">{pageCount}</span>
-                </span>
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                  <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                    <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
-                  ))}
-                  <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
-                </span>
+              <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                <Pagination
+                  page={current}
+                  total={filteredClients.length}
+                  pageSize={perPage}
+                  pageSizeOptions={CLIENT_ROWS_PER_PAGE}
+                  onPageChange={setPage}
+                  onPageSizeChange={(size) => {
+                    setPerPage(size)
+                    resetPage()
+                  }}
+                />
               </div>
             )}
           </Card>
@@ -1734,7 +2239,7 @@ export function ClientsDirectory({
                     <h3 style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', margin: 0 }}>
                       {selectedClient.name}
                     </h3>
-                    {selectedClient.isVip && <Tone text="VIP" tone="progress" />}
+                    {selectedClient.isVip && <Tone text="VIP" entity />}
                   </div>
                   <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 3 }}>
                     {selectedClient.id} · {selectedClient.membership}
@@ -1763,8 +2268,32 @@ export function ClientsDirectory({
               </div>
 
               <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/*
+                  `blockReason` is NEVER set on a directory record, so this
+                  banner used to render its title over an empty message.
+                  `toClientRecord` deliberately omits the key
+                  (lib/queries/clients.ts:280-284) and
+                  `__tests__/clientsQuery.test.ts` asserts `'blockReason' in
+                  record` is false.
+
+                  The reason is not missing from the DATABASE — `client_flags.reason`
+                  is a real nullable text column (0005_clients.sql:231, confirmed
+                  on the live schema) — it is missing from THIS READ:
+                  `client_directory_v` publishes the `is_blocked` boolean and
+                  nothing else about the flag (0054:287-297; the live view has
+                  31 columns and no reason among them). So the honest sentence
+                  is the one `ClientDetail.tsx` already renders for the same
+                  gap (search its "not carried by this view"), reused
+                  verbatim rather than reworded into a third variant.
+                */}
                 {selectedClient.isBlocked && (
-                  <ErrorBanner title="Account blocked." message={selectedClient.blockReason} />
+                  <ErrorBanner
+                    title="Account blocked."
+                    message={
+                      selectedClient.blockReason ??
+                      'The reason is recorded on the flag but is not carried by this view.'
+                    }
+                  />
                 )}
 
                 {/*
@@ -1854,19 +2383,35 @@ export function ClientsDirectory({
                   return null
                 })()}
 
+                {/*
+                  HIS v2.1 §4.2 — Phone, Email, PAN, Address and the authorised
+                  contact sit behind the SAME `pii` gate the table's Contact
+                  column and the card view's phone/email block already honour.
+                  Absent, not masked, exactly as Law 6 treats money: a Warehouse
+                  or Technician session gets no cell to un-hide. This rail was
+                  the one surface on the screen still rendering all of it
+                  ungated — a money-blind role could not read a balance here but
+                  could read a phone number, which is the same class of leak.
+                  KYC and Type stay for every role: a status and a category,
+                  both already drawn ungated on the table itself.
+                */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)', fontSize: 'var(--t-meta)' }}>
-                  <span>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>Phone</span>
-                    <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{selectedClient.phone}</span>
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>Email</span>
-                    <span style={{ color: 'var(--text)', wordBreak: 'break-all' }}>{selectedClient.email}</span>
-                  </span>
-                  <span>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>PAN</span>
-                    <span className="figure" style={{ color: 'var(--text)' }}>{selectedClient.pan ?? 'Not on file'}</span>
-                  </span>
+                  {pii && (
+                    <>
+                      <span>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Phone</span>
+                        <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{selectedClient.phone}</span>
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Email</span>
+                        <span style={{ color: 'var(--text)', wordBreak: 'break-all' }}>{selectedClient.email}</span>
+                      </span>
+                      <span>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>PAN</span>
+                        <span className="figure" style={{ color: 'var(--text)' }}>{selectedClient.pan ?? 'Not on file'}</span>
+                      </span>
+                    </>
+                  )}
                   <span>
                     <span style={{ color: 'var(--muted)', display: 'block' }}>KYC</span>
                     <Tone
@@ -1884,22 +2429,26 @@ export function ClientsDirectory({
                     <span style={{ color: 'var(--muted)', display: 'block' }}>Type</span>
                     <span style={{ color: 'var(--text)' }}>{selectedClient.clientType}</span>
                   </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>Address</span>
-                    <span style={{ color: 'var(--text)' }}>{selectedClient.address}</span>
-                  </span>
+                  {pii && (
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ color: 'var(--muted)', display: 'block' }}>Address</span>
+                      <span style={{ color: 'var(--text)' }}>{selectedClient.address}</span>
+                    </span>
+                  )}
                 </div>
 
-                <div style={{ fontSize: 'var(--t-meta)' }}>
-                  <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Authorized contact</span>
-                  <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
-                    {selectedClient.contactPerson.name}
-                  </span>
-                  <span style={{ display: 'block', color: 'var(--text2)' }}>
-                    {selectedClient.contactPerson.designation} ·{' '}
-                    <span className="figure">{selectedClient.contactPerson.phone}</span>
-                  </span>
-                </div>
+                {pii && (
+                  <div style={{ fontSize: 'var(--t-meta)' }}>
+                    <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Authorized contact</span>
+                    <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
+                      {selectedClient.contactPerson.name}
+                    </span>
+                    <span style={{ display: 'block', color: 'var(--text2)' }}>
+                      {selectedClient.contactPerson.designation} ·{' '}
+                      <span className="figure">{selectedClient.contactPerson.phone}</span>
+                    </span>
+                  </div>
+                )}
 
                 {/* §8.3 — credit and lifetime spend are rupee figures, so the whole
                     block is absent for Warehouse rather than blanked out. */}
@@ -1980,14 +2529,28 @@ export function ClientsDirectory({
                 )}
 
                 <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                  {/* Was `${blockReason ?? 'account under review'}` — a reason
+                      nobody recorded, presented as the one that was. The field
+                      is always absent here (see the banner above), so that
+                      fallback was the ONLY string this tooltip ever showed.
+                      Same shape as `ClientDetail`'s own blocked notice: name the reason
+                      when it is carried, say nothing when it is not. */}
                   {selectedClient.isBlocked ? (
-                    <Unavailable reason={`Blocked: ${selectedClient.blockReason ?? 'account under review'} — clear the block before starting a rental`}>
+                    <Unavailable
+                      reason={`Blocked${
+                        selectedClient.blockReason ? `: ${selectedClient.blockReason}` : ''
+                      } — clear the block before starting a rental`}
+                    >
                       <Button variant="primary" disabled>
                         Start rental
                       </Button>
                     </Unavailable>
                   ) : (
-                    <Button variant="primary" icon="plus" onClick={() => navigate('/rentals/new')}>
+                    <Button
+                      variant="primary"
+                      icon="plus"
+                      onClick={() => navigate(`/rentals/new?clientId=${encodeURIComponent(selectedClient.id)}`)}
+                    >
                       Start rental
                     </Button>
                   )}
@@ -2006,10 +2569,22 @@ export function ClientsDirectory({
                     View Full Profile
                   </Button>
                   {/* One client, both directions. Law 3: unblocking must be
-                      possible, and this is the surface that has it — the Block
-                      control on `ClientDetail` is still disabled behind an
-                      `Unavailable` reason that this change makes stale (reported). */}
-                  {selectedClient.isBlocked ? (
+                      possible, and this surface has always had it. `ClientDetail`
+                      now has it too — CL-06, in this same change, replaced the
+                      `Unavailable` reason that claimed `client.block` was unruled
+                      with a real dispatch gated on `canBlockClient`. Both
+                      surfaces write through `actions/clients/blockClient`. */}
+                  {!mayBlock ? (
+                    /* Greyed with the rule stated, matching the Ledger control
+                       three lines up — the rail already carries `Unavailable`
+                       refusals, so here the verb stays discoverable, exactly as
+                       `ClientDetail` now does it. */
+                    <Unavailable reason="Blocking a client is an Owner, Admin or Manager action (client.block)">
+                      <Button icon="alert_triangle" disabled>
+                        Block Client
+                      </Button>
+                    </Unavailable>
+                  ) : selectedClient.isBlocked ? (
                     <Button icon="checklist" onClick={() => openBlockDialog('unblock', [selectedClient])}>
                       Unblock Client
                     </Button>
@@ -2027,7 +2602,7 @@ export function ClientsDirectory({
             </Card>
             )
             /* Rulings §7 again — the profile rail is beside the list at
-               desktop and inline beneath it below 1180, never behind the
+               desktop and inline beneath it below 1280, never behind the
                collapse handle. */
             return desktop ? <Rail width={330} label="Client profile">{profileContent}</Rail> : profileContent
           })()}
@@ -2044,7 +2619,7 @@ export function ClientsDirectory({
         }
         subtitle={
           blockMode === 'block'
-            ? 'A blocked client cannot start a new rental — the database refuses it, for every role including Owner. Existing bookings, invoices and history are untouched. State a reason; it is kept on the block.'
+            ? 'Start Rental is refused on the client’s profile and in this directory while the block stands. Existing bookings, invoices and history are untouched. State a reason; it is kept on the block.'
             : 'The block is lifted, not deleted: the record of who applied it, why, and who lifted it is kept.'
         }
         footer={
@@ -2109,34 +2684,5 @@ export function ClientsDirectory({
         </div>
       </Modal>
     </div>
-  )
-}
-
-function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        // Law 15 — pagination is a real target on the tablet this product
-        // runs on; 26×26 was 18px under the floor.
-        minWidth: 44,
-        minHeight: 44,
-        padding: '0 6px',
-        borderRadius: 7,
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
   )
 }

@@ -44,7 +44,7 @@ import {
   CHIP_MEANS,
   OPTIONAL_COLUMNS,
   PAYMENT_DUE_UNAVAILABLE,
-  RENTAL_KPI_FILTERS,
+  rentalKpiFilters,
   ROWS,
   SUB_RENTAL_NOTE,
   withSubRental,
@@ -66,15 +66,40 @@ import {
 } from '../../../data/booking'
 import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
 import type { ListFilters } from '../../../lib/queries/listQuery'
-import { NOW_AD, TODAY_DAY_AD } from '../../../data/today'
+import { businessDayAd, businessNowAd, TODAY_DAY_AD } from '../../../data/today'
+import { getBusinessToday } from '../../../lib/bs'
 import { gateContext } from '../../../lib/fieldGating'
 import { rupees } from '../../../lib/money'
 import { BOOKING_STATUS, type BookingStatus } from '../../../lib/workflow'
+
+/**
+ * A Kathmandu calendar day, `n` days from the operating day, as `YYYY-MM-DD`.
+ *
+ * These expectations used to be written as literals — `'2026-07-31'`,
+ * `'2026-08-01'` — which passed only while `lib/bs.ts` froze the operating day
+ * at 31 Jul 2026. A test that names a date cannot tell a chip that anchors on
+ * today from one that anchors on a day in the past; it just goes red when the
+ * product is fixed. What the chips actually promise is a relationship to
+ * today, so that is what is asserted.
+ */
+const day = (n: number) => new Date(getBusinessToday().getTime() + n * 86_400_000).toISOString().slice(0, 10)
 
 const CANONICAL_SIX = Object.keys(BOOKING_STATUS)
 
 /** The retired vocabulary 0015 deleted. None of these may ever reach a query. */
 const RETIRED_STAGE_NAMES = ['Draft', 'Confirmed', 'Preparing', 'Ready', 'Dispatched', 'Return Due', 'Inspection', 'Cleaning', 'Completed', 'Cancelled']
+
+/*
+ * The anchor every query in this file is built from, and asserted against.
+ *
+ * It was `data/today.ts`'s exported `NOW_AD`, removed by X-06: that constant was
+ * midnight UTC of the operating day — a DAY MARKER — where `overdue()` and
+ * `rentalsQuery` need an INSTANT, so the Overdue chip and KPI were asking "due
+ * back before 05:45 this morning" and dropping the day's own overdues. The test
+ * states its own instant now, and BOTH sides of every comparison use it, so the
+ * assertions still pin "the chip is exactly `overdue()`" rather than a value.
+ */
+const NOW_AD = businessNowAd()
 
 const NO_RANGE = { from: '', to: '' }
 const ALL_CHIPS = CHIPS.map((c) => c.label)
@@ -139,12 +164,11 @@ describe('Payment Due — the chip with no column behind it', () => {
     expect(unavailable[0]?.unavailable).toBe(PAYMENT_DUE_UNAVAILABLE)
   })
 
-  it('names the three places an outstanding balance is NOT', () => {
+  it('directs staff to Finance for an outstanding invoice balance', () => {
     // A disabled control has to say why, and "not built yet" is not why. The
     // reason has to be actionable by whoever wires it next.
-    expect(PAYMENT_DUE_UNAVAILABLE).toContain('deposit_required')
-    expect(PAYMENT_DUE_UNAVAILABLE).toContain('payments')
-    expect(PAYMENT_DUE_UNAVAILABLE).toContain('Financial Engine')
+    expect(PAYMENT_DUE_UNAVAILABLE).toContain('invoice balance in Finance')
+    expect(PAYMENT_DUE_UNAVAILABLE).not.toMatch(/deposit_required|Financial Engine/)
   })
 
   it('never becomes a filter that quietly returns the unfiltered list', () => {
@@ -211,28 +235,31 @@ describe('All — the default scope, not a date filter', () => {
 })
 
 describe('the date chips — Kathmandu day boundaries, read off the named sets', () => {
-  it('Tomorrow is one Nepal calendar day on pickup_at, inclusive at both ends', () => {
+  it('Tomorrow is one Nepal OPERATIONAL day on pickup_at, inclusive at both ends', () => {
     // +05:45, never `Z`. Midnight UTC is 05:45 in Kathmandu, so a UTC-bounded
-    // "tomorrow" would lose the early shift's pickups to today's list.
+    // "tomorrow" would lose the early shift's pickups to today's list. Since
+    // D4 (ruled 30 Aug 2026) the day runs 06:00 → 06:00 by default, so
+    // tomorrow ends at 05:59:59.999 the morning after.
     expect(q('Tomorrow').filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: '2026-08-01T00:00:00.000+05:45',
-      toAd: '2026-08-01T23:59:59.999+05:45',
+      fromAd: `${day(1)}T06:00:00.000+05:45`,
+      toAd: `${day(2)}T05:59:59.999+05:45`,
     })
   })
 
   it('Next 7 Days is today plus the next six, on pickup_at', () => {
     expect(q('Next 7 Days').filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: '2026-07-31T00:00:00.000+05:45',
-      toAd: '2026-08-06T23:59:59.999+05:45',
+      fromAd: `${day(0)}T06:00:00.000+05:45`,
+      toAd: `${day(7)}T05:59:59.999+05:45`,
     })
   })
 
   it('anchors on lib/bs.ts’s single operating day, not on the wall clock', () => {
     // The app once held three opinions about what day it was. Rentals reads the
-    // same anchor Today, the Calendar and Pulse read.
-    expect(TODAY_DAY_AD).toBe('2026-07-31')
+    // same anchor Today, the Calendar and Pulse read — and since 19 Aug 2026
+    // that anchor is the clock in Kathmandu rather than a frozen constant.
+    expect(TODAY_DAY_AD).toBe(day(0))
     expect(q('Next 7 Days').filters.dateRange?.fromAd?.slice(0, 10)).toBe(TODAY_DAY_AD)
   })
 
@@ -254,11 +281,11 @@ describe('the date chips — Kathmandu day boundaries, read off the named sets',
   it('Custom accepts one open end', () => {
     expect(q('Custom', [], { from: '2026-08-03', to: '' }).filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: '2026-08-03T00:00:00.000+05:45',
+      fromAd: '2026-08-03T06:00:00.000+05:45',
     })
     expect(q('Custom', [], { from: '', to: '2026-08-05' }).filters.dateRange).toEqual({
       column: 'pickup_at',
-      toAd: '2026-08-05T23:59:59.999+05:45',
+      toAd: '2026-08-06T05:59:59.999+05:45',
     })
   })
 })
@@ -274,7 +301,7 @@ describe('the return-side chips', () => {
     expect(q('Returning').filters).toEqual({
       chips: { stage: ['On Rent'] },
       presence: { cancelled_at: false, actual_return_at: false },
-      dateRange: { column: 'return_at', toAd: '2026-08-01T23:59:59.999+05:45' },
+      dateRange: { column: 'return_at', toAd: `${day(2)}T05:59:59.999+05:45` },
       sort: { column: 'return_at', ascending: true },
     })
   })
@@ -314,7 +341,7 @@ describe('every set this screen can build', () => {
   ]
     .filter((r) => !r.impossible)
     .map((r) => r.filters)
-    .concat(Object.values(RENTAL_KPI_FILTERS))
+    .concat(Object.values(rentalKpiFilters(NOW_AD)))
 
   it('names only members of the canonical six', () => {
     for (const set of SENDABLE) {
@@ -384,24 +411,43 @@ describe('the Status facet narrows, never replaces — chip row and Filters rail
 
 /* ── the KPI strip ───────────────────────────────────────────────────────── */
 
-describe('RENTAL_KPI_FILTERS — four counts, replacing six hand-typed strings', () => {
+describe('rentalKpiFilters — four counts, replacing six hand-typed strings', () => {
   it('carries exactly the four cards that have a query behind them', () => {
     // ⛔ `Payment Due` (Rs 142,000) and `Utilization` (84%) are gone rather than
     // dashed: no query in lib/queries produces either, and a card whose value
     // can only ever be a dash is a promise the screen cannot keep.
-    expect(Object.keys(RENTAL_KPI_FILTERS)).toEqual(['active', 'pickups', 'returns', 'overdue'])
+    expect(Object.keys(rentalKpiFilters(NOW_AD))).toEqual(['active', 'pickups', 'returns', 'overdue'])
   })
 
   it('is each named set plus a one-row page, so the card and the list cannot disagree', () => {
     const page = { index: 0, size: 1 }
-    expect(RENTAL_KPI_FILTERS.pickups).toEqual({ ...todaysOutgoing(TODAY_DAY_AD), page })
-    expect(RENTAL_KPI_FILTERS.returns).toEqual({ ...todaysIncoming(TODAY_DAY_AD), page })
-    expect(RENTAL_KPI_FILTERS.overdue).toEqual({ ...overdue(NOW_AD), page })
-    expect(RENTAL_KPI_FILTERS.active.chips).toEqual({ stage: ['On Rent'] })
+    const kpis = rentalKpiFilters(NOW_AD)
+    expect(kpis.pickups).toEqual({ ...todaysOutgoing(TODAY_DAY_AD), page })
+    expect(kpis.returns).toEqual({ ...todaysIncoming(TODAY_DAY_AD), page })
+    expect(kpis.overdue).toEqual({ ...overdue(NOW_AD), page })
+    expect(kpis.active.chips).toEqual({ stage: ['On Rent'] })
+  })
+
+  /*
+   * X-05 — the set was a module-scope constant and is a function of the anchor
+   * now. This pins the reason: the two day-bounded cards must follow the day the
+   * caller is on, not the day this module happened to be imported on.
+   */
+  it('moves its two "today" counts with the day it is given', () => {
+    const yesterday = new Date(Date.parse(NOW_AD) - 86_400_000).toISOString()
+    const today = rentalKpiFilters(NOW_AD)
+    const before = rentalKpiFilters(yesterday)
+    expect(before.pickups.dateRange?.fromAd).not.toBe(today.pickups.dateRange?.fromAd)
+    expect(before.returns.dateRange?.fromAd).not.toBe(today.returns.dateRange?.fromAd)
+    /* The Overdue card is anchored to the INSTANT, not to the day — and it is a
+       `lte` bound with no lower end, which is what makes "due back before now"
+       the question rather than "due back yesterday". */
+    expect(before.overdue.dateRange?.fromAd).toBeUndefined()
+    expect(before.overdue.dateRange?.toAd).not.toBe(today.overdue.dateRange?.toAd)
   })
 
   it('asks for no money on any card', () => {
-    for (const set of Object.values(RENTAL_KPI_FILTERS)) {
+    for (const set of Object.values(rentalKpiFilters(NOW_AD))) {
       expect(JSON.stringify(set)).not.toContain('deposit')
     }
   })
@@ -420,12 +466,14 @@ const ROW: BookingListRow = {
   clientId: 'c0ffee00-1111-4222-8333-444455556666',
   clientName: 'Mountain Stories',
   project: 'FX3 Documentary',
+  projectType: 'Documentary',
+  projectTypeOther: null,
   stage: 'Booked',
   // 03:15Z is 09:00 in Kathmandu (+05:45).
   pickupAtAd: '2026-08-14T03:15:00.000Z',
   returnAtAd: '2026-08-18T10:30:00.000Z',
   actualReturnAtAd: null,
-  deliveryType: 'Customer Pickup',
+  deliveryType: 'Client Pickup',
   pickupLocation: 'Kathmandu',
   returnLocation: null,
   quoteExpiresAtAd: null,
@@ -459,13 +507,13 @@ describe('toRentalListRow — the columns that survived', () => {
   })
 
   it('renders both instants on the Kathmandu wall clock (Law 7)', () => {
-    expect(map().pickup).toEqual({ date: '14 Aug 2026', time: '09:00 AM' })
-    expect(map().ret).toEqual({ date: '18 Aug 2026', time: '04:15 PM' })
+    expect(map().pickup).toMatchObject({ date: '14/8/2026', time: '09:00 AM' })
+    expect(map().ret).toMatchObject({ date: '18/8/2026', time: '04:15 PM' })
   })
 
   it('renders the Kathmandu DAY, which is tomorrow for the last 5h45m of every UTC day', () => {
-    expect(map({ pickupAtAd: '2026-08-14T18:30:00.000Z' }).pickup).toEqual({
-      date: '15 Aug 2026',
+    expect(map({ pickupAtAd: '2026-08-14T18:30:00.000Z' }).pickup).toMatchObject({
+      date: '15/8/2026',
       time: '12:15 AM',
     })
   })
@@ -501,7 +549,7 @@ describe('toRentalListRow — the columns that survived', () => {
 
 describe('toRentalListRow — created_at is NOT the Booked date', () => {
   it('renders the insert instant under its own name', () => {
-    expect(map().createdOn).toBe('12 Jul 2026')
+    expect(map().createdOn).toBe('12/7/2026')
   })
 
   it('never labels it "Booked"', () => {
@@ -608,6 +656,11 @@ const OWNER = gateContext('Owner')
 const WAREHOUSE = gateContext('Warehouse')
 
 describe('the Intel card is built from the queried row, not from the seed', () => {
+  it('never uses a security deposit as the rental total', () => {
+    const mapped = map({ depositRequired: rupees(50_000), totalAmount: null })
+    expect(mapped.deposit).toBe(rupees(50_000))
+    expect(mapped.totalAmount).toBeNull()
+  })
   it('omits the deposit line entirely for a money-blind role', () => {
     // HIS v2.1 §4.5 — "gated blocks are omitted from the payload, not
     // CSS-hidden". The floor must not receive the string at all.
@@ -659,9 +712,44 @@ describe('Law 17 — the word "customer" appears in no UI copy', () => {
   })
 
   it('leaves the delivery_type enum member alone, which is data and not copy', () => {
-    // 'Customer Pickup' is a `delivery_type` value (0001:279). Renaming it would
-    // be renaming a column value, not fixing UI copy.
-    expect(map().deliveryType).toBe('Customer Pickup')
+    // 0113 renamed 'Customer Pickup' to 'Client Pickup' in Postgres delivery_type enum.
+    expect(map().deliveryType).toBe('Client Pickup')
+  })
+
+  /*
+   * ⛔ The test above is the whole reason the defect survived: it asserts the
+   * ROW keeps the enum, and nothing asserted what the CARD prints. The Intel
+   * card's Delivery field printed `row.deliveryType` raw, and `RentalsList.tsx`
+   * renders these groups — so the banned word reached the screen while the
+   * copy test above stayed green, because it only reads static label constants.
+   *
+   * These two ask the payload instead.
+   */
+  it('renders the stored delivery type through the sanctioned label', () => {
+    const schedule = rentalDetailGroups(map({ deliveryType: 'Client Pickup' }), OWNER).find(
+      (g) => g.title === 'Schedule',
+    )
+    expect(schedule?.fields.find((f) => f.label === 'Delivery')?.value).toBe('Client Pickup')
+  })
+
+  it('never puts the banned word in the Intel payload, for any enum member', () => {
+    const MEMBERS = ['Client Pickup', 'Babin Delivery', 'Courier', 'Third Party'] as const
+    for (const member of MEMBERS) {
+      const row = map({ deliveryType: member })
+      for (const gctx of [OWNER, WAREHOUSE]) {
+        const payload = JSON.stringify([rentalGlance(row, gctx), rentalDetailGroups(row, gctx)])
+        expect(payload.toLowerCase()).not.toContain('customer')
+      }
+    }
+  })
+
+  it('leaves the other three members untouched, so the label is a rename of one value only', () => {
+    for (const member of ['Babin Delivery', 'Courier', 'Third Party'] as const) {
+      const schedule = rentalDetailGroups(map({ deliveryType: member }), OWNER).find(
+        (g) => g.title === 'Schedule',
+      )
+      expect(schedule?.fields.find((f) => f.label === 'Delivery')?.value).toBe(member)
+    }
   })
 })
 
@@ -749,8 +837,8 @@ describe('the Sub-Rental chip — narrows server-side on the derived set', () =>
   })
 
   it('states the derivation in the sentence the footer shows', () => {
-    expect(SUB_RENTAL_NOTE).toContain('booking_lines.line_type')
-    expect(SUB_RENTAL_NOTE).toContain('any of its lines')
+    expect(SUB_RENTAL_NOTE).toContain('equipment supplied by another rental house')
+    expect(SUB_RENTAL_NOTE).not.toContain('booking_lines')
   })
 })
 
@@ -791,6 +879,20 @@ describe('OPTIONAL_COLUMNS — renamed to what the query can actually fill', () 
     // "Package / Items" promised a bundle name needing a booking_lines→bundle
     // join; "Payment" promised a rental total and an outstanding balance, both
     // of which are the Financial Engine's and deliberately off the list row.
-    expect(OPTIONAL_COLUMNS).toEqual(['Items', 'Pickup', 'Return', 'Deposit'])
+    expect(OPTIONAL_COLUMNS).toEqual(['Items', 'Pickup', 'Return', 'Total Amount'])
+  })
+})
+
+/* G2 (RULING 2026-10-07): the two system-view chips are the dashboard's own named sets, and are not among
+   the render's twelve visible chips (they are reached through the Built-in saved views). */
+describe('Pickups Today / Returns Today — one definition with the Today screen', () => {
+  it('are exactly todaysOutgoing / todaysIncoming for the operating day', () => {
+    const dayAd = businessDayAd(new Date(NOW_AD))
+    expect(q('Pickups Today').filters).toEqual(todaysOutgoing(dayAd))
+    expect(q('Returns Today').filters).toEqual(todaysIncoming(dayAd))
+  })
+  it('stay out of the twelve-chip bar but are valid quick filters', () => {
+    expect(ALL_CHIPS).not.toContain('Pickups Today')
+    expect(Object.keys(CHIP_MEANS)).toEqual(expect.arrayContaining(['Pickups Today', 'Returns Today']))
   })
 })

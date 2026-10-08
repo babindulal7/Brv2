@@ -1,0 +1,104 @@
+{
+  "updated_at": "2026-09-26T00:40:00Z",
+  "issue_signals": [
+    {
+      "product": "RED Komodo 6K / Komodo-X",
+      "issue_type": "ELECTRICAL_DAMAGE_RISK",
+      "title": "12G-SDI Port Electrostatic Discharge (ESD) Shock",
+      "description": "Connecting SDI cables while powered on or using unshielded D-Tap splitters causes ground loops that blow the internal SDI driver chip.",
+      "severity": "CRITICAL",
+      "mitigation_rule": "MANDATORY ORDER OF CONNECTION: Power cable FIRST, SDI cable SECOND. When disconnecting: SDI cable FIRST, Power cable LAST. Never connect or disconnect SDI while camera or monitor is powered.",
+      "mention_count_external": 142,
+      "source_type": "Manufacturer RED Technical Bulletin + B&H Community Q&A",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "CHIOPT 28-85mm & 75-250mm Zoom Lenses",
+      "issue_type": "MECHANICAL_MOUNT_STRESS",
+      "title": "Camera Mount Flange Distortion & Optical Misalignment",
+      "description": "Due to massive 2.8kg - 3.1kg weight, operating without rigid 15mm/19mm lens support bends the camera mount or adapter flange, causing uneven focus across frame and permanent body damage.",
+      "severity": "CRITICAL",
+      "mitigation_rule": "HARD BLOCK in complete_kit(): Must require 15mm baseplate, rods, and lens support bracket. Staff inspection must verify bracket is locked before dispatch.",
+      "mention_count_external": 28,
+      "source_type": "Babin Field Service + B&H Reviews",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "Accsoon CineView M7 Pro / Hollyland Transmitters",
+      "issue_type": "ACCESSORY_DISPUTE_AND_LOSS",
+      "title": "Missing / Damaged Detachable RP-SMA Antennas",
+      "description": "Clients frequently misplace or unscrew antennas, or pack antennas loosely in bags where connector pins snap.",
+      "severity": "MODERATE",
+      "mitigation_rule": "Dispatch and return checklist must require physical antenna count verification (4 antennas per M7 Pro). Missing antenna billed at NPR 1,500 each.",
+      "mention_count_external": 64,
+      "source_type": "Babin Dispute Log + Rental House Forum",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "Sony FX3 / A7S III",
+      "issue_type": "RECORDING_FAILURE_MEDIA_THROTTLING",
+      "title": "Frame Dropping / Write Abort in S&Q 120fps All-Intra",
+      "description": "Using standard V60 or uncertified V90 SD cards in 4K 120p All-Intra causes write-buffer overflow and camera recording abortion.",
+      "severity": "SEVERE",
+      "mitigation_rule": "High-frame-rate 120fps bookings MUST mandate Sony TOUGH CFexpress Type A cards (VPG200 certified).",
+      "mention_count_external": 89,
+      "source_type": "Sony Technical Support Bulletin + B&H Verified Reviews",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "DJI RS 3 / RS 4 Pro Gimbals",
+      "issue_type": "OPERATIONAL_USER_FRICTION",
+      "title": "Motor Overheating and Axis Shudder due to Lazy Balancing",
+      "description": "Beginners attempt to compensate for poor mechanical balance by maxing out motor stiffness, resulting in high-frequency motor vibration and eventual thermal shutdown.",
+      "severity": "MODERATE",
+      "mitigation_rule": "Pre-flight test: Gimbal must balance perfectly at 45-degree angles on all 3 axes with motors completely OFF before power-up.",
+      "mention_count_external": 115,
+      "source_type": "DJI Support Forums + B&H Q&A",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "Aputure LS 600x Pro",
+      "issue_type": "ELECTRICAL_TRIP_RISK",
+      "title": "Domestic Socket Overload / Plug Melt",
+      "description": "Running 720W continuous fixture alongside hair dryers, kettles, or domestic loads on a 5A Nepali wall outlet causes breaker trips or socket pin scorching.",
+      "severity": "HIGH",
+      "mitigation_rule": "Must supply dedicated heavy-duty 15A three-pin power cable; instruct gaffer/client on breaker check.",
+      "mention_count_external": 37,
+      "source_type": "Production Gaffer Guidelines + B&H Reviews",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "Sony A7 IV",
+      "issue_type": "ROLLING_SHUTTER_AND_THERMAL_RISK",
+      "title": "Severe Rolling Shutter (26.8ms) & Passive Thermal Accumulation",
+      "description": "CineD lab tests measure 26.8ms readout in 4K Full Frame (causing heavy jello on whip pans). DPReview confirms 33MP oversampling creates heavy processor heat in continuous takes over 45 minutes.",
+      "severity": "MODERATE",
+      "mitigation_rule": "For dynamic movement/car rigs, do NOT recommend A7 IV in FF mode; switch to S35 crop (13.0ms) or recommend FX3 (8.7ms) / Komodo-X (0ms). For long takes, mandate Auto Power OFF Temp: High and keep LCD extended from body.",
+      "mention_count_external": 180,
+      "source_type": "CineD Lab Test + DPReview In-Depth Review",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "Blazar Mantis 1.33x & Great Joy 1.8x Anamorphic Sets",
+      "issue_type": "ON_SET_MONITORING_FRICTION",
+      "title": "Distorted Aspect Ratio Framing due to Missing Monitor De-Squeeze",
+      "description": "Shooting anamorphic without on-set de-squeeze preview forces directors and DPs to frame compressed subjects, leading to poor composition and framing errors.",
+      "severity": "MODERATE",
+      "mitigation_rule": "Every anamorphic lens booking MUST include an external monitor supporting hardware de-squeeze (Accsoon M7 Pro with 1.33x/1.8x or Desview S14-HDR).",
+      "mention_count_external": 52,
+      "source_type": "Newsshooter Anamorphic Reviews + Y.M.Cinema Field Analysis",
+      "confidence": "HIGH"
+    },
+    {
+      "product": "RED Komodo-X",
+      "issue_type": "SENSOR_NOISE_CALIBRATION",
+      "title": "Black Shading Fixed-Pattern Noise on Temperature Drift",
+      "description": "When shooting environments shift by >15°C (e.g. Kathmandu 25°C to Mustang 5°C), sensor calibration drifts, resulting in fixed-pattern noise in dark midtones.",
+      "severity": "MODERATE",
+      "mitigation_rule": "Client must be briefed to perform an in-camera Black Shading Calibration once the camera reaches operating equilibrium at the shoot location.",
+      "mention_count_external": 95,
+      "source_type": "RED Technical Operations Manual + CineD Lab Test",
+      "confidence": "HIGH"
+    }
+  ]
+}

@@ -27,23 +27,47 @@ wrongly in the other — exactly the drift this skill exists to prevent.
 
 Reports consume **CSS variables** and inherit light/dark for free.
 
-## 2 · Status colours — the five plus gold
+## 2 · Status colours — the seven plus gold
 
-| Meaning | Token | Notes |
+**Updated 25 Aug 2026 to DESIGN_DIRECTION_SPEC_v4.1.** This section previously
+described "the five plus gold" and told you to separate On Rent from Returned
+by *fill weight* within one green. That is no longer true and would now be a
+meaning error, not a style one: **On Rent is ORANGE and Returned is GREEN.**
+
+Seven hues, one meaning each. A hue never means two things.
+
+| Meaning | Token | On-colour |
 |---|---|---|
-| Inactive, historical, Quote, Closed | `var(--muted)` | |
-| Commercial commitment, Booked, primary | `var(--primary)` | |
-| Work in progress, Packed, **and Due Soon** | `var(--progress)` | deliberate double duty |
-| Good — On Rent, Paid, Returned | `var(--success)` | separate On Rent from Returned by **fill weight**, not hue |
-| Alarm — Overdue, Damaged, Missing, Blocked | `var(--danger)` | the only alarm colour |
-| External / sub-rented gear | gold, **outline only** | never a fill, never a button |
+| Committed · scheduled — Booked, Reserved, Issued | `var(--primary)` | `var(--on-primary)` |
+| Being worked in-house · waiting — Packed, Due Soon, Partial, Cleaning, Maintenance | `var(--ready)` | `var(--on-ready)` — **dark ink** |
+| Home & settled — **Returned**, Available, Paid | `var(--success)` | `var(--on-success)` |
+| **Out with the client — On Rent, Picked Up, Partial Pickup** | `var(--warn)` | `var(--on-warn)` — **dark ink** |
+| Problem · money owed · decide now — Overdue, Damaged, Unpaid, Blocked | `var(--danger)` | `var(--on-danger)` |
+| Not started yet — Quote, Draft | `var(--neutral)` | `var(--on-neutral)` |
+| Finished · inactive — Closed, Void, Retired | `var(--dim)` | `var(--on-dim)` |
+| External / sub-rented gear | gold `var(--ext-fg)` / `var(--ext-line)`, **outline only** | never a fill, never a button |
 
-**Text on a coloured fill** uses the measured pairs — `var(--on-brand)`,
-`var(--on-progress)`, `var(--on-success)` — never `#fff`. That is what the
-contrast fix was for.
+**Every status is a SOLID block** — radius `var(--r-chip)`, weight 800,
+uppercase, 0.04em tracking, and the word always inside (never colour alone).
+Gold is the ONLY outline on screen, which is why it can never be mistaken for
+a yellow status.
 
-`--st-purple-fg` exists in the theme but is **not a status colour**. Do not reach
-for it to add a seventh category; collapse the category instead.
+**Orange and yellow are status hues only — never a button.** Buttons stay
+quiet so the statuses stay loud: one `var(--primary)` primary per view.
+
+**Text on a coloured fill** always uses that hue's own on-colour from the table
+above, never `#fff` and never a guess. This matters more under v4.1 than it
+did before: yellow and orange **cannot carry white ink** — measured, light-theme
+white-on-orange is 3.61:1 — so both take dark ink in both themes. Run
+`npm run check:contrast` after any palette change; it is a release blocker.
+
+The money picture is a traffic light: green settled · yellow some in · red
+nothing in. Client: Active green · Deactivated dim · Blocked red.
+
+Purple is **gone**. `--st-purple-*` was deleted in the v4.1 repaint along with
+the legacy `--warning`/`--blue` aliases — do not reach for any of them. Note
+that v4.1's `--warn` (orange, "out with the client") is **not** the old
+`--warning` (amber caution); legacy caution meanings map to `var(--ready)`.
 
 ## 3 · Type
 

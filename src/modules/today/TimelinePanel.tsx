@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { STATUS, BRAND } from '../../lib/status'
-import { NOW, timeOf, statusKeyOf, dotTone, type MovementRow } from '../../data/today'
+import { clockNowMinutes, timeOf, statusKeyOf, dotTone, type MovementRow } from '../../lib/queries/today'
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 
@@ -52,6 +52,7 @@ export default function TimelinePanel({
   loading,
   error,
   isFiltered,
+  filteredByChips,
   onRetry,
   onClearFilters,
   periodLabel,
@@ -61,11 +62,19 @@ export default function TimelinePanel({
   loading: boolean
   error: string | null
   isFiltered: boolean
+  /** Chips picked on either list, as opposed to only the period moving —
+   *  decides whether the empty state may blame "these filters" (1 Sep #7). */
+  filteredByChips: boolean
   onRetry: () => void
   onClearFilters: () => void
   periodLabel: string
 }) {
-  const first = rows.findIndex((m) => m.at >= NOW)
+  /* The clock position this render sits at (AR-03). It was a module-scope
+     constant built from a day marker, so it was 05:45 all day: the rail opened
+     on the first movement after 05:45 and ringed it as "now" at 4pm. Read once
+     per render so the window and the ring below cannot disagree with each other. */
+  const nowMinutes = clockNowMinutes()
+  const first = rows.findIndex((m) => m.at >= nowMinutes)
   const start = Math.max(0, Math.min(first < 0 ? rows.length : first - 2, rows.length - WINDOW))
   const ROWS = rows.slice(start, start + WINDOW)
 
@@ -98,9 +107,16 @@ export default function TimelinePanel({
           noun="movements"
           skeleton="table"
           skeletonRows={WINDOW}
-          {...(isFiltered
-            ? {}
-            : { emptyTitle: `No movements ${periodLabel}`, emptyMessage: 'Nothing is scheduled in this period.' })}
+          {...(isFiltered && filteredByChips
+            ? {} // chips narrowed a list — "match these filters" is true
+            : isFiltered
+              ? {
+                  /* Only the period moved — same honesty rule as MovementList. */
+                  emptyTitle: `No movements ${periodLabel}`,
+                  emptyMessage: 'Nothing is scheduled in this period.',
+                  clearLabel: 'Back to Today',
+                }
+              : { emptyTitle: `No movements ${periodLabel}`, emptyMessage: 'Nothing is scheduled in this period.' })}
         >
           {ROWS.length > 0 && (
             <span
@@ -113,7 +129,7 @@ export default function TimelinePanel({
             const dot = BRAND[dotTone(t)]
             const st = STATUS[statusKeyOf(t)]
             // The current moment is the first movement not yet passed.
-            const current = t.at >= NOW && !ROWS.some((o) => o.at >= NOW && o.at < t.at)
+            const current = t.at >= nowMinutes && !ROWS.some((o) => o.at >= nowMinutes && o.at < t.at)
             return (
               <Link
                 key={t.id}

@@ -1,0 +1,455 @@
+/* ==========================================================================
+   Calendar & Production Scheduler — Bento 2.0 & High-Density Operational Styling
+   ========================================================================== */
+
+.calendar-v2 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  width: 100%;
+}
+
+/* ── Monospace Tabular Numerals ─────────────────────────────────────────── */
+.calendar-mono {
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ── View Switcher & Filter Pills ───────────────────────────────────────── */
+.calendar-view-tabs {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--r-card, 10px);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.calendar-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--r-btn, 7px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text2);
+  font-size: var(--t-meta, 13px);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+}
+
+.calendar-tab-btn:hover {
+  color: var(--text);
+  background: var(--hover-card, rgba(0, 0, 0, 0.03));
+}
+
+.calendar-tab-btn.is-active {
+  background: var(--card);
+  border-color: var(--nav-active-accent);
+  color: var(--nav-active-accent);
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* ── Filter Kind Chips ─────────────────────────────────────────────────── */
+.calendar-chip-track {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.calendar-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--r-btn, 8px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  font-size: var(--t-meta, 13px);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.calendar-kind-chip:hover {
+  border-color: var(--border2, var(--border));
+  color: var(--text);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.calendar-kind-chip.is-active {
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--nav-active-accent), 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* ── Month Grid Styling ─────────────────────────────────────────────────── */
+.calendar-month-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.calendar-weekday-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 768px) {
+  .calendar-weekday-row {
+    gap: 3px;
+    margin-bottom: 4px;
+  }
+}
+
+.calendar-weekday-label {
+  text-align: center;
+  font-size: var(--t-th, 11px);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.calendar-weekday-label.is-weekend {
+  color: var(--danger-text);
+}
+
+.calendar-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .calendar-month-grid {
+    gap: 3px;
+  }
+}
+
+.calendar-day-lead {
+  border-radius: var(--r-sm, 6px);
+  background: var(--card2);
+  opacity: 0.35;
+}
+
+.calendar-day-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--r-sm, 8px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .calendar-day-cell {
+    padding: 4px;
+    gap: 2px;
+  }
+}
+
+.calendar-day-cell:hover {
+  border-color: var(--border2, var(--border));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.calendar-day-cell.is-today {
+  background: var(--nav-active-bg);
+  border-color: var(--nav-active-accent);
+}
+
+.calendar-day-cell.is-picked {
+  box-shadow: 0 0 0 2px var(--nav-active-accent);
+  border-color: var(--nav-active-accent);
+}
+
+.calendar-day-num-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .calendar-day-num-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+}
+
+.calendar-day-bs {
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-size: var(--t-ui, 14px);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.calendar-day-bs.is-today-accent {
+  color: var(--nav-active-accent);
+}
+
+.calendar-day-bs.is-offday-accent {
+  color: var(--danger-text);
+}
+
+.calendar-day-ad {
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-size: var(--t-th, 11px);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ── Calendar Booking Chips ─────────────────────────────────────────────── */
+.calendar-chip {
+  display: block;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: var(--t-th, 11px);
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all var(--dur-fast, 120ms) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.calendar-chip:hover {
+  filter: brightness(1.04);
+  transform: translateY(-0.5px);
+}
+
+.calendar-more-badge {
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-size: var(--t-th, 11px);
+  font-weight: 600;
+  color: var(--muted);
+  padding: 1px 4px;
+}
+
+/* ── Day Dot Indicator ─────────────────────────────────────────────────── */
+.calendar-dot-track {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+.calendar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-badge, 9999px);
+  transition: transform var(--dur-fast, 150ms) var(--ease);
+}
+
+.calendar-dot:hover {
+  transform: scale(1.25);
+}
+
+/* ── Timeline & Resource Lane Grid ──────────────────────────────────────── */
+.calendar-timeline-shell {
+  overflow-x: auto;
+  border-radius: var(--r-card, 10px);
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.calendar-timeline-header-sort {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 12px;
+  min-height: 44px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: var(--th-bg, var(--card2));
+  color: var(--text2);
+  font: inherit;
+  font-size: var(--t-th, 11px);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-fast, 150ms) var(--ease);
+}
+
+.calendar-timeline-header-sort:hover {
+  background: var(--hover-card, var(--card));
+  color: var(--text);
+}
+
+.calendar-timeline-col-header {
+  position: relative;
+  padding: 18px 4px 8px;
+  text-align: center;
+  border-right: 1px solid var(--border);
+  transition: background var(--dur-fast, 150ms) var(--ease);
+}
+
+.calendar-timeline-col-header.is-today {
+  background: var(--nav-active-bg);
+  border-left: 2px solid var(--nav-active-accent);
+}
+
+.calendar-timeline-bar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: var(--tap, 44px);
+  margin: 4px 2px;
+  border-radius: var(--r-sm, 7px);
+  font-family: inherit;
+  font-size: var(--t-th, 11px);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.calendar-timeline-bar-btn:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+}
+
+.calendar-timeline-bar-btn.is-selected {
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--nav-active-accent);
+  z-index: 10;
+}
+
+/* ── Day Job Row (Agenda & Sheet) ───────────────────────────────────────── */
+.calendar-agenda-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-sm, 10px);
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm, 8px);
+  border: 1px solid var(--border);
+  background: var(--card2);
+  text-align: left;
+  font-family: inherit;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+button.calendar-agenda-item {
+  cursor: pointer;
+}
+
+button.calendar-agenda-item:hover {
+  background: var(--card);
+  border-color: var(--border2, var(--border));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+/* ── Stepper Buttons (44x44px min tap target) ───────────────────────────── */
+.calendar-stepper-btn {
+  width: var(--tap, 44px);
+  height: var(--tap, 44px);
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-btn, 8px);
+  border: 1px solid var(--btn-secondary-border, var(--border));
+  background: var(--btn-secondary-bg, var(--card));
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.calendar-stepper-btn:hover:not(:disabled) {
+  background: var(--hover-card, var(--card2));
+  border-color: var(--border2, var(--border));
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.calendar-stepper-btn:disabled {
+  color: var(--disabled);
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ── Mini Month Day Button (Rail) ───────────────────────────────────────── */
+.calendar-mini-day {
+  position: relative;
+  min-height: 44px;
+  border-radius: var(--r-badge, 9999px);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--t-th, 11px);
+  font-weight: 500;
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all var(--dur-fast, 120ms) var(--ease);
+}
+
+.calendar-mini-day:hover:not(.is-today) {
+  background: var(--hover-card, rgba(0, 0, 0, 0.04));
+  color: var(--text);
+}
+
+.calendar-mini-day.is-today {
+  background: var(--nav-active-accent);
+  color: var(--app);
+  font-weight: 700;
+}
+
+.calendar-mini-day.is-weekend {
+  color: var(--danger-text);
+}

@@ -29,8 +29,13 @@
 import { supabase, newClientUuid } from '../supabase'
 import type { Database } from '../../types/supabase'
 import { rupees, type Paisa } from '../money'
-import { toBs, formatBs, formatAd } from '../bs'
+import { formatBsOrAd, formatAd } from '../bs'
 import type { ClientRecord, MembershipTier } from '../../data/clients'
+import type { GateContext } from '../fieldGating'
+import { canViewMoneyField, canViewPII } from '../fieldGating'
+export * from '../../data/clients'
+export { clientGlance, clientDetailGroups } from '../../data/clientIntel'
+export { STACK_NOTE } from '../../data/membership'
 
 type ClientView = Database['public']['Views']['clients_v']['Row']
 type ClientInsert = Database['public']['Tables']['clients']['Insert']
@@ -196,7 +201,11 @@ export function toClientRecord(row: DirectoryRow): ClientRecord {
   const limit = toPaisa(row.approved_credit_limit)
 
   return {
+    /* The CODE, because that is what every screen keys on and renders. The
+       uuid rides alongside as `dbId` for the actions that write — see
+       ClientRecord's own note. */
     id: row.client_code,
+    dbId: row.id,
     name: row.name,
     clientType: (row.type_parent as ClientRecord['clientType']) ?? 'Unassigned',
     // ⚠ A `null` here means the client has NO membership row — see
@@ -244,6 +253,7 @@ export function toClientRecord(row: DirectoryRow): ClientRecord {
     // Do not reconnect a reader to this field. The way to make credit-used
     // compute again is a ruled formula plus a real column.
     creditUsedPaisa: 0 as Paisa,
+    lastRentalAtAd: row.last_pickup_at ?? null,
     lastRentalAd: row.last_pickup_at ? formatAd(new Date(row.last_pickup_at)) : '—',
     // Law 7: BS is rendered from the AD instant, never stored. '—' when there
     // has been no rental, rather than a fabricated date.
@@ -326,10 +336,19 @@ function kycStatusFrom(total: number, verified: number): ClientRecord['kycStatus
   return 'Pending Review'
 }
 
-/** BS label for an AD instant, or '—' when the date falls outside lib/bs.ts's vouched range. */
+/**
+ * BS label for an AD instant, falling back to the **English date** outside
+ * `lib/bs.ts`'s vouched range. It used to return `'—'`, which read as "no date"
+ * for every client row once the clock left Shrawan 2083 — the date was known
+ * throughout. `formatBsOrAd` owns that fallback for the whole app.
+ *
+ * The suffix is asked for HERE, explicitly: a BS date carries " BS" and the AD
+ * fallback carries nothing, so a render site must not append its own — that
+ * produced "… BS BS" on a BS day and "25 Aug 2026 BS" on an AD fallback, i.e.
+ * an English date labelled as a Nepali one (CL-01).
+ */
 function bsLabel(iso: string): string {
-  const bs = toBs(new Date(iso))
-  return bs ? formatBs(bs) : '—'
+  return formatBsOrAd(new Date(iso), { suffix: true })
 }
 
 export interface ListClientsOptions {
@@ -389,6 +408,98 @@ export async function listClientRecords(opts: ListClientsOptions = {}): Promise<
   return (data ?? []).map((r) => toClientRecord(r as unknown as DirectoryRow))
 }
 
+/** What {@link sumDepositsHeld} returns: the liability, and how many rows it was summed over. */
+export interface DepositsHeld {
+  /** Every client's `deposit_held_amount`, added up. A liability (Law 5), never revenue. */
+  total: Paisa
+  /** Directory rows read — checked against the server's count before `total` is returned. */
+  clients: number
+}
+
+/** PostgREST's `max_rows` (supabase/config.toml:18). A `.range()` wider than this is silently cut to it. */
+const DEPOSITS_PAGE_SIZE = 1000
+
+/**
+ * The deposits the business is holding, summed over **every** client — active
+ * and deactivated alike (FI-01).
+ *
+ * Law 5: a deposit is a liability, and a liability does not stop existing
+ * because the account that lodged it was closed. `listClients` is the wrong
+ * reader for this figure twice over: it filters `deactivated_at is null`, and
+ * it stops at the 100 newest rows. Either one understates the closing that
+ * `daily_closings.deposits_held` then freezes.
+ *
+ * ## What the column means for a deactivated client
+ *
+ * `client_directory_v.deposit_held_amount` is
+ * `sum(greatest(received - refunded - applied, 0))` over the client's
+ * `security_deposits` (0052:72-76, restated column-for-column in 0053 and
+ * 0054). Nothing in that expression, and nothing in 0052–0054's comments,
+ * conditions it on `clients.status` or `deactivated_at` — so a closed account
+ * whose deposit was never refunded still carries its positive figure, and the
+ * view's row gate (`where auth_is_staff()`) does not drop the row. Whether a
+ * deactivation ought to have forced a refund first is not ruled anywhere in
+ * the schema; until it is, the figure is INCLUDED, because leaving a liability
+ * out of a signed closing is the worse error.
+ *
+ * ## How it is read
+ *
+ * Paged with `.range()` at `max_rows` on the unique `id` (see PAGINATION in
+ * `listQuery.ts` — offset paging over a non-unique key can return a row twice
+ * and skip another), until a short page arrives. The first page asks for
+ * `count: 'exact'`, and the rows actually read are checked against it: a
+ * mismatch throws rather than returning a short liability.
+ *
+ * ⚠ Money-blind session (Law 6): the view NULLs the column instead of
+ * returning 0. That is "this session may not see money", not "nothing is
+ * held", so a null here throws rather than being summed as a false zero.
+ * The screens that call this are already gated on `canViewMoney`, so a caller
+ * sees this error only when a gate is missing — which is exactly when it should.
+ */
+export async function sumDepositsHeld(): Promise<DepositsHeld> {
+  let total = 0
+  let read = 0
+  let withheld = 0
+  let expected: number | null = null
+
+  for (let index = 0; ; index += 1) {
+    const from = index * DEPOSITS_PAGE_SIZE
+    const { data, error, count } = await supabase
+      .from('client_directory_v')
+      .select('id, deposit_held_amount', { count: 'exact' })
+      .order('id', { ascending: true })
+      .range(from, from + DEPOSITS_PAGE_SIZE - 1)
+
+    if (error) throw new Error(`sumDepositsHeld failed: ${error.message}`)
+
+    const rows = (data ?? []) as unknown as Array<Pick<DirectoryRow, 'id' | 'deposit_held_amount'>>
+    if (typeof count === 'number') expected = count
+
+    for (const r of rows) {
+      read += 1
+      const held = toPaisa(r.deposit_held_amount)
+      if (held === null) withheld += 1
+      else total += held
+    }
+
+    if (rows.length < DEPOSITS_PAGE_SIZE) break
+    if (expected !== null && read >= expected) break
+  }
+
+  if (withheld > 0) {
+    throw new Error(
+      `Deposits held cannot be read: ${withheld} of ${read} directory rows returned no deposit figure — this session may not view money (Law 6).`,
+    )
+  }
+  if (expected !== null && read !== expected) {
+    throw new Error(
+      `Deposits held cannot be computed: ${expected} clients in the directory but ${read} were read — a total over a partial read would understate a liability.`,
+    )
+  }
+
+  return { total: total as Paisa, clients: read }
+}
+
 export async function getClient(id: string): Promise<ClientListItem | null> {
   const { data, error } = await supabase
     .from('client_directory_v')
@@ -433,17 +544,88 @@ export interface ClientProfile {
   membershipKnown: boolean
 }
 
-export async function getClientRecordByCode(clientCode: string): Promise<ClientProfile | null> {
+/**
+ * A client is addressed by `client_code` (`C-0001`) **or** by `clients.id` (a
+ * uuid), and this resolves either.
+ *
+ * It has to. `/clients/:id` is linked from two populations that disagree about
+ * what the segment holds. The clients module builds it from a code, but every
+ * link from *outside* the module builds it from the uuid FK it already has in
+ * hand — `RentalsList.tsx:1834`, `Payments.tsx:854`/`:926`,
+ * `OperationsQueues.tsx:791`/`:867`, `rentals.ts:1148` and two more, all fed by
+ * `bookings.ts:341` / `finance.ts:404`/`:765` mapping `clientId: r.client_id`.
+ *
+ * Before 4 Sep 2026 this filtered on `client_code` alone, so all of those
+ * landed on "Client not found" — and could never do anything else:
+ * `0055_ruled_identifier_formats.sql:136` constrains the column to
+ * `^C-[0-9]+$`, a shape no uuid can take. The bug was invisible from inside
+ * Clients, where the links happen to carry codes.
+ *
+ * Dispatching on the shape of the reference is this codebase's existing answer
+ * to the same problem — `queries/availability.ts:147` and
+ * `queries/bookings.ts:1021` both pick `id` vs a human code exactly this way.
+ * The two formats cannot collide: a uuid never matches `^C-[0-9]+$`.
+ *
+ * NOT fixed here, because it is a different defect: `CasesWorkspace.tsx:409`
+ * and `ClientReports.tsx:343` pass *seed* codes (`C-1`, `C-34`) that match no
+ * live row. Those links are wrong about the data, not about the column.
+ */
+const CLIENT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export interface ClientPreviewRecord {
+  id: string
+  code: string
+  name: string
+  membership: MembershipTier | null
+  blocked: boolean
+  sinceAd: string | null
+  contact?: { email: string | null; phone: string }
+  outstandingPaisa?: Paisa
+  depositHeldPaisa?: Paisa
+}
+
+/** The preview asks the directory view only for fields this role may receive.
+ * A money-blind or PII-limited request never selects those columns. */
+export async function getClientPreviewRecord(ref: string, ctx: GateContext): Promise<ClientPreviewRecord | null> {
+  const money = canViewMoneyField(ctx, 'client-balance')
+  const pii = canViewPII(ctx)
+  const columns = 'id, client_code, name, membership_level, is_blocked, client_since'
+    + (pii ? ', email, phone' : '')
+    + (money ? ', outstanding_amount, deposit_held_amount' : '')
+  const column = CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'
+  const { data, error } = await supabase.from('client_directory_v').select(columns).eq(column, ref).maybeSingle()
+  if (error) throw new Error(`getClientPreviewRecord failed: ${error.message}`)
+  if (!data) return null
+  const row = data as unknown as Pick<DirectoryRow, 'id' | 'client_code' | 'name' | 'membership_level' | 'is_blocked' | 'client_since'>
+    & Partial<Pick<DirectoryRow, 'email' | 'phone' | 'outstanding_amount' | 'deposit_held_amount'>>
+  const outstanding = money ? toPaisa(row.outstanding_amount ?? null) : null
+  const deposit = money ? toPaisa(row.deposit_held_amount ?? null) : null
+  if (money && (outstanding === null || deposit === null)) throw new Error('Client balances unavailable')
+  return {
+    id: row.id,
+    code: row.client_code,
+    name: row.name,
+    membership: row.membership_level,
+    blocked: row.is_blocked === true,
+    sinceAd: row.client_since,
+    ...(pii ? { contact: { email: row.email ?? null, phone: row.phone ?? '' } } : {}),
+    ...(money && outstanding !== null && deposit !== null ? { outstandingPaisa: outstanding, depositHeldPaisa: deposit } : {}),
+  }
+}
+
+export async function getClientRecord(ref: string): Promise<ClientProfile | null> {
+  const column = CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'
+
   // Deliberately NOT filtered on `deactivated_at`: a link to a closed account
   // must still open it (Law 3 — retained and marked). The flag is returned so
   // the screen can mark it.
   const { data, error } = await supabase
     .from('client_directory_v')
     .select(DIRECTORY_COLUMNS)
-    .eq('client_code', clientCode)
+    .eq(column, ref)
     .maybeSingle()
 
-  if (error) throw new Error(`getClientRecordByCode failed: ${error.message}`)
+  if (error) throw new Error(`getClientRecord failed: ${error.message}`)
   if (!data) return null
 
   const row = data as unknown as DirectoryRow
@@ -453,6 +635,151 @@ export async function getClientRecordByCode(clientCode: string): Promise<ClientP
     deactivatedAtAd: row.deactivated_at,
     membershipKnown: row.membership_level !== null,
   }
+}
+
+/* ── duplicate detection against the directory ──────────────────────────────
+ *
+ * Three screens ask "does this client already exist?": Add Client (the phone
+ * the operator is typing), Import Center (every phone/email in an uploaded
+ * CSV) and the Duplicate & Merge Center (the whole directory). All three used
+ * to ask `CLIENTS_DATA` — the 26-row seed array — so a client that existed in
+ * the database produced no warning, and the banner could name a client that
+ * did not exist (docs/pages 05 §7.7, 42 §7.3, 43 §7.6). These functions are
+ * the Law 2 replacement: the matching is a server-side filter on
+ * `client_directory_v`, never a full-table download matched in the browser.
+ *
+ * Both use `.or(…ilike…)` rather than `.ilike()` deliberately: the mock
+ * PostgREST engine (`lib/mock/engine.ts`) implements ilike ONLY inside
+ * `.or()` clauses — a bare `.ilike()` builder method does not exist there and
+ * would crash mock mode outright.
+ */
+
+/**
+ * Directory clients whose phone ends with the digits typed so far — the Add
+ * Client duplicate warning. Matches on the last 9 digits (the same tail the
+ * old seed check compared), so a `+977`-prefixed stored phone still matches a
+ * bare local number as it is typed. Fewer than 7 digits is not enough of a
+ * phone to ask about; returns `[]` without a round trip.
+ *
+ * The tail is digits-only by construction, so it cannot break the `.or()`
+ * filter syntax. Deactivated clients are excluded (Law 3 — they are retained,
+ * but a closed account is not a duplicate-warning candidate; the phone unique
+ * constraint is the backstop either way).
+ */
+export async function findClientsByPhoneTail(phoneInput: string, limit = 3): Promise<ClientRecord[]> {
+  const digits = phoneInput.replace(/\D/g, '')
+  if (digits.length < 7) return []
+  const tail = digits.slice(-9)
+
+  const { data, error } = await supabase
+    .from('client_directory_v')
+    .select(DIRECTORY_COLUMNS)
+    .is('deactivated_at', null)
+    .or(`phone.ilike.%${tail}`)
+    .limit(limit)
+
+  if (error) throw new Error(`findClientsByPhoneTail failed: ${error.message}`)
+  return (data ?? []).map((r) => toClientRecord(r as unknown as DirectoryRow))
+}
+
+export interface ClientMatchKeys {
+  phones?: readonly string[]
+  emails?: readonly string[]
+}
+
+/**
+ * Directory clients matching ANY of the given phones (last-10-digit tail) or
+ * emails (exact, case-insensitive) — the Import Center's duplicate corpus.
+ *
+ * This is a *prefilter*, not the verdict: it returns candidate `ClientRecord`s
+ * and the caller's exact matcher (`buildImportRow`, which compares
+ * `normalizedPhone` / lowercased email) decides row by row. Over-matching is
+ * therefore harmless and under-matching is the only failure that matters,
+ * which is why:
+ *
+ *  - phone tails are digits-only suffix matches (`phone.ilike.%<tail>`) —
+ *    valid against the canonical `+977…` storage format the
+ *    `clients_phone_format` CHECK enforces;
+ *  - emails that contain characters able to break the PostgREST `.or()`
+ *    filter syntax (commas, parens, wildcards, whitespace) are skipped rather
+ *    than escaped-and-hoped; a skipped email only means that row's duplicate
+ *    flag falls back to its phone match.
+ *
+ * Clauses are chunked so a large CSV cannot build a URL longer than the
+ * server accepts; results are merged and de-duplicated on `id`.
+ */
+export async function findClientMatches(keys: ClientMatchKeys): Promise<ClientRecord[]> {
+  const clauses: string[] = []
+
+  const phoneTails = new Set<string>()
+  for (const p of keys.phones ?? []) {
+    const digits = p.replace(/\D/g, '')
+    if (digits.length >= 7) phoneTails.add(digits.slice(-10))
+  }
+  phoneTails.forEach((t) => clauses.push(`phone.ilike.%${t}`))
+
+  const emailKeys = new Set<string>()
+  for (const e of keys.emails ?? []) {
+    const cleaned = e.trim().toLowerCase()
+    // Conservative allow-list: anything outside it could split or wildcard the
+    // or() filter. `_` remains a single-char ilike wildcard — acceptable,
+    // because it can only widen the candidate set the exact matcher then culls.
+    if (cleaned && /^[a-z0-9._+@-]+$/.test(cleaned)) emailKeys.add(cleaned)
+  }
+  emailKeys.forEach((e) => clauses.push(`email.ilike.${e}`))
+
+  if (clauses.length === 0) return []
+
+  const CHUNK = 30
+  const byId = new Map<string, DirectoryRow>()
+  for (let i = 0; i < clauses.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('client_directory_v')
+      .select(DIRECTORY_COLUMNS)
+      .is('deactivated_at', null)
+      .or(clauses.slice(i, i + CHUNK).join(','))
+      .limit(500)
+
+    if (error) throw new Error(`findClientMatches failed: ${error.message}`)
+    for (const row of (data ?? []) as unknown as DirectoryRow[]) byId.set(row.id, row)
+  }
+
+  return Array.from(byId.values()).map(toClientRecord)
+}
+
+/**
+ * The referrer dropdown on Generate Referral Code — every active client,
+ * ordered by name server-side (no client-side `.sort()`, per the wiring
+ * rules). Narrow on purpose: the screen needs a name to suggest a code from
+ * and the code every `/clients/:id` link is built from, nothing else.
+ *
+ * `isBlocked` is returned so the screen can SAY a client is blocked rather
+ * than either hiding them (an unruled product decision — nothing has ruled
+ * that a blocked client may not refer) or listing them indistinguishably
+ * (the failure docs/pages/44 §7.5 flags).
+ */
+export interface ReferrerOption {
+  /** `client_code` — the id every `/clients/:id` link uses. */
+  clientCode: string
+  name: string
+  isBlocked: boolean
+}
+
+export async function listReferrerOptions(): Promise<ReferrerOption[]> {
+  const { data, error } = await supabase
+    .from('client_directory_v')
+    .select('id, client_code, name, is_blocked')
+    .is('deactivated_at', null)
+    .order('name', { ascending: true })
+    .limit(1000)
+
+  if (error) throw new Error(`listReferrerOptions failed: ${error.message}`)
+
+  return ((data ?? []) as unknown as Array<Pick<DirectoryRow, 'client_code' | 'name' | 'is_blocked'>>).map((r) => ({
+    clientCode: r.client_code,
+    name: r.name,
+    isBlocked: r.is_blocked === true,
+  }))
 }
 
 /**
@@ -580,3 +907,42 @@ export async function createClient(input: NewClientInput, clientUuid?: string): 
   if (!created) throw new Error('createClient: row vanished immediately after insert')
   return created
 }
+
+export {
+  MEMBERSHIP_TIERS,
+  TIER_TONE,
+  CLIENTS_DATA,
+  findClientIdByBooking,
+  clientMetrics,
+  evaluateCreditStop,
+  creditStopFactsOf,
+  daysPastDue,
+  readOverdueStopDays,
+  CLIENT_FILTER_GROUPS,
+  clientFilterGroupsFor,
+  CLIENT_ROWS_PER_PAGE,
+  NEPAL_DISTRICTS,
+  CLIENT_SOURCES,
+  PAYMENT_TERMS_OPTIONS,
+  PREFERRED_CONTACT_METHODS,
+  normalizedPhone,
+  findDuplicateGroups,
+} from '../../data/clients'
+
+export type {
+  ClientType,
+  OrganisationType,
+  Profession,
+  Segment,
+  MembershipTier,
+  KycStatus,
+  ClientRecord,
+  CreditStopLimb,
+  CreditStopFacts,
+  CreditStopLimbVerdict,
+  CreditStopVerdict,
+  CreditStopOptions,
+  ClientFilterGroup,
+  DuplicateMatchReason,
+  DuplicateGroup,
+} from '../../data/clients'

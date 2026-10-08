@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import {
   NAV,
+  PRIMARY_NAV,
+  MORE_NAV,
   SETTINGS_NAV,
   permittedNav,
+  permittedMoreNav,
+  permittedAllNav,
   activeNavTo,
   bottomBarSlots,
   moreNav,
   isMoneySurface,
+  isStaffSurface,
   SPEC_TABS,
 } from './nav'
 
@@ -22,12 +27,12 @@ import {
  * so the naive `startsWith` test the Sidebar used lit up both rows.
  */
 
-describe('the fixed 11', () => {
-  it('is exactly the wireframe list, in order', () => {
+describe('canonical primary and secondary nav', () => {
+  it('is exactly the canonical primary list in the locked shell, in order', () => {
     expect(NAV.map((s) => s.label)).toEqual([
       'New Rental',
       'Today',
-      'Operation', // singular — every spec file writes it that way
+      'Operation',
       'Rentals',
       'Calendar',
       'Crew Assist',
@@ -39,23 +44,35 @@ describe('the fixed 11', () => {
     ])
   })
 
-  it('is flat — Operation queues are filter chips, not sidebar children', () => {
+  it('is flat — Operations queues are filter chips, not sidebar children', () => {
     expect(NAV.some((s) => s.children !== undefined)).toBe(false)
   })
 
-  it('exports SETTINGS_NAV as item 11 itself, so the two cannot drift', () => {
-    expect(SETTINGS_NAV).toBe(NAV[10])
+  it('exports the Settings destination', () => {
+    expect(SETTINGS_NAV.label).toBe('Settings')
+    expect(SETTINGS_NAV.to).toBe('/settings')
+  })
+
+  it('exports eleven primary items with no secondary group', () => {
+    expect(PRIMARY_NAV).toHaveLength(11)
+    expect(MORE_NAV).toHaveLength(0)
+    expect(permittedMoreNav('Owner')).toHaveLength(0)
+  })
+
+  it('keeps Documents and Analytics inside Finance', () => {
+    expect(NAV.some((s) => s.label === 'Analytics' || s.label === 'Documents')).toBe(false)
   })
 })
 
 describe('Law 6 — money-blind roles never see money surfaces', () => {
-  it('drops /finance for a money-blind role and keeps the other ten', () => {
+  it('drops /finance and /reports for a money-blind role and keeps the other ten primary items', () => {
     const warehouse = permittedNav('Warehouse')
     expect(warehouse.map((s) => s.to)).not.toContain('/finance')
+    expect(warehouse.map((s) => s.to)).not.toContain('/reports')
     expect(warehouse).toHaveLength(10)
   })
 
-  it('keeps all eleven for an Owner', () => {
+  it('keeps all eleven primary items for an Owner', () => {
     expect(permittedNav('Owner')).toHaveLength(11)
   })
 
@@ -72,7 +89,7 @@ describe('Law 6 — money-blind roles never see money surfaces', () => {
    */
   describe('the money surfaces are one list', () => {
     it('keeps Tools itself for a money-blind role', () => {
-      expect(permittedNav('Warehouse').map((s) => s.to)).toContain('/tools')
+      expect(permittedAllNav('Warehouse').map((s) => s.to)).toContain('/tools')
       expect(isMoneySurface('/tools')).toBe(false)
     })
 
@@ -103,12 +120,44 @@ describe('Law 6 — money-blind roles never see money surfaces', () => {
   })
 })
 
+/**
+ * RULING 2026-10-08: Client is portal-only (PERMISSIONS.md §3 ✕ cells, §7 "one
+ * page, no routes"), so every staff module is a staff surface, refused by the
+ * Shell guard and omitted from nav through the same list.
+ */
+describe('Client is portal-only — every staff module is a staff surface', () => {
+  it('refuses each primary module and its children, query stripped', () => {
+    for (const path of ['/today', '/operations?queue=packing', '/rentals', '/rentals/B-715', '/rentals/new',
+      '/calendar', '/inventory/stock-check', '/clients', '/clients/C-1', '/settings', '/tools/numbering', '/crew']) {
+      expect(isStaffSurface(path), path).toBe(true)
+    }
+  })
+
+  it('offers a Client session no primary nav item', () => {
+    expect(permittedNav('Client')).toEqual([])
+  })
+
+  it('leaves the staff roles their modules', () => {
+    expect(permittedNav('Warehouse').map((s) => s.to)).toContain('/rentals')
+    expect(permittedNav('Driver').map((s) => s.to)).toContain('/today')
+  })
+
+  it('matches on a path segment, never a bare prefix', () => {
+    expect(isStaffSurface('/todayish')).toBe(false)
+    expect(isStaffSurface('/login')).toBe(false)
+  })
+})
+
 describe('active row — most specific wins, exactly one owner', () => {
   const owner = permittedNav('Owner')
   const label = (path: string) => owner.find((s) => s.to === activeNavTo(owner, path))?.label ?? null
 
-  it('/rentals/new is New Rental, not Rentals', () => {
+  it('/rentals/new maps to New Rental', () => {
     expect(label('/rentals/new')).toBe('New Rental')
+  })
+
+  it('/rentals?action=new maps to New Rental', () => {
+    expect(label('/rentals?action=new')).toBe('New Rental')
   })
 
   it('/rentals is Rentals', () => {
@@ -123,8 +172,15 @@ describe('active row — most specific wins, exactly one owner', () => {
     expect(label('/rentals/B-715/packing')).toBe('Rentals')
   })
 
-  it('strips the query — /operations?queue=packing is Operation', () => {
+  it('strips the query — /operations?queue=packing is Operations', () => {
     expect(label('/operations?queue=packing')).toBe('Operation')
+  })
+
+  it('keeps Finance active across its report routes', () => {
+    expect(label('/reports')).toBe('Finance')
+    expect(label('/reports/pulse')).toBe('Finance')
+    expect(label('/reports/clients')).toBe('Finance')
+    expect(label('/reports-archive')).toBeNull()
   })
 
   it('never claims a sibling that merely shares a prefix', () => {
@@ -176,13 +232,13 @@ describe('phone bottom bar — five fixed slots', () => {
 })
 
 describe('More sheet', () => {
-  it('carries every nav item the bar cannot hold — including Clients', () => {
+  it('carries every nav item the bar cannot hold — including the New Rental entry', () => {
     expect(moreNav('Owner').map((s) => s.label)).toEqual([
       'New Rental',
       'Operation',
       'Calendar',
       'Crew Assist',
-      'Clients', // TODO(decision) in data/nav.ts — absent from the spec's own list
+      'Clients',
       'Finance',
       'Tools',
       'Settings',
@@ -202,7 +258,8 @@ describe('More sheet', () => {
       ...bottomBarSlots('Owner').flatMap((s) => (s.kind === 'nav' ? [s.section.to] : [])),
       ...moreNav('Owner').map((s) => s.to),
     ])
-    expect(NAV.filter((s) => !reachable.has(s.to))).toEqual([])
+    const all = permittedAllNav('Owner')
+    expect(all.filter((s) => !reachable.has(s.to))).toEqual([])
   })
 })
 
@@ -232,11 +289,11 @@ describe('SPEC_TABS records what each updated spec ruled', () => {
     expect(SPEC_TABS['/clients']).toEqual(['Clients', 'Memberships'])
   })
 
-  it('07_INVENTORY — four tabs; Warehouses moved to Settings', () => {
+  it('07_INVENTORY — four inventory tabs', () => {
     expect(SPEC_TABS['/inventory']).toEqual(['Equipment', 'Bundles', 'Stock Check', 'Maintenance'])
   })
 
-  it('09_FINANCE — six tabs, Audit gone (it is a Tools card)', () => {
-    expect(SPEC_TABS['/finance']).toEqual(['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Documents', 'Reports'])
+  it('09_FINANCE — seven tabs, including Documents', () => {
+    expect(SPEC_TABS['/finance']).toEqual(['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Documents', 'Closing', 'Reports'])
   })
 })

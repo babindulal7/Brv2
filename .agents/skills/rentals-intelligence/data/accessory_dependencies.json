@@ -1,0 +1,53 @@
+{
+  "dependency_tiers": {
+    "TECHNICALLY_REQUIRED": "Camera will not boot, mount, power, or record without this item. Hard software block.",
+    "PRODUCTION_REQUIRED": "Kit will fail in real field operations without this (e.g. rods for heavy zooms, stand for COB).",
+    "WORKFLOW_RECOMMENDED": "Standard industry best-practice for reliability and crew operation (e.g. monitor for focus puller).",
+    "CONVENIENCE": "Quality-of-life additions (e.g. quick-release plates, magic arms, D-Tap splitters).",
+    "OPTIONAL": "Creative styling accessories (e.g. diffusion filters, spot projection lens, anamorphic adapter)."
+  },
+  "dependencies": {
+    "Sony FX3 / FX3A": {
+      "technically_required": ["CFexpress Type A or V90 SDXC card", "Sony NP-FZ100 battery (or V-mount dummy)"],
+      "production_required": ["USB-C or Dual NP-FZ100 Charger", "Protective Camera Bag / Hard Case"],
+      "workflow_recommended": ["SmallRig / Tilta Full Camera Cage", "Tilta Mirage Matte Box with VND", "Accsoon CineView M7 Pro Monitor"],
+      "convenience": ["NATO Top Handle", "SmallRig V-Mount Battery Adapter Plate", "D-Tap to USB-C cable"],
+      "optional": ["Atomos Ninja V+ (for 4.2K 16-bit ProRes RAW recording)", "DJI Mic Mini Wireless Receiver"]
+    },
+    "RED Komodo 6K": {
+      "technically_required": ["RED-Verified CFast 2.0 Card (512GB)", "Canon RF-to-PL Adapter (if using PL glass)", "Power Source (Dual BP-9XX or V-Mount with 2-pin LEMO)"],
+      "production_required": ["CFast 2.0 Card Reader (USB-C 3.2)", "SDI Monitor or SDI-to-HDMI Converter (no HDMI on camera body!)", "SDI Cable (12G-rated BNC)"],
+      "workflow_recommended": ["Tilta / Outrigger Top Handle with Run/Stop", "SmallRig 99Wh V-Mount Battery Package (x3)", "Dual V-Mount Fast Charger"],
+      "incompatible": ["Standard non-approved consumer CFast cards", "Direct HDMI monitor cables without converter"]
+    },
+    "RED Komodo-X": {
+      "technically_required": ["RED PRO CFexpress Type B Card (1TB/2TB)", "Micro V-Mount or Standard V-Mount Battery", "RF or RF-to-PL Locking Adapter"],
+      "production_required": ["CFexpress Type B Reader", "12G-SDI Monitor or RED DSMC3 Touch LCD", "V-Mount Dual Charger"],
+      "workflow_recommended": ["DSMC3 RED Touch 7.0 Monitor", "5-pin 00B to Dual XLR Audio Adapter", "Nucleus-M II / DJI Focus Pro Motor"],
+      "incompatible": ["CFast 2.0 cards (slot physically incompatible)", "Non-approved consumer CFexpress B cards (cause recording lockups)"]
+    },
+    "DJI Ronin 4D 6K": {
+      "technically_required": ["TB50 Intelligent Battery", "DJI PROSSD 1TB or Approved CFexpress B", "DL Mount Lens or DL-to-E Mount Adapter"],
+      "production_required": ["TB50 Charging Hub + AC Cable", "High-Bright Main Monitor (built-in mounting)"],
+      "workflow_recommended": ["DJI LiDAR Range Finder", "DJI Focus Motor", "Ronin 4D Flex Extension Cable (for handheld/jib use)"],
+      "incompatible": ["External gimbals (DJI RS3/RS4 Pro - Ronin 4D IS a gimbal!)", "Heavy cine lenses > 1.2kg (causes motor axis overload)"]
+    },
+    "CHIOPT 28-85mm / 75-250mm Zoom": {
+      "technically_required": ["PL Mount Camera Body or PL Adapter (PL-to-E or PL-to-RF)"],
+      "production_required": ["15mm or 19mm Studio Baseplate with Rods", "Rigid Lens Support Bracket (MANDATORY SAFETY - prevents mount damage!)"],
+      "workflow_recommended": ["Heavy Duty Fluid Head Tripod (Studio Assist)", "Heavy-duty Dual Motor Follow Focus"],
+      "incompatible": ["Lightweight travel tripods (K&F Concept)", "Handheld RS3/RS4 Pro without Float/Easyrig"]
+    },
+    "Aputure LS 600x Pro": {
+      "technically_required": ["100-240V AC Power Cord or Dual 26V/28.8V V-Mount Batteries", "Neutrik 6-pin Weatherproof Head Cable"],
+      "production_required": ["Heavy Duty Junior Stand (Combo Stand / Steel C-Stand)", "2x 10kg Sandbags (MANDATORY Tipping Protection)"],
+      "workflow_recommended": ["Aputure Light Dome 150 or F10 Fresnel", "Wireless Sidus Link Mesh App Control"],
+      "incompatible": ["Lightweight aluminum light stands (dangerous collapse risk)"]
+    },
+    "Accsoon CineView M7 Pro Monitor": {
+      "technically_required": ["4x RP-SMA Dual-Band Antennas (Check antenna count upon dispatch & return!)", "Power source (NP-F970 or D-Tap DC cable)"],
+      "production_required": ["Micro/Full HDMI or SDI BNC cable + 1x BACKUP cable"],
+      "workflow_recommended": ["Cold shoe ball head mount / NATO monitor arm", "Sunhood for outdoor shoots"]
+    }
+  }
+}

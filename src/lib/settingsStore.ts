@@ -26,7 +26,10 @@
  */
 
 import { toRupees } from './money'
+import { captureError } from './monitoring'
 import { FEE_PER_CREW_DAY_PAISA } from '../data/crew'
+
+import { readLocal, writeLocal, removeLocal } from './safeStorage'
 
 export type SettingKey =
   | 'organisationName'
@@ -37,6 +40,7 @@ export type SettingKey =
   | 'paymentTermsDays'
   | 'overdueStopDays'
   | 'latePaymentPercentPerMonth'
+  | 'allowDepositSkipOnClose'
   | 'sessionTimeoutMinutes'
   | 'passwordPolicy'
   | 'density'
@@ -44,6 +48,30 @@ export type SettingKey =
   | 'decimalPlaces'
   | 'weekStarts'
   | 'language'
+  | 'operationalDayStart'
+  /* ── Operations rules, added 16 Aug 2026 ──────────────────────────────────
+   * Each of these was a hardcoded constant carrying a PLAN.md ruling. They are
+   * here because they are genuinely variable business rules rather than
+   * arithmetic — the ruled answer becomes the `default`, so nothing changes
+   * behaviour on the day this shipped, and the owner can change it without a
+   * developer. See the doc comment on each spec for which ruling it carries. */
+  | 'unitAvailabilityRule'
+  | 'rentalTurnaround'
+  | 'packingTreeGrouping'
+  | 'packingPhotosRequired'
+  | 'evidenceRetentionDays'
+  /* ── WhatsApp deep links, added 1 Sep 2026 ───────────────────────────────
+   * `docs/WHATSAPP_LINKS_SPEC_v1.0.md` §6.1 lists these as the spec's own OPEN
+   * items. They are added here as FIELDS, not as answers: every default below
+   * is empty, so this change asserts no pickup time, no business phone and no
+   * owner number. Until the owner fills one in, the templates that need it are
+   * offered disabled with the reason — which is the honest state, and is what
+   * stops a session inventing "10:00 AM" to unblock itself (CLAUDE.md).
+   */
+  | 'businessPhone'
+  | 'ownerWhatsappNumber'
+  | 'defaultPickupTime'
+  | 'defaultReturnTime'
 
 export type SettingValue = string | number
 
@@ -75,7 +103,7 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
   },
   businessDescription: { default: 'Film & Production Equipment Rental', kind: 'text' },
   vatNumber: {
-    default: '601928473',
+    default: '623587106',
     kind: 'text',
     /* Nepali PAN/VAT is nine digits. Refusing the shape here is the difference
        between a wrong number on one invoice and a wrong number on all of them. */
@@ -149,13 +177,39 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
     suffix: '% / month',
     validate: (v) => percent(v, 'Late payment interest'),
   },
+  /**
+   * **RULING 2026-10-06 (migration 0155)** — whether Close offers "Skip deposit
+   * with a reason" to Manager and above. `Off` is the default: until an owner
+   * turns it on, an unresolved deposit blocks Close exactly as before.
+   *
+   * ⚠ This only decides whether the BUTTON is offered, on this device. It is
+   * not the enforcement — `apply_booking_stage_transition` accepts a skip only
+   * with a reason of at least 10 characters from Manager or above, whatever
+   * this says. Revert = delete this key; nothing else reads it but `closeRental`
+   * and the Close control.
+   */
+  allowDepositSkipOnClose: { default: 'Off', kind: 'select', options: ['Off', 'On'] },
+  /**
+   * The idle screen lock, in minutes. **`0` means off, and off is the default**
+   * (ruled by the owner 25 Aug 2026).
+   *
+   * It was `default: 30` with a `n < 1` refusal, which made "off" unrepresentable
+   * — every session got a 30-minute idle timer whether or not anyone asked for
+   * one. Zero is admitted as a value rather than added as a second boolean
+   * setting, so there is one number to read and no way for a flag and a duration
+   * to disagree.
+   *
+   * `lib/auth.tsx` locks the screen when this elapses **and a PIN exists**; it
+   * never signs anyone out. Read the ruling on that effect before widening this.
+   */
   sessionTimeoutMinutes: {
-    default: 30,
+    default: 0,
     kind: 'number',
-    suffix: ' minutes',
+    suffix: ' minutes (0 = off)',
     validate: (v) => {
       const n = Number(v)
-      if (!Number.isInteger(n) || n < 1) return 'A timeout is at least one minute.'
+      if (!Number.isInteger(n) || n < 0) return 'Use 0 to switch the idle lock off, or a whole number of minutes.'
+      if (n > 0 && n < 1) return 'A timeout is at least one minute.'
       if (n > 480) return 'A timeout beyond eight hours is not a timeout.'
       return null
     },
@@ -178,6 +232,207 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
    * `lib/i18n.ts` owns the coverage gate; this only stores the choice.
    */
   language: { default: 'English', kind: 'select', options: ['English', 'नेपाली'] },
+
+  /**
+   * **D4, ruled 30 Aug 2026** (`docs/booqable/REFERENCE_SPEC_v2.5.md`
+   * Appendix A0) — the operational day runs 06:00 → 06:00, **as a setting**.
+   *
+   * The clock time (Kathmandu) at which the rental day begins. "Today's
+   * pickups" and "today's returns" run from this time today to this time
+   * tomorrow, so a 05:30 return belongs to yesterday's operational day when
+   * this reads 06:00 — which is what stops the Dashboard disagreeing with the
+   * floor at 5am. `00:00` is a legal value and restores plain calendar days.
+   *
+   * Read by `queries/bookings.ts`'s day-boundary helpers (per call, like every
+   * other consumer), which every named filter set — Dashboard panels, the
+   * Operations day scope, the pickups drill-down — builds on. The pure
+   * arithmetic lives in `lib/operationalDay.ts`; this key only stores the
+   * choice (Law 1).
+   *
+   * Deliberately NOT applied to finance, audit or BS-calendar day boundaries —
+   * see the header of `lib/operationalDay.ts` for why those stay calendar days.
+   */
+  operationalDayStart: {
+    default: '06:00',
+    kind: 'text',
+    suffix: ' (HH:mm)',
+    validate: (v) => {
+      return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v).trim())
+        ? null
+        : 'The operational day starts at a clock time, written HH:mm — e.g. 06:00. Use 00:00 for plain calendar days.'
+    },
+  },
+
+  /* ── Operations rules ──────────────────────────────────────────────────────
+   *
+   * Five rulings that used to be constants. The rule each one carries is stated
+   * on its spec; the *mapping* from the label to what the engine does lives in
+   * `lib/availability.ts` (Law 1 — a page, and a settings registry, may not
+   * hold business logic). This file stores a choice; it does not interpret one.
+   *
+   * Every default is the answer that was ruled on 16 Aug 2026, so introducing
+   * these changed no behaviour on the day they shipped. That is deliberate: a
+   * setting whose default differs from the ruling would silently re-rule it.
+   */
+
+  /**
+   * **PLAN.md §4.30(c), closing §4.14** — which units are out of the pool.
+   *
+   * Offered as three named presets rather than ten tick-boxes over
+   * `inventory_state`, because the question an owner is actually answering is
+   * "how cautious should assignment be", not "is Returning a disqualifying
+   * state". The three are the three that were reasoned about when it was ruled;
+   * `lib/availability.ts` holds what each maps to.
+   *
+   * ⚠ The lifecycle states (Reserved / Packed / On Rent / Returning) are absent
+   * from every preset by design — they are facts about *today*, and the
+   * date-overlap check already answers per-window. A preset that disqualified
+   * them would make a camera out on rent this week unassignable for a shoot
+   * three months away.
+   */
+  unitAvailabilityRule: {
+    default: 'Condition only',
+    kind: 'select',
+    options: ['Condition only', 'Condition and turnaround', 'Only In Stock'],
+  },
+
+  /**
+   * **PLAN.md §4.30(b)** — whether a booking ending at 18:00 frees its unit for
+   * one starting at 18:00.
+   *
+   * Labelled in warehouse terms rather than as `half-open` / `closed`, because
+   * the person setting it is deciding whether gear needs time between jobs, not
+   * picking a range convention. `lib/availability.ts` maps it back.
+   *
+   * Ruled *"Same-instant handover allowed"* against a recommendation for the
+   * other one — which is exactly why it is a setting now: if same-instant
+   * turnaround proves wrong on the floor, it is one dropdown rather than a
+   * release.
+   */
+  rentalTurnaround: {
+    default: 'Same-instant handover allowed',
+    kind: 'select',
+    options: ['Same-instant handover allowed', 'Turnaround required'],
+  },
+
+  /** **PLAN.md §4.31(2)** — how the packing tree is grouped on the bench. */
+  packingTreeGrouping: {
+    default: 'Bundle, then category',
+    kind: 'select',
+    options: ['Bundle, then category', 'Category only'],
+  },
+
+  /**
+   * **PLAN.md §4.31(1)** — Complete Packing's evidence gate.
+   *
+   * The ruling dissolved the per-case model: the gate is photos per BOOKING.
+   * The count is a setting because "one" was ruled as a floor, not as a law —
+   * a business wanting front-and-back of a loaded van sets two.
+   *
+   * Zero is allowed and means the gate is off. That is a real configuration
+   * (a business that does not photograph packing), so it is permitted rather
+   * than validated away — but it removes the evidence trail, which is why it
+   * is not the default.
+   */
+  packingPhotosRequired: {
+    default: 1,
+    kind: 'number',
+    suffix: ' per booking',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 0) return 'A photo count is a whole number, zero or more.'
+      if (n > 20) return 'More than twenty photos per booking is a workflow problem, not a setting.'
+      return null
+    },
+  },
+
+  /**
+   * **PLAN.md §4.31(1b)** — how long a packing/evidence photo's IMAGE FILE is
+   * kept after a booking completes. The `evidence_files` row is kept either
+   * way; that is what keeps the ruling inside Law 0.
+   *
+   * **Zero means never expire, and is the default deliberately.** The ruling
+   * said retention exists but *nobody stated a period*, and this is where a
+   * period gets stated. Defaulting to any positive number would be inventing
+   * the one part of that ruling that was never given — and it would start
+   * destroying evidence on a schedule nobody chose.
+   */
+  evidenceRetentionDays: {
+    default: 0,
+    kind: 'number',
+    suffix: ' days after completion (0 = keep)',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 0) return 'A retention period is a whole number of days, or 0 to keep them.'
+      if (n > 0 && n < 30) {
+        return 'Under 30 days risks deleting a photo before a damage dispute is raised. Use 0 to keep them.'
+      }
+      if (n > 3650) return 'Beyond ten years, use 0 (keep) rather than a number nobody will revisit.'
+      return null
+    },
+  },
+
+  /**
+   * **WHATSAPP_LINKS_SPEC v1.0 §6.1** — the number a client is told to ring in
+   * the `overdue` template, and nowhere else.
+   *
+   * Empty by default and deliberately so: an overdue notice that names a wrong
+   * number is worse than one the staff member cannot send, so while this is
+   * blank the overdue template is offered DISABLED with that reason rather
+   * than sent with a placeholder.
+   */
+  businessPhone: {
+    default: '',
+    kind: 'text',
+    validate: (v) => {
+      const s = String(v).trim()
+      if (s === '') return null
+      return s.replace(/\D/g, '').length >= 6
+        ? null
+        : 'A contact number clients can ring, or leave blank. Digits, spaces and dashes.'
+    },
+  },
+
+  /**
+   * **WHATSAPP_LINKS_SPEC v1.0 §2, §6.1** — the owner's OWN WhatsApp number,
+   * the only recipient of the daily digest. It is not a client-facing field:
+   * the digest carries takings and receivables (Law 6), so it goes to one
+   * number the owner sets, never to a number derived from a booking.
+   */
+  ownerWhatsappNumber: {
+    default: '',
+    kind: 'text',
+    validate: (v) => {
+      const s = String(v).trim()
+      if (s === '') return null
+      return s.replace(/\D/g, '').length >= 8
+        ? null
+        : 'The full WhatsApp number, with or without +977. Leave blank to disable the digest.'
+    },
+  },
+
+  /**
+   * **WHATSAPP_LINKS_SPEC v1.0 §6.1** — the counter's usual pickup and return
+   * times, written in the same `HH:mm` clock vocabulary as
+   * `operationalDayStart`, which is what §6.1 means by *"read the D4
+   * operationalDayStart world, not new literals"*.
+   *
+   * These are NOT derived from `operationalDayStart`: 06:00 is when the rental
+   * DAY rolls over, not when a counter opens, and printing "Pickup from 06:00"
+   * to a client because the two share a clock would be a fabricated fact. They
+   * are separate, owner-set, and blank until then.
+   */
+  defaultPickupTime: { default: '', kind: 'text', suffix: ' (HH:mm)', validate: hhmmOrBlank },
+  defaultReturnTime: { default: '', kind: 'text', suffix: ' (HH:mm)', validate: hhmmOrBlank },
+}
+
+/** `HH:mm`, or blank for "not set". Shared by the two WhatsApp time fields. */
+function hhmmOrBlank(v: SettingValue): string | null {
+  const s = String(v).trim()
+  if (s === '') return null
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s)
+    ? null
+    : 'A clock time written HH:mm — e.g. 10:00. Leave blank if there is no usual time.'
 }
 
 /** Maps the stored label to the code `lib/i18n.ts` works in. */
@@ -207,16 +462,126 @@ export function validateSetting(key: SettingKey, value: SettingValue): string | 
   return spec.validate?.(value) ?? null
 }
 
+/**
+ * RULING 2026-10-07 (G1): settings are shared across devices through the `settings` table (0158).
+ * Only these two stay per-device — they are how THIS screen looks and reads, not business rules.
+ */
+export const DEVICE_LOCAL_KEYS: readonly SettingKey[] = ['density', 'language']
+export function isDeviceLocalKey(key: SettingKey): boolean {
+  return DEVICE_LOCAL_KEYS.includes(key)
+}
+
+/* The last values read from the database. `org` is the business-wide value; `byLocation` carries
+   per-branch overrides (only operationalDayStart may have one — enforced by set_setting()). */
+let remoteOrg: Partial<Record<SettingKey, SettingValue>> = {}
+let remoteByLocation: Record<string, Partial<Record<SettingKey, SettingValue>>> = {}
+const listeners = new Set<() => void>()
+
+export interface RemoteSettingRow {
+  key: string
+  value: unknown
+  scope: 'org' | 'location'
+  location_id: string | null
+}
+
+function coerce(key: SettingKey, raw: unknown): SettingValue | null {
+  const spec = SETTING_SPECS[key]
+  const v: SettingValue | null =
+    spec.kind === 'number' ? (typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : null) : raw == null ? null : String(raw)
+  if (v === null || (typeof v === 'number' && !Number.isFinite(v))) return null
+  return validateSetting(key, v) === null ? v : null
+}
+
+/** Replace the in-memory copy with what the database returned. A row that no longer validates is ignored. */
+export function applyRemoteSettings(rows: readonly RemoteSettingRow[]): void {
+  const org: Partial<Record<SettingKey, SettingValue>> = {}
+  const loc: Record<string, Partial<Record<SettingKey, SettingValue>>> = {}
+  for (const r of rows) {
+    if (!(r.key in SETTING_SPECS) || isDeviceLocalKey(r.key as SettingKey)) continue
+    const key = r.key as SettingKey
+    const v = coerce(key, r.value)
+    if (v === null) continue
+    if (r.scope === 'location' && r.location_id) (loc[r.location_id] ??= {})[key] = v
+    else if (r.scope === 'org') org[key] = v
+  }
+  remoteOrg = org
+  remoteByLocation = loc
+  listeners.forEach((fn) => fn())
+}
+
+/** Optimistic update after a successful set_setting(). */
+export function applyRemoteSettingPatch(patch: Partial<SettingsRecord>): void {
+  remoteOrg = { ...remoteOrg, ...patch }
+  listeners.forEach((fn) => fn())
+}
+
+export function subscribeSettings(fn: () => void): () => void {
+  listeners.add(fn)
+  return () => listeners.delete(fn)
+}
+
+/** Test seam. */
+export function clearRemoteSettings(): void {
+  remoteOrg = {}
+  remoteByLocation = {}
+}
+
+/**
+ * location → org → default. A branch override (D-1: operationalDayStart only) wins for that branch;
+ * everything else is the business-wide value.
+ */
+export function getSettingForLocation(key: SettingKey, locationId: string | null | undefined): SettingValue {
+  const override = locationId ? remoteByLocation[locationId]?.[key] : undefined
+  return override ?? getSetting(key)
+}
+
 export function readSettings(): SettingsRecord {
-  if (typeof window === 'undefined') return { ...SETTINGS_DEFAULTS }
+  if (typeof window === 'undefined') return { ...SETTINGS_DEFAULTS, ...remoteOrg }
   const out = { ...SETTINGS_DEFAULTS }
   for (const key of Object.keys(SETTING_SPECS) as SettingKey[]) {
-    const raw = window.localStorage.getItem(PREFIX + key)
+    /* A shared value wins over this device's old localStorage copy. A key the database has no row for
+       yet falls through to the local value, so nothing reverts the day this ships. */
+    const shared = isDeviceLocalKey(key) ? undefined : remoteOrg[key]
+    if (shared !== undefined) {
+      out[key] = shared
+      continue
+    }
+    /* Guarded — this sweep runs on the load path and WebKit can throw. */
+    const raw = readLocal(PREFIX + key)
     if (raw === null) continue
+    // 7 Oct owner audit: correct the former built-in company PAN only.
+    // Preserve every other explicit organisation override.
+    if (key === 'vatNumber' && raw === '601928473') continue
     const spec = SETTING_SPECS[key]
     const parsed: SettingValue = spec.kind === 'number' ? Number(raw) : raw
-    if (spec.kind === 'number' && !Number.isFinite(parsed as number)) continue
-    if (validateSetting(key, parsed) !== null) continue
+    /*
+     * ⚠ A stored value that no longer validates is DISCARDED and the default
+     * substituted. That is the right call — a hand-edited localStorage must not
+     * reach an invoice — but until 16 Aug 2026 it happened in total silence,
+     * and the operations rules made that dangerous rather than merely untidy.
+     *
+     * The case: an owner sets `unitAvailabilityRule` to 'Only In Stock'; a
+     * later build renames that option; the stored value stops validating and
+     * this loop quietly restores 'Condition only'. Availability LOOSENS, gear
+     * that was being held back becomes bookable again, and nothing anywhere
+     * says so. A VAT rate reverting is visible on the next invoice; a
+     * disqualifying-state set reverting is visible nowhere.
+     *
+     * Warning rather than throwing, because refusing to load settings at all
+     * would take the app down over one bad key. This does not make it safe — it
+     * makes it observable, which is the difference between a bug someone can
+     * find and one nobody can.
+     */
+    const invalid = spec.kind === 'number' && !Number.isFinite(parsed as number) ? 'not a number' : validateSetting(key, parsed)
+    if (invalid !== null) {
+      console.warn(
+        `[settings] Stored value for "${key}" was rejected (${invalid}) and the default ` +
+          `${JSON.stringify(spec.default)} is being used instead. Stored: ${JSON.stringify(raw)}. ` +
+          'If this is an operations rule, the behaviour it governs has just reverted to its default.',
+      )
+      captureError(new Error('Stored setting rejected'), { where: 'settingsStore.load', key, reason: invalid })
+      continue
+    }
     out[key] = parsed
   }
   return out
@@ -228,7 +593,7 @@ export function writeSettings(patch: Partial<SettingsRecord>): void {
   for (const [k, v] of Object.entries(patch) as Array<[SettingKey, SettingValue]>) {
     const problem = validateSetting(k, v)
     if (problem) throw new Error(problem)
-    window.localStorage.setItem(PREFIX + k, String(v))
+    writeLocal(PREFIX + k, String(v))
   }
 }
 
@@ -246,6 +611,6 @@ export function formatSetting(key: SettingKey, value: SettingValue): string {
 export function resetSettings(): void {
   if (typeof window === 'undefined') return
   for (const key of Object.keys(SETTING_SPECS) as SettingKey[]) {
-    window.localStorage.removeItem(PREFIX + key)
+    removeLocal(PREFIX + key)
   }
 }

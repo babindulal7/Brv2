@@ -1,17 +1,21 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, FooterNote, SummaryRows } from '../../components/ui/Page'
+import { Card, Button, FooterNote, SummaryRows } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
 import { Modal } from '../../components/ui/Modal'
-import { EmptyState } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { captureError } from '../../lib/monitoring'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import type { ActionContext } from '../../actions/core'
-import { CLIENTS_DATA, findDuplicateGroups, type ClientRecord, type DuplicateGroup, type DuplicateMatchReason } from '../../data/clients'
+import { useList } from '../../lib/queries/useList'
+import { listClientRecords } from '../../lib/queries/clients'
+import { findDuplicateGroups, type ClientRecord, type DuplicateGroup, type DuplicateMatchReason } from '../../lib/queries/clients'
 
 /**
  * Duplicate & Merge Center — confirmed gap named in this session's audit
@@ -20,13 +24,17 @@ import { CLIENTS_DATA, findDuplicateGroups, type ClientRecord, type DuplicateGro
  * `ClientDetail.tsx`'s "Merge Duplicate" action. This is what both were
  * pointing at.
  *
- * Detection is real — `findDuplicateGroups` in `data/clients.ts` runs
- * against the live client list on every render, not a canned result. The 26
- * seed clients were authored with distinct phones/emails/PANs/names, so the
- * expected, honest result against them is **zero groups**. That is the
- * detector working correctly, not a placeholder — see PROGRESS.md for how
- * the "found a match" path was verified separately, without corrupting the
- * seed data to manufacture a demo case.
+ * Detection runs against the DATABASE. The directory is read once through
+ * `lib/queries/clients` (`listClientRecords` over `client_directory_v` —
+ * Law 2, the same read every other clients surface uses) and
+ * `findDuplicateGroups` in `data/clients.ts` derives the groups from those
+ * fetched rows. The 26-row `CLIENTS_DATA` seed this screen used to scan is
+ * gone from it entirely — "Checked N clients" is now a statement about the
+ * directory the operator arrived from, not about a fixture file
+ * (docs/pages/43 §7.6). The pairwise grouping itself is a derivation over the
+ * one fetched list, which is the shape Law 2 allows; the per-candidate
+ * checks on Add Client and Import Center use the targeted server-side
+ * matchers in the same query module instead.
  *
  * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
  * section D). `confirmMerge` used to rewrite local state **first** — survivor
@@ -148,6 +156,7 @@ function GroupCard({
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 10 }}>
                 <input
                   type="radio"
+                  aria-label={`Keep client ${c.name} as survivor`}
                   name={`survivor-${group.key}`}
                   checked={selected}
                   onChange={() => setSurvivorId(c.id)}
@@ -185,14 +194,49 @@ function GroupCard({
   )
 }
 
-export default function DuplicateCenter() {
+export interface DuplicateCenterProps {
+  embedded?: boolean
+}
+
+export default function DuplicateCenter({ embedded = false }: DuplicateCenterProps = {}) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
   const { user } = useAuth()
   const online = useNetwork()
 
-  const [clients, setClients] = useState<ClientRecord[]>(CLIENTS_DATA)
+  /**
+   * The directory, from the database. One read for the whole scan; the
+   * grouping below is a pure derivation over these rows. The limit is
+   * explicit and generous — if the business ever outgrows it, the header's
+   * "Checked N clients" stays truthful because N is the number actually
+   * fetched, not the table size.
+   */
+  const fetchClients = useCallback(async () => ({ rows: await listClientRecords({ limit: 1000 }) }), [])
+  const list = useList(fetchClients)
+
+  /**
+   * Session-local commit of merges that actually landed (dispatch-then-commit
+   * — nothing goes in here until `MERGE_CLIENTS` resolves for that record).
+   * Kept as an overlay OVER the fetched rows rather than a copy of them, so a
+   * refetch cannot silently discard a commit and a commit cannot fork from
+   * the directory. When the merge action writes to `client_merges` for real,
+   * the durable version of this is a refetch.
+   */
+  const [sessionSurvivors, setSessionSurvivors] = useState<Record<string, ClientRecord>>({})
+  const [sessionMerged, setSessionMerged] = useState<Record<string, { mergedIntoId: string; mergedAt: string }>>({})
+
+  const clients = useMemo(
+    () =>
+      list.rows.map((c) => {
+        const survivor = sessionSurvivors[c.id]
+        if (survivor) return survivor
+        const merged = sessionMerged[c.id]
+        return merged ? { ...c, ...merged } : c
+      }),
+    [list.rows, sessionSurvivors, sessionMerged],
+  )
+
   const [pendingMerge, setPendingMerge] = useState<{ group: DuplicateGroup; survivorId: string } | null>(null)
   const [merging, setMerging] = useState(false)
   /**
@@ -210,6 +254,13 @@ export default function DuplicateCenter() {
 
   const checkedCount = clients.filter((c) => !c.mergedIntoId).length
   const mergedCount = clients.filter((c) => c.mergedIntoId).length
+
+  /** The header claims what was checked, so it must not claim anything mid-load or after a failed load. */
+  const headerDescription = list.loading
+    ? 'Checking the client directory for matching phone, email, PAN, or name…'
+    : list.error
+      ? 'The client directory could not be loaded, so nothing has been checked yet.'
+      : `Checked ${checkedCount} client${checkedCount === 1 ? '' : 's'} for matching phone, email, PAN, or name.${mergedCount ? ` ${mergedCount} merged this session.` : ''}`
 
   /**
    * No session, no dispatch, and never a substituted identity — the same shape
@@ -250,7 +301,7 @@ export default function DuplicateCenter() {
     try {
       mergeClients = (await import('../../actions/clients/mergeClients')).mergeClients
     } catch (err: unknown) {
-      console.error('merge clients module failed to load:', err)
+      captureError(err, { where: 'DuplicateCenter.loadMerge' })
       setMerging(false)
       setMergeError(
         `Not merged — the merge action could not be loaded (${err instanceof Error ? err.message : String(err)}). ` +
@@ -270,7 +321,7 @@ export default function DuplicateCenter() {
         await mergeClients({ survivorId: survivor.id, duplicateId: c.id }, ctx)
         landed.push(c)
       } catch (err: unknown) {
-        console.error('merge clients failed:', err)
+        captureError(err, { where: 'DuplicateCenter.merge', clientId: c.id })
         failure = { client: c, message: err instanceof Error ? err.message : String(err) }
         break
       }
@@ -278,18 +329,18 @@ export default function DuplicateCenter() {
 
     setMerging(false)
 
-    // Commit only what actually landed. The survivor absorbs the merged
-    // records' counts, spend and bookings — never the ones that refused.
+    // Commit only what actually landed, as an overlay over the fetched rows.
+    // The survivor absorbs the merged records' counts, spend and bookings —
+    // never the ones that refused.
     if (landed.length > 0) {
       const mergedSurvivor = mergeInto(survivor, landed)
-      const landedIds = new Set(landed.map((c) => c.id))
       const at = new Date().toISOString()
-      setClients((prev) =>
-        prev.map((c) => {
-          if (c.id === survivor.id) return mergedSurvivor
-          return landedIds.has(c.id) ? { ...c, mergedIntoId: survivor.id, mergedAt: at } : c
-        }),
-      )
+      setSessionSurvivors((prev) => ({ ...prev, [survivor.id]: mergedSurvivor }))
+      setSessionMerged((prev) => {
+        const next = { ...prev }
+        for (const c of landed) next[c.id] = { mergedIntoId: survivor.id, mergedAt: at }
+        return next
+      })
     }
 
     if (!failure) {
@@ -315,14 +366,17 @@ export default function DuplicateCenter() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="users"
         title="Duplicate & Merge Center"
-        description={`Checked ${checkedCount} client${checkedCount === 1 ? '' : 's'} for matching phone, email, PAN, or name.${mergedCount ? ` ${mergedCount} merged this session.` : ''}`}
+        description={headerDescription}
         actions={
-          <Button icon="external_link" onClick={() => navigate('/clients')}>
-            Back to Clients
-          </Button>
+          !embedded ? (
+            <Button icon="external_link" onClick={() => navigate('/clients')}>
+              Back to Clients
+            </Button>
+          ) : undefined
         }
       />
 
@@ -354,12 +408,24 @@ export default function DuplicateCenter() {
         </p>
       )}
 
-      {groups.length === 0 ? (
-        <EmptyState
-          title="No duplicates found"
-          description={`Every one of the ${checkedCount} active client records has a distinct phone, email, PAN and name. Nothing needs merging right now.`}
-        />
-      ) : (
+      {/* The fixed ladder: error → loading → empty → groups. A directory that
+          could not be read shows the failure (with Retry), never an empty
+          "no duplicates" that would read as a clean bill of health. */}
+      <PageBody
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.refetch}
+        hasRows={groups.length > 0}
+        empty={groups.length === 0}
+        noun="clients"
+        skeleton="card"
+        emptyTitle={list.rows.length === 0 ? 'No clients to check' : 'No duplicates found'}
+        emptyMessage={
+          list.rows.length === 0
+            ? 'The client directory returned no clients, so there is nothing to scan for duplicates.'
+            : `Every one of the ${checkedCount} active client records has a distinct phone, email, PAN and name. Nothing needs merging right now.`
+        }
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           {groups.map((g) => (
             <GroupCard
@@ -370,9 +436,9 @@ export default function DuplicateCenter() {
             />
           ))}
         </div>
-      )}
+      </PageBody>
 
-      <FooterNote extra={['Merging closes a record — Law 3: nothing is deleted, every entity has a named terminal action']} />
+      <FooterNote extra={[/* Merging closes a record — Law 3: nothing is deleted, every entity has a named terminal action */ "Merging closes the duplicate record and preserves its history."]} />
 
       <Modal
         isOpen={!!pendingMerge}

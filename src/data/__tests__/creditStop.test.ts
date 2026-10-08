@@ -34,6 +34,7 @@ import {
 } from '../clients'
 import { rupees } from '../../lib/money'
 import { writeSettings, resetSettings, SETTINGS_DEFAULTS } from '../../lib/settingsStore'
+import { clientDetailGroups, clientGlance } from '../clientIntel'
 
 const OPTS = { overdueStopDays: 30, canViewMoney: true }
 
@@ -46,6 +47,21 @@ const CLEAR: CreditStopFacts = {
 
 beforeEach(() => {
   window.localStorage.clear()
+})
+
+it('keeps blocked state first and omits personal and financial fields from a Warehouse Intel payload', () => {
+  const base = CLIENTS_DATA[0]
+  if (!base) throw new Error('The client fixture is missing')
+  const client: ClientRecord = { ...base, isBlocked: true }
+  const ctx = { role: 'Warehouse' as const }
+  const glance = clientGlance(client, ctx)
+  const detail = clientDetailGroups(client, ctx)
+  expect(glance.lines?.[0]).toMatch(/Blocked/)
+  expect(detail[0]?.title).toBe('Credit control')
+  const payload = JSON.stringify({ glance, detail })
+  expect(payload).not.toContain(client.pan)
+  expect(payload).not.toContain(client.phone)
+  expect(payload).not.toContain('Outstanding balance')
 })
 
 describe('evaluateCreditStop — the two limbs', () => {

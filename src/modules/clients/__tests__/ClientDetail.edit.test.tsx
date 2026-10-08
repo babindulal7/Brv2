@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Inline edit, driven through the screen rather than through the hook.
+ * Client editing is record-level (2026-10-06): `Edit Client` opens the shared record form.
+ * The old per-field inline editor and its "session only" banner are gone.
  *
  * `lib/edit/__tests__/useEditMode.test.tsx` already pins the state machine. This
  * pins the wiring — that the page actually unlocks, that the Save/Cancel pair
@@ -65,6 +66,14 @@ vi.mock('../../../lib/queries/useList', () => ({ useList: () => EMPTY_LIST }))
 // `financeRestriction` and the fetchers, and both pull in the Supabase client at
 // module load. Stubbed so the suite needs no environment.
 vi.mock('../../../lib/supabase', () => ({ supabase: {}, newClientUuid: () => 'uuid-test' }))
+vi.mock('../../../components/records/RecordForm', () => ({
+  RecordForm: ({ kind, recordId }: { kind: string; recordId?: string }) => (
+    <div data-testid="record-form">{kind}:{recordId}</div>
+  ),
+}))
+vi.mock('../../../actions/clients/updateClient', () => ({
+  updateClient: vi.fn().mockResolvedValue({ success: true, clientId: 'uuid-fixture', changedKeys: [] }),
+}))
 
 // jsdom ships no matchMedia; lib/device asks for it on mount.
 window.matchMedia = ((q: string) => ({
@@ -117,16 +126,6 @@ async function click(el: Element | undefined | null) {
   })
 }
 
-/** React tracks its own value on the node, so a plain `.value =` is not seen. */
-async function type(el: HTMLInputElement | HTMLTextAreaElement | null, value: string) {
-  if (!el) throw new Error('field not rendered')
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
-  Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value)
-  await act(async () => {
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-}
-
 /** Every Save button currently on screen — the count IS the "only where you typed" claim. */
 function saveButtons() {
   return [...container.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Save')
@@ -141,113 +140,31 @@ afterEach(async () => {
   container.remove()
 })
 
-describe('ClientDetail — inline edit', () => {
-  it('offers a real Edit button, not the old disabled one', () => {
+describe('ClientDetail - record-level edit', () => {
+  it('offers a real Edit Client button', () => {
     const edit = button('Edit Client')
     expect(edit).toBeDefined()
     expect(edit!.disabled).toBe(false)
   })
 
-  it('one button unlocks the page — every keyed field becomes an input at once', async () => {
+  it('shows the record read-only, with no per-field inputs or Save controls', () => {
     expect(field('name')).toBeNull()
-    await click(button('Edit Client'))
-    expect(field('name')).not.toBeNull()
-    expect(field('phone')).not.toBeNull()
-    expect(field('pan')).not.toBeNull()
-    expect((field('name') as HTMLInputElement).value).toBe(RECORD.name)
-  })
-
-  it('unlocking sprouts no Save buttons — chrome appears only where you typed', async () => {
-    await click(button('Edit Client'))
+    expect(field('phone')).toBeNull()
     expect(saveButtons()).toHaveLength(0)
-
-    await type(field('name'), `${RECORD.name} Pvt`)
-    expect(saveButtons()).toHaveLength(1)
-  })
-
-  it('typing a value back to the saved one clears the pair again', async () => {
-    await click(button('Edit Client'))
-    await type(field('name'), 'Something else')
-    expect(saveButtons()).toHaveLength(1)
-    await type(field('name'), RECORD.name)
-    expect(saveButtons()).toHaveLength(0)
-  })
-
-  it('saving a field commits it to the record and drops the pair', async () => {
-    await click(button('Edit Client'))
-    await type(field('phone'), '+977 980-9999999')
-    await click(saveButtons()[0])
-    expect(saveButtons()).toHaveLength(0)
-    expect((field('phone') as HTMLInputElement).value).toBe('+977 980-9999999')
-  })
-
-  it('refuses to save an empty phone — the key merge and dedupe match on', async () => {
-    await click(button('Edit Client'))
-    await type(field('phone'), '')
-    await click(saveButtons()[0])
-    expect(container.textContent).toContain('Phone is required')
-    // The draft survives the refusal; the field is still dirty and still empty.
-    expect((field('phone') as HTMLInputElement).value).toBe('')
-  })
-
-  it('an immutable field renders read-only with its reason, even in edit mode', async () => {
-    await click(button('Edit Client'))
-    expect(field('id')).toBeNull()
-    expect(container.textContent).toContain('issued by Settings ▸ Numbering')
-    expect(field('creditLimitPaisa')).toBeNull()
-    expect(container.textContent).toContain('credit.override')
-  })
-
-  it('refuses to leave edit mode with unsaved work, and names the field', async () => {
-    await click(button('Edit Client'))
-    await type(field('pan'), '999888777')
-    await click(button('Done'))
-    expect(container.textContent).toContain('Unsaved: pan')
-    // Still in edit mode — the input is still there.
-    expect(field('pan')).not.toBeNull()
-  })
-
-  it('leaves cleanly once the field is saved', async () => {
-    await click(button('Edit Client'))
-    await type(field('pan'), '999888777')
-    await click(saveButtons()[0])
-    await click(button('Done'))
-    expect(field('pan')).toBeNull()
-    expect(button('Edit Client')).toBeDefined()
-  })
-
-  it('Discard drops every pending change and exits', async () => {
-    await click(button('Edit Client'))
-    await type(field('name'), 'Wrong Name')
-    await click(button('Discard'))
-    expect(field('name')).toBeNull()
     expect(container.textContent).toContain(RECORD.name)
-    expect(container.textContent).not.toContain('Wrong Name')
   })
 
-  it('the discount group saves as one write — the percentage never lands alone', async () => {
+  it('Edit Client opens the one shared client form for this record', async () => {
     await click(button('Edit Client'))
-    await type(field('standingDiscountPercent'), '9')
-    await type(field('discountSource'), 'Membership')
-    // Two dirty fields, one group: each renders its own pair, and either saves both.
-    await click(saveButtons()[0])
-    expect(saveButtons()).toHaveLength(0)
-    expect((field('standingDiscountPercent') as HTMLInputElement).value).toBe('9')
-    expect((field('discountSource') as HTMLInputElement).value).toBe('Membership')
+    const form = container.querySelector('[data-testid="record-form"]')
+    expect(form).not.toBeNull()
+    expect(form!.textContent).toBe('client:' + RECORD.id)
   })
 
-  it('a failing member blocks the whole group', async () => {
+  it('never claims edits are session-only and has no inline Done/Discard mode', async () => {
     await click(button('Edit Client'))
-    await type(field('discountSource'), 'Membership')
-    await type(field('standingDiscountPercent'), '40')
-    await click(saveButtons()[0])
-    // Nothing saved: both are still dirty, and the reason is on the screen.
-    expect(container.textContent).toContain('Law 10')
-    expect(saveButtons().length).toBeGreaterThan(0)
-  })
-
-  it('says plainly that nothing is persisted yet', async () => {
-    await click(button('Edit Client'))
-    expect(container.textContent).toContain('not persisted yet')
+    expect(container.textContent).not.toContain('not persisted yet')
+    expect(button('Done')).toBeUndefined()
+    expect(button('Discard')).toBeUndefined()
   })
 })

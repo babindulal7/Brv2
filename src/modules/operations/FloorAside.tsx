@@ -2,21 +2,17 @@ import type { CSSProperties, ReactNode } from 'react'
 import { Rail, SideRail } from '../../components/ui/Page'
 
 /**
- * **Rulings §7 — "right rails collapse below 1180" means REFLOW, not hide.**
- *
- * `Rail`/`SideRail` wrap `CollapsibleAside`, which defaults to *collapsed* at
- * phone **and tablet** — the 28px-handle behaviour the list screens rely on,
- * and which `CollapsibleAside.tsx:31-37` defends in writing.
+ * **Rulings §7 — "right rails collapse below 1280" means REFLOW, not hide.**
  *
  * Spec 03's tablet drawings need the opposite. §3.2 puts the progress column
  * beside the list ("split, scan-first"), §3.3 puts the client rail on top as a
  * bar, §3.4 drops the compare strip below. All three are rail content still on
  * screen, which a 28px handle is not.
  *
- * So above 1180 this is the shared collapsible aside, and below it the same
+ * Above 1280 use the shared summary or filter aside; below it the same
  * children render as a plain column that the page's grid places explicitly.
- * `CollapsibleAside`'s own default is untouched — other pages depend on it,
- * and changing it there would move rails on screens nobody asked about.
+ * Right summaries stay visible under the user's 7 Oct ruling. Left filter
+ * rails retain their collapse behavior.
  *
  * It lives in `modules/operations/` rather than in `components/ui/` because it
  * encodes a *floor-workspace* layout ruling, not a design-system primitive:
@@ -69,13 +65,13 @@ export interface FloorPlacement {
  * a screen reader gets matches the page's structure and does not change under
  * the operator as they rotate a tablet. The grid moves the boxes:
  *
- *  · **desktop ≥1180** — natural three-column flow, no explicit placement;
- *  · **tablet 768–1179** — two columns: list top-left, the left rail beneath
+ *  · **desktop ≥1280** — natural three-column flow, no explicit placement;
+ *  · **tablet 768–1279** — two columns: list top-left, the left rail beneath
  *    it, the right rail spanning both rows (§3.2's "split, scan-first");
  *  · **phone <768** — one column: list, then the right rail (progress,
  *    blockers, the completion gate), then the left rail.
  *
- * The right rail comes *before* the left one below 1180 deliberately: it holds
+ * The right rail comes *before* the left one below 1280 deliberately: it holds
  * the gate and the blockers, which are what the floor is looking for, and the
  * left rail is a navigational aid the list already summarises.
  */

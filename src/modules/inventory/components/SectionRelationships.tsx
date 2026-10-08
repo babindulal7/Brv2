@@ -2,7 +2,7 @@ import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
 import { Field, SectionCard, inputStyle, fieldRow, Chip } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { CONTAINER_MODELS, ATTACHABLE_MODELS, modelName, CONTAINER_CAPACITY_REASON } from '../../../data/addEquipment'
+import { CONTAINER_MODELS, ATTACHABLE_MODELS, modelName, CONTAINER_CAPACITY_REASON } from '../../../lib/queries/addEquipment'
 
 export function SectionRelationships() {
   const {
@@ -105,7 +105,11 @@ export function SectionRelationships() {
                             setContains((prev) => prev.map((x) => (x.id === c.id ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x)))
                           }
                           className="figure"
-                          style={{ ...inputStyle(), width: 62, height: 28 }}
+                          /* Law 15 — the `height: 28` override defeated inputStyle's
+                             `minHeight: 44` touch floor on the one control in this row
+                             that takes typing. Width stays 62: the floor is 44 and a
+                             quantity is at most a few digits. */
+                          style={{ ...inputStyle(), width: 62 }}
                         />
                       </label>
                       <button
@@ -119,8 +123,7 @@ export function SectionRelationships() {
                     </div>
                   ))}
                   <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                    Detaching removes only the relationship — the child stays an independent asset (§6.1).
-                  </span>
+                    {/* Detaching removes only the relationship — the child stays an independent asset (§6.1). */}Detaching removes only the relationship — the child stays an independent asset . </span>
                 </div>
               )}
 

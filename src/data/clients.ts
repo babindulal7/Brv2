@@ -54,18 +54,40 @@ export const MEMBERSHIP_TIERS: readonly MembershipTier[] = [
 ]
 
 /**
- * One tier → one status token, shared by the **Clients** table pill and the
- * **Membership** level pill so the same tier never reads as two different
- * colours across the two tabs.
+ * @deprecated Appearance does not belong in `src/data`. **Ruled 26 Aug 2026.**
  *
- * The render tints tiers Gold / Silver / Platinum and puts a violet chip on one
- * of them. Foundation §4.2 bans violet outright and allows five hues plus gold,
- * and gold is outline-only (reserved for sub-rental), so the five tiers map onto
- * the five status keys instead.
+ * A membership tier is a **domain fact** — an attribute of a client, like a PAN
+ * or a phone number. Typing it as `StatusKey` makes it look like an operational
+ * state and invites every call site to paint it with a status hue, which is the
+ * entity/state confusion DESIGN_DIRECTION_SPEC_v4.1 §2 forbids: each of the
+ * seven hues carries exactly one meaning, so `Elite: 'out'` below tells a floor
+ * reading orange that the gear is out with a client, and `Creator: 'in'` claims
+ * green's "home & settled". Nothing about a tier is either of those things.
  *
- * TODO(decision) — PLAN.md §4: §4.2 lists the five hues but does not assign one
- * to each membership tier. This mapping is a rendering choice, not a ruling;
- * settle it before the tier colours appear on a printed contract.
+ * The decision has moved to the presentation layer. `modules/clients/Membership.tsx`
+ * now owns `TIER_ACCENT`, which paints tiers from the **categorical** ramp
+ * (`--cat-1..5`) as icon ink rather than from the status set, and `data/membership.ts`
+ * no longer carries a `badgeKey` at all — `Plan` is pure domain data.
+ *
+ * This constant survives only because four call sites outside that change's scope
+ * still read it. It is the migration list, and it is **closed** — no new consumer:
+ *
+ *   - `data/clientIntel.ts:166`  — tier fact chip
+ *   - `data/clientIntel.ts:195`  — client avatar tint
+ *   - `modules/clients/Clients.tsx:482, 562`
+ *   - `modules/clients/ClientsDirectory.tsx:1371, 1392, 1542, 1599`
+ *   - `modules/clients/ClientDetail.tsx:718`  — reads it only to test for `'danger'`
+ *
+ * Until those move, the Clients directory and the Membership tab paint the same
+ * tier differently. That divergence is the cost of the partial migration and is
+ * tracked here rather than hidden.
+ *
+ * TODO(migration) — retire this export: point the five files above at the
+ * presentation-layer mapping (promoting `TIER_ACCENT` out of `Membership.tsx`
+ * into a shared UI module at that point), then delete it. `ClientDetail.tsx:718`
+ * needs a separate decision first: it uses this map as a stand-in for "is this
+ * tier a problem?", which no tier ever is — that branch is dead today because no
+ * tier maps to `'danger'`.
  */
 export const TIER_TONE: Record<MembershipTier, StatusKey> = {
   Academy: 'neutral',
@@ -76,7 +98,26 @@ export const TIER_TONE: Record<MembershipTier, StatusKey> = {
 }
 
 export interface ClientRecord {
+  /**
+   * The client CODE — `C-34` — not a uuid. Every screen keys on this and the
+   * directory renders it, so it stays as-is.
+   *
+   * ⚠ It is NOT what a write wants. `clients.id` is a uuid and every FK points
+   * at that, which is why `dbId` exists below.
+   */
   id: string
+  /**
+   * `clients.id` — the real uuid, for actions that write.
+   *
+   * **Optional because seed rows have none.** `data/clients.ts`'s own array is
+   * demo data with codes for ids, and a screen holding one of those cannot
+   * create a booking — `createRental.validate` refuses a `C-` code by name
+   * rather than letting it fail an FK three layers down. Populated only by
+   * `queries/clients.ts:toClientRecord`, i.e. only by rows that came from the
+   * database. A caller that needs to write MUST check it and refuse when absent,
+   * rather than falling back to `id`.
+   */
+  dbId?: string
   name: string
   company?: string
   clientType: ClientType
@@ -97,6 +138,7 @@ export interface ClientRecord {
   depositHeldPaisa: Paisa
   creditLimitPaisa: Paisa
   creditUsedPaisa: Paisa
+  lastRentalAtAd?: string | null
   lastRentalAd: string // '18 Jul 2026'
   lastRentalBs: string // '2083/04/03'
   address: string

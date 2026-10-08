@@ -1,22 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, FooterNote } from '../../components/ui/Page'
+import { Card, Button } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { Select } from '../../components/ui/Select'
 import { PageBody } from '../../components/ui/PageBody'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Modal } from '../../components/ui/Modal'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { STATUS } from '../../lib/status'
+import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { rupees, formatMoney } from '../../lib/money'
-import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { toBs, formatBs, formatAd, businessDayAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { useTabularLayout } from '../../lib/device'
-import { useNetwork } from '../../lib/network'
+import { useTabularLayout, useViewport } from '../../lib/device'
 import { newClientUuid } from '../../lib/supabase'
-import { TODAY_DAY_AD } from '../../data/today'
 import {
   listExpenses,
   listExpenseCategories,
@@ -34,6 +36,11 @@ import {
 import type { Database } from '../../types/supabase'
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
+import { DateField } from '../../components/ui/DateField'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
+import { useNetwork } from '../../lib/network'
+import './finance.css'
 
 type ExpenseStatusDb = Database['public']['Enums']['expense_status']
 
@@ -183,10 +190,33 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * This is a data-integrity fix, not a density preference. Every expense row
+ * ends in `RowMenu`, and that menu is how an expense moves between approval
+ * states — Submit for approval, Approve, Reject. Its trigger paints 26x26 and
+ * carries no `TouchTarget` at all, so the 44px hit area it owes cannot be added
+ * while the row is 10 + one line + 10: a 44px target on a ~38px row overhangs
+ * the rows above and below by ~3px each, the rows touch, and in that overlap
+ * band the later row in the DOM wins the tap. Approving the row below the one
+ * under the thumb is a money decision recorded against the WRONG expense.
+ *
+ * 56px is what makes the row able to hold the target the trigger still needs;
+ * giving `RowMenu` a real `TouchTarget` is the next fix and this height is its
+ * precondition. The stacked two-line cells here (expense no + branch, BS + AD)
+ * already reach most of the way, which is exactly why the shortfall is easy to
+ * miss — `verticalAlign: 'top'` keeps them reading from the top either way.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
+/* Law 15 — hit area over paint, number from `--tap`. These are the Record
+   Expense fields, stacked one per row, plus the category filter above the
+   table; none of them sit tight enough to need the inset-target trick. */
 const inputStyle = {
-  height: 36,
+  minHeight: 'var(--tap)',
   padding: '0 11px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -221,28 +251,39 @@ function NoValue({ reason }: { reason: string }) {
 }
 
 function StatusBadge({ status }: { status: ExpenseStatusDb }) {
-  const tok = STATUS[STATUS_TOKEN[status]]
+  /*
+   * Delegates to <Badge> — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component
+   * rendering the §4 map from lib/status; every screen inherits. No screen
+   * colours a status itself."
+   *
+   * What this used to be: a span assembled here from `STATUS[STATUS_TOKEN[…]]`
+   * with `--r-badge` (999 — §3.3 reserves that radius for numeric COUNT badges,
+   * not statuses), weight 600, sentence case and a fixed 20px height. Four
+   * deviations from §4's block anatomy, none of them deliberate — this file was
+   * simply written before there was one component to inherit from, and it was
+   * one of fifteen screens hand-rolling the same chip. That is exactly how the
+   * product ended up with no status block anywhere that had the ruled anatomy.
+   *
+   * The wrapper is KEPT: `STATUS_TOKEN` is an expense-domain mapping (the
+   * `expense_status` enum has six members that are not booking statuses), and
+   * the call sites should keep naming a status rather than a tone. It loses the
+   * paint, not the mapping.
+   *
+   * The glyph is passed through rather than dropped — Law 11 / §7.4, colour is
+   * never the sole carrier, and `STATUS_GLYPH` is per-expense-status, finer
+   * than the per-tone icon <Badge> would otherwise pick.
+   *
+   * `size="sm"` because these sit in dense ledger rows; it lands near the 20px
+   * the hand-rolled version had without surrendering the weight, casing and
+   * tracking that ARE the identity of a status block.
+   */
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        height: 20,
-        padding: '0 8px',
-        borderRadius: 'var(--r-badge)',
-        background: tok.bg,
-        color: tok.fg,
-        border: tok.border ? `1px solid ${tok.border}` : undefined,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {/* Law 11 — icon + label + colour, so the state survives monochrome. */}
-      <Icon name={STATUS_GLYPH[status]} size={11} />
-      {status}
-    </span>
+    <Badge
+      tone={STATUS_TOKEN[status]}
+      label={status}
+      icon={<Icon name={STATUS_GLYPH[status]} size={11} />}
+      size="sm"
+    />
   )
 }
 
@@ -280,12 +321,25 @@ const menuStyle = {
   zIndex: 30,
 }
 
+/*
+ * Law 14 / §7.3 — 44px floor, and here it has to be the PAINT.
+ *
+ * §5's compact-34 escape buys density by hiding the target in surrounding
+ * chrome. A stacked menu has no surrounding chrome: these rows touch, so a 44px
+ * invisible target on a 34px row overlaps its neighbours by 5px top and bottom
+ * and the later row in the DOM wins the tap. On a menu that moves an expense
+ * between approval states, taking the wrong row is a booking-safety failure,
+ * not a cosmetic one.
+ *
+ * Growing the paint costs nothing: `menuStyle` is absolutely positioned with no
+ * max-height, so the popover simply gets taller.
+ */
 const menuItemStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: 9,
   width: '100%',
-  height: 34,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-sm)',
   border: 'none',
@@ -419,8 +473,12 @@ function AddExpenseSheet({
   lookupsError: string | null
   createdBy: string | null
 }) {
+  /* Resolved when the form MOUNTS, not when the module loaded. `TODAY_DAY_AD`
+     is frozen at import, so on a machine left open overnight every new expense
+     was dated yesterday by default — silently, on a field most operators will
+     not re-read, and into the ledger that feeds the VAT period. */
   const isOnline = useNetwork()
-  const [dateAd, setDateAd] = useState(TODAY_DAY_AD)
+  const [dateAd, setDateAd] = useState(() => businessDayAd())
   const [categoryId, setCategoryId] = useState('')
   const [branchId, setBranchId] = useState('')
   const [vendor, setVendor] = useState('')
@@ -463,6 +521,14 @@ function AddExpenseSheet({
     if (!Number.isFinite(amount) || amount <= 0) {
       return setError('Enter the amount in rupees — it must be greater than 0 (expenses_amount_positive).')
     }
+    /* PLAN.md Phase 9 — money is refused offline, with the reason (from main's
+       Phase 9 work). Without this the number allocation fails with a bare
+       network error. */
+    if (!isOnline) {
+      return setError(
+        'This device is offline. An expense is not queued for later: its number and the books need the server. Record it when you are back online.',
+      )
+    }
 
     setSaving(status)
     setError(null)
@@ -498,7 +564,7 @@ function AddExpenseSheet({
       isOpen={isOpen}
       onClose={onClose}
       title="Add Expense"
-      subtitle="Recorded against a branch and a category. Corrections are reversal rows, never edits."
+      subtitle="Record a cost against a branch and category."
       size="lg"
       footer={
         <>
@@ -526,12 +592,11 @@ function AddExpenseSheet({
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Date</span>
-          {/* §9.4 — "BS above AD". Rendered from the AD day the picker emits;
-              Law 7 keeps BS out of storage entirely. */}
-          <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-            {bsLabel(dateAd)}
-          </span>
-          <input type="date" value={dateAd} onChange={(e) => setDateAd(e.target.value)} style={inputStyle} />
+          {/* §9.4 — "BS above AD". The BS line used to be rendered here from a
+              local `bsLabel`; `DateField` now renders it itself, from the same
+              `lib/bs` engine, so keeping this one would print it twice. Law 7
+              still keeps BS out of storage entirely. */}
+          <DateField ariaLabel="Expense date" value={dateAd} onChange={setDateAd} style={inputStyle} />
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -544,12 +609,6 @@ function AddExpenseSheet({
               </option>
             ))}
           </select>
-          {/* §9.4 says "8 groups". `expense_categories` is a FLAT taxonomy with
-              no parent column, and it holds four rows. Said, not padded out. */}
-          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            {categories.length} {categories.length === 1 ? 'category' : 'categories'} are configured. The wireframe draws
-            eight groups; expense_categories is flat — it has no parent column — so what is here is what exists.
-          </span>
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -567,6 +626,7 @@ function AddExpenseSheet({
             <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Amount (Rs)</span>
             <input
               type="number"
+              inputMode="numeric"
               min={1}
               // 0 renders as an empty box rather than a typed-looking "0": the
               // state has to be a number for the guard, but the operator must
@@ -617,8 +677,7 @@ function AddExpenseSheet({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text2)' }}>
             <Icon name="info" size={14} />
-            Drawn in the wireframe, not stored by the schema
-          </div>
+            {/* Drawn in the wireframe, not stored by the schema */}Not tracked yet </div>
           {NO_COLUMN_FIELDS.map((f) => (
             <div key={f.label} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
               <strong style={{ color: 'var(--text2)' }}>{f.label}</strong> — {f.why}
@@ -647,23 +706,13 @@ function AddExpenseSheet({
  * so the tab strip is not sitting above a second page title, and nothing else
  * about the screen changes. Not a width branch (Law 13).
  */
-export interface ExpensesProps {
-  embedded?: boolean
-  loading?: boolean
-  error?: string | null
-  onRetry?: () => void
-}
-
-export default function Expenses({
-  embedded = false,
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: ExpensesProps = {}) {
+export default function Expenses({ embedded = false, filtersOpen: externalFiltersOpen, onFiltersClose }: { embedded?: boolean; filtersOpen?: boolean; onFiltersClose?: () => void }) {
   const { user } = useAuth()
   /** The one money gate. Mirrors `auth_can_view_money()` — Law 6. */
   const money = useCanViewMoney()
   const restriction = financeRestriction(money)
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
   const tabular = useTabularLayout()
 
   /**
@@ -685,6 +734,9 @@ export default function Expenses({
    */
   const [status, setStatus] = useState<ExpenseStatusDb | 'All'>('All')
   const [categoryId, setCategoryId] = useState<string>('All')
+  const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
+  const filtersOpen = externalFiltersOpen ?? internalFiltersOpen
+  const closeFilters = onFiltersClose ?? (() => setInternalFiltersOpen(false))
   const [page, setPage] = useState(1)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [banner, setBanner] = useState<{ title: string; message: string } | null>(null)
@@ -774,13 +826,18 @@ export default function Expenses({
     setPage(1)
   }, [])
 
+  /* `useList` memoises `refetch`; naming it keeps the callback keyed on
+     the function rather than on the whole list object, which is a fresh literal
+     every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  const { refetch: refetchList } = list
+
   const move = useCallback(
     async (row: ExpenseListRow, to: ExpenseStatusDb) => {
       setMovingId(row.id)
       setBanner(null)
       try {
         await setExpenseStatus(row.id, row.status, to)
-        list.refetch()
+        refetchList()
       } catch (e) {
         setBanner({
           title: `${row.expenseNo} was not changed`,
@@ -790,7 +847,7 @@ export default function Expenses({
         setMovingId(null)
       }
     },
-    [list.refetch],
+    [refetchList],
   )
 
   /**
@@ -812,28 +869,37 @@ export default function Expenses({
   const onSaved = useCallback(() => {
     setBanner(null)
     setPage(1)
-    list.refetch()
-  }, [list.refetch])
+    refetchList()
+  }, [refetchList])
 
   const countedTitle = total === null ? 'Expenses' : `${total} ${total === 1 ? 'expense' : 'expenses'}`
 
   const headerActions = (
-    <Button icon="plus" variant="primary" onClick={() => setSheetOpen(true)}>
-      Add Expense
+    <Button icon="plus" variant="primary" onClick={() => setSheetOpen(true)} aria-label="Add Expense">
+      {phone ? '' : 'Add Expense'}
     </Button>
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full" className="finance-v2">
       {/* The action is omitted for a money-blind session, not disabled: it
           operates on records that session may not read at all. */}
       <ScreenHeader
         embedded={embedded}
         icon="card"
         title="Expenses"
-        description="Operating costs, entered here and approved here. Corrections are reversal rows, never edits."
+        leading={!embedded && money ? <FilterButton onClick={() => setInternalFiltersOpen((open) => !open)} controls="expense-filters" expanded={filtersOpen} activeCount={Number(categoryId !== 'All')} /> : undefined}
+        description="Track operating costs and approvals."
         {...(money ? { actions: headerActions } : {})}
       />
+      <FilterDrawer id="expense-filters" open={filtersOpen} onClose={closeFilters} resultCount={list.loading ? null : total} noun="expenses" activeCount={Number(categoryId !== 'All')} onClearAll={() => { setCategoryId('All'); setPage(1) }} standardFooter onApply={closeFilters}>
+        <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Category
+          <Select aria-label="Filter expenses by category" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1) }} disabled={categories.length === 0} style={{ ...inputStyle, minHeight: 44, width: '100%' }}>
+            <option value="All">All categories</option>
+            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          </Select>
+        </label>
+      </FilterDrawer>
 
       {/*
         THE gate. `restricted` outranks error, loading, empty and children, so a
@@ -852,7 +918,19 @@ export default function Expenses({
           )}
 
           {/* §9.4 line 1 of the filter row — the status chips. */}
-          <div role="group" aria-label="Filter by status" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div
+            role="group"
+            aria-label="Filter by status"
+            className="finance-chip-track rsp-chip-scroll"
+            style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap',
+              overflowX: 'visible',
+              alignItems: 'center',
+              paddingBottom: phone ? 4 : 0,
+            }}
+          >
             {(['All', ...EXPENSE_STATUSES] as const).map((s) => {
               const on = status === s
               return (
@@ -864,12 +942,13 @@ export default function Expenses({
                     setStatus(s)
                     setPage(1)
                   }}
+                  className={`finance-filter-chip ${on ? 'is-active' : ''}`}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 5,
-                    height: 32,
-                    padding: '0 12px',
+                    minHeight: 44,
+                    padding: '0 14px',
                     borderRadius: 'var(--r-sm)',
                     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
@@ -879,6 +958,7 @@ export default function Expenses({
                     fontFamily: 'inherit',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   {s !== 'All' && <Icon name={STATUS_GLYPH[s]} size={13} />}
@@ -887,30 +967,14 @@ export default function Expenses({
               )
             })}
 
-            {/* §9.4's `[category ▾]`. Options are `expense_categories` rows and
-                the value sent is the uuid — `expenses.category_id` is a uuid FK,
-                so filtering by the NAME would need a join filter
-                `applyListFilters` cannot build. */}
-            <select
-              aria-label="Filter by category"
-              value={categoryId}
-              onChange={(e) => {
-                setCategoryId(e.target.value)
-                setPage(1)
-              }}
-              disabled={categories.length === 0}
-              style={{ ...inputStyle, height: 32, width: 'auto', marginLeft: 'auto' }}
-            >
-              <option value="All">All categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           <Card title={countedTitle} bodyStyle={{ padding: 0 }}>
+            {total !== null && (
+              <AppPageToolbar
+                pagination={<Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />}
+              />
+            )}
             {/*
               Fixed ladder: restricted → error → loading → empty → children.
               `restricted` is spread here too — this card is the surface whose
@@ -940,8 +1004,8 @@ export default function Expenses({
               {...restriction}
             >
               {tabular ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
+                <DataTableShell ariaLabel="Expenses" className="finance-table-shell" data-table-scroll style={{ overflowX: 'auto' }}>
+                  <table className="finance-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
                         {/* §9.4 — `exp# │ date │ category │ vendor │ amount │ VAT │ badge │ ⋮` */}
@@ -964,23 +1028,23 @@ export default function Expenses({
                     </thead>
                     <tbody>
                       {list.rows.map((r) => (
-                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <tr key={r.id} className="finance-row" style={{ borderBottom: '1px solid var(--border)' }}>
                           <td style={td}>
-                            <div className="identifier" style={{ fontWeight: 700 }}>
+                            <div className="identifier finance-mono" style={{ fontWeight: 700 }}>
                               {r.expenseNo}
                             </div>
                             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{r.branchName}</div>
                           </td>
                           <td style={td}>
                             {/* Law 7 — BS above AD, both rendered from the stored AD day. */}
-                            <div className="figure" style={{ fontWeight: 600 }}>{bsLabel(r.expenseDateAd)}</div>
-                            <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                            <div className="figure finance-mono" style={{ fontWeight: 600 }}>{bsLabel(r.expenseDateAd)}</div>
+                            <div className="figure finance-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                               {formatAd(dayAsDate(r.expenseDateAd))}
                             </div>
                           </td>
                           <td style={{ ...td, color: 'var(--text2)' }}>
                             <div>{r.categoryName}</div>
-                            <div className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                            <div className="identifier finance-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                               {r.categoryCode}
                             </div>
                           </td>
@@ -988,7 +1052,7 @@ export default function Expenses({
                             <div>{r.vendorName}</div>
                             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', maxWidth: 240 }}>{r.description}</div>
                           </td>
-                          <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          <td className="figure finance-mono" style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>
                             {formatMoney(r.amount)}
                           </td>
                           <td style={td}>
@@ -1004,7 +1068,7 @@ export default function Expenses({
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               ) : (
                 /* §9.4 shell note — "Tables become card rows below 768."
                    `useTabularLayout` is the same width reading `RentalsList`
@@ -1013,16 +1077,10 @@ export default function Expenses({
                   {list.rows.map((r) => (
                     <div
                       key={r.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 'var(--sp-sm)',
-                        padding: '13px 14px',
-                        borderBottom: '1px solid var(--border)',
-                      }}
+                      className="finance-card-item"
                     >
                       <span style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                        <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                        <span className="identifier finance-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                           {r.expenseNo}
                         </span>
                         <StatusBadge status={r.status} />
@@ -1033,10 +1091,10 @@ export default function Expenses({
                       </span>
 
                       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                        <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                        <span className="figure finance-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                           {formatMoney(r.amount)}
                         </span>
-                        <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        <span className="figure finance-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                           {bsLabel(r.expenseDateAd)} · {formatAd(dayAsDate(r.expenseDateAd))}
                         </span>
                       </span>
@@ -1055,30 +1113,8 @@ export default function Expenses({
               )}
 
               {total !== null && total > ROWS_PER_PAGE && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '10px 12px',
-                    borderTop: '1px solid var(--border)',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                    Showing {(page - 1) * ROWS_PER_PAGE + 1} to {(page - 1) * ROWS_PER_PAGE + list.rows.length} of {total}
-                  </span>
-                  <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}>
-                      Previous
-                    </Button>
-                    <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', padding: '0 4px' }}>
-                      {page} / {pageCount}
-                    </span>
-                    <Button onClick={() => setPage(Math.min(pageCount, page + 1))} disabled={page === pageCount}>
-                      Next
-                    </Button>
-                  </span>
+                <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                  <Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />
                 </div>
               )}
             </PageBody>
@@ -1101,7 +1137,6 @@ export default function Expenses({
         />
       )}
 
-      <FooterNote extra={['Corrections are reversal rows, never edits']} />
-    </div>
+    </PageShell>
   )
 }

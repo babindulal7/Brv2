@@ -1,329 +1,277 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { CSSProperties } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
-import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
+import type { Kpi } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { EmptyState } from '../../components/ui/StateViews'
-import { Donut, Legend, catColor } from '../../components/ui/Charts'
-import { STATUS, BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
-import {
-  KPIS,
-  CATEGORIES,
-  SEQUENCES,
-  MODULES,
-  STATUSES,
-  RESET_RULES,
-  SCOPES,
-  BRANCHES,
-  WAREHOUSES,
-  CONFIG_TABS,
-  FORMAT_TOKENS,
-  PER_PAGE,
-  PREVIEW_YEAR,
-  PREVIEW_MONTH,
-  PREVIEW_DAY,
-  DEFAULT_SEQUENCE_CODE,
-  STARTING_NUMBER,
-  SUMMARY_PERIODS,
-  UNCONFIGURED_CODES,
-  ANALYTICS,
-  SUMMARY,
-  ALERTS,
-  QUICK_ACTIONS,
-  ACTIVITY,
-  /* `INSIGHTS` is deliberately not imported — see the Law 16 note at the rail. */
-  SEED_ERRORS,
-  countFor,
-  segmentsOf,
-  paddingOf,
-  padTo,
-  advance,
-  formatHas,
-  issue,
-} from '../../data/numbering'
-import type { ConfigTab, ResetRule, SequenceModule, SequenceRow, SequenceScope } from '../../data/numbering'
+import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
+import { canManageSettings } from '../../lib/rbac'
+import { toBs, formatBs, formatAdDateTime } from '../../lib/bs'
+import { useList } from '../../lib/queries/useList'
+import type { ListFilters } from '../../lib/queries/listQuery'
+import {
+  listNumberSequences,
+  numberingRestriction,
+  formatConvention,
+  previewNextNumber,
+  previewNextNumbers,
+  type NumberSequenceRow,
+  type SequenceShape,
+} from '../../lib/queries/numbering'
+import '../settings/settings.css'
 
 /**
- * Administration → **Numbering Sequences**, built against render `CD132C04`
- * (`03 Core Modules/Settings/Numbering Sequences.PNG`) and its spec v3.0.
+ * Administration → **Numbering Sequences** — the registry the product really
+ * mints from.
  *
- * The screen is the ID registry's control surface, so its two panels are wired
- * to one another rather than to fixed strings: the table selects a sequence,
- * the configuration panel edits a **draft** of it, and the preview generator
- * renders whatever that draft would produce. Change Padding Length from 6 to 4
- * and the format, the live preview, the next number and the total length all
- * move together — that is the spec's "live preview updates instantly", and it
- * is also the only way this page can be trusted about what it claims.
+ * Converted from seed to live 21 Aug 2026 (Phase 1 item 1.5c). This page now
+ * reads the REAL `number_sequences` table via `lib/queries/numbering.ts` — the
+ * exact rows `next_document_number()` takes `for update` when a booking,
+ * client, invoice or membership number is issued. The 20-row display registry
+ * in `data/numbering.ts` is no longer rendered here; it remains alive because
+ * `actions/documents/createDocument.ts`, `actions/inventory/createEquipment.ts`
+ * and friends still read `prefixOf`/`issue` from it — reconciling those onto
+ * the DB allocator is later wiring, not this screen's.
  *
- * ## This screen is the source of truth for prefixes
+ * ## The preview never consumes a number
  *
- * `WIREFRAME_RULINGS_2026-08-12.md` §2.2 — *"The prefixes are configuration,
- * not constants. Settings ▸ Numbering is the source of truth and the sequences
- * are editable there. No module may hardcode a prefix."* The six ruled
- * sequences (`B-` `C-` `M-` `INV-` `Q-` `BND-`) are rows in `data/numbering.ts`
- * like any other, edited by the panels below, and every module that builds or
- * recognises an identifier reads them back through `prefixOf` / `issue` /
- * `isIssuedBy`. The Prefix and Padding Length fields already reach the ruled
- * values — `withPrefix` accepts a single letter and `withPadding` clamps to a
- * minimum of 1, which *is* "no padding".
+ * `next_document_number()` has no dry-run: it advances `current_value` before
+ * returning (0055:140-180), so this screen NEVER calls the RPC. The Next
+ * Number column and the preview panel are `previewNextNumbers()` — a pure
+ * restatement of the function's own formatting rules over the row already
+ * fetched. Read-only by construction; a concurrent mint can outdate the
+ * preview, nothing on this page can advance a counter.
  *
- * §10.6's own warning still stands and is still honoured: editing a live
- * sequence is gated and written to audit, so Save Changes remains a stated
- * `Unavailable` until that path exists. A wrong counter mints duplicate IDs
- * product-wide.
+ * ## What the seed build drew that this one deliberately does not
  *
- * **Deviations from the render — each one deliberate, do not copy back:**
+ * The old screen rendered `data/numbering.ts` plus invented figures the page
+ * doc (docs/pages/53) itemises: "Records Generated Today 486", "2 mins ago",
+ * "Sequence Health 100%", 11 trend points, five Top-Sequences counts, a reset
+ * history, a branch-mix donut, four Recent Activity entries and an Alerts
+ * card. None of those is a question `number_sequences` (or any live table)
+ * answers today, so under Law 16 they are removed rather than re-faked — the
+ * KPI strip below asks only what the schema can answer (row counts and
+ * `updated_at`), the same move the Audit Log conversion made.
  *
- *  · **The wireframe's own example is superseded.** Spec 10 §10.6 draws
- *    `BR-2026-0715` with padding 4/5; the 12 Aug ruling replaces it with
- *    `B-715` — no year segment, no zero padding — and additionally settles
- *    that `BR-` was never a booking prefix at all (it is the branch code).
- *  · **The preview is built from the format, not from a fixed five-chip
- *    string.** The render's preview prints a five-chip
- *    `PREFIX-YEAR-MONTH-BRANCH-COUNTER` string while the Format column two
- *    panels above says something else, and its "Total Length 19" counts
- *    neither. A preview that contradicts the format it is previewing is the
- *    worst defect this screen could carry, so segments come from the format
- *    string. Under the ruling a Booking preview is **two** chips — `B` and the
- *    counter — and the Live Preview reads `B-4862`, the number the app would
- *    really issue next. Scope selects which *counter* is used, per spec
- *    § Branch Rules; a branch code only appears when the format carries a `BR`
- *    token, and no ruled format does.
- *  · **The render's fourth chip is labelled SEPARATOR and holds `KTM`.** A
- *    branch code is not a separator, and the same panel's Separator field
- *    holds `-`. It is labelled BRANCH here.
- *  · **The categories rail loses its duplicate "All Categories" row.** It
- *    selects the identical set as "All Sequences" six rows above it.
- *  · **Recent Activity shows what happened, not who.** The render puts a face
- *    on each entry; no actor is named for any of them anywhere.
- *  · **Every write is a stated-unavailable control, not a live no-op.** A
- *    wrong counter mints duplicate IDs across the whole product, so nothing
- *    here writes before the confirmation and audit path exists. The reason is
- *    on the control and in the footer, never a silent dead button.
+ * Columns the seed table drew that the DB does not carry — Sequence Name,
+ * Module, Description, Format string, Reset Rule, Scope, Status — are likewise
+ * gone rather than invented: the live table's vocabulary is `sequence_key`,
+ * `prefix`, `padding`, `include_year`, `current_year`, `current_value`,
+ * `updated_at`, and the Format column here is derived from those
+ * (`formatConvention`), so it can never disagree with what the RPC produces.
  *
- * Colour, status and role vocabulary come from Foundation, not the render.
+ * ## Writes stay stated-unavailable
+ *
+ * §10.6's warning stands: *"editing a live sequence is gated and written to
+ * audit"* — a wrong counter mints duplicate IDs product-wide. The
+ * configuration panel edits a LOCAL draft of the three live format columns and
+ * drives the preview with it; Save Changes remains `Unavailable` until the
+ * confirmation-and-audit action path exists. Phase 2.7 put the draft editor
+ * itself behind the settings gate (`canManageSettings` — the same tier
+ * Settings edits under): a non-settings role reads a stated gate in the
+ * Sequence Configuration card instead of a draft form whose only purpose is
+ * staging a write that role may never make. The gate is deliberately narrower
+ * than the table's own RLS (`number_sequences_all` is `auth_is_staff()`,
+ * 0033 — broad so document creation can advance counters through the RPC);
+ * §10.6's rule is about EDITING a sequence's format, and that is what this
+ * gates. Refresh, previously a stated dead button ("nothing to refresh —
+ * static seed"), is now a real refetch.
+ *
+ * ## Who sees anything at all
+ *
+ * `number_sequences_select` is `auth_is_staff()` (0033:46-49). The route's
+ * money-surface guard already stops the floor roles at `/admin/*`, but the
+ * screen gates on the table's own policy (`numberingRestriction`) so an
+ * RLS-empty result can never render as "no sequences exist". No money column
+ * exists on the table, so Law 6 withholds nothing on this surface.
+ *
+ * ## Mock mode
+ *
+ * `number_sequences` is not in the mock corpus and not in its `UNSERVED`
+ * banner list; the mock engine answers with `[]` plus a console warning, so
+ * this page degrades to `PageBody`'s honest empty state — the copy below says
+ * exactly why the registry can read empty.
  */
 
-const th = {
-  textAlign: 'left' as const,
-  padding: '8px 10px',
+/** Every unavailable write on this page states the same reason. */
+const WHY_READ_ONLY =
+  'Not available in this build — a sequence write mints IDs product-wide and needs the confirmation and audit path first.'
+
+/**
+ * Phase 2.7 — what a non-settings role reads where the draft editor would be.
+ * The gate is `canManageSettings`, the same tier Settings edits under (Owner
+ * today; the role set lives in `rbac.ts`, not here).
+ */
+const SETTINGS_ONLY_UNAVAILABLE =
+  'Sequence configuration is gated by canManageSettings — the same tier Settings edits under (Owner today). ' +
+  'A sequence write mints IDs product-wide. The registry and the preview stay readable for every staff role; ' +
+  'only drafting a format change is withheld, because its sole purpose is staging a write this role may not make.'
+
+const th: CSSProperties = {
+  textAlign: 'left',
+  padding: '9px 12px',
   fontSize: 'var(--t-th)',
-  fontWeight: 600,
+  fontWeight: 700,
   color: 'var(--text2)',
-  whiteSpace: 'nowrap' as const,
-  borderBottom: '1px solid var(--border)',
+  whiteSpace: 'nowrap',
 }
-const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
-const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
+
+/*
+ * §7.3's row floor ("rows >= 56px"), carried by the token rather than by
+ * padding arithmetic: `height` on a `<td>` behaves as a MINIMUM, so it lifts
+ * the single-line rows while the two-line ones (`currentValue` with its
+ * "in <year>" line, `WhenCell` with BS above AD) keep the height they compute.
+ *
+ * Worth stating even though this registry is read-only in this build. The floor
+ * is what makes a 44px hit area fit inside its own row instead of overhanging
+ * the neighbour, where the row later in the DOM wins the tap. The
+ * `SETTINGS_ONLY_UNAVAILABLE` note above describes a GATE, not an absence: the
+ * moment the draft editor is ungated this table grows a per-sequence control,
+ * and a sequence write mints IDs product-wide. A row that was already tall
+ * enough cannot be the reason such a write lands on the wrong sequence.
+ */
+const td: CSSProperties = {
+  height: 'var(--row-min-h)',
+  padding: '11px 12px',
+  fontSize: 'var(--t-meta)',
+  color: 'var(--text)',
+  whiteSpace: 'nowrap',
+  verticalAlign: 'top',
+}
+
+const fieldLabel: CSSProperties = {
+  display: 'block',
+  fontSize: 'var(--t-th)',
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  color: 'var(--muted)',
+  marginBottom: 5,
+}
+
+/** Law 15 — 44px minimum on every input, desktop included. */
 const fieldStyle: CSSProperties = {
   width: '100%',
-  height: 30,
-  padding: '0 9px',
+  minHeight: 44,
+  padding: '8px 12px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',
   background: 'var(--input-bg)',
   color: 'var(--text)',
-  fontSize: 'var(--t-meta)',
+  fontSize: 'var(--t-body)',
   fontFamily: 'inherit',
 }
-const fieldLabel = { display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 3 } as const
-const sub = { fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' } as const
-const panelNote = { fontSize: 'var(--t-meta)', color: 'var(--muted)' } as const
 
-/** Every unavailable control on this page states the same reason. */
-const WHY_READ_ONLY = 'Not available in this build — a sequence write mints IDs product-wide and needs the confirmation and audit path first.'
+const panelNote: CSSProperties = { fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }
 
-const ALL_MODULES = 'All Modules'
-const ALL_STATUS = 'All Status'
-
-/** Reused by the pager and by nothing else — kept beside its only caller. */
-function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
+/**
+ * BS above AD — the pair the footer promises. `toBs` vouches for one month
+ * only and returns `null` outside it; a null becomes an omitted line rather
+ * than a wrong date (Law 7 — BS is rendered, never stored).
+ */
+function WhenCell({ iso }: { iso: string }) {
+  const d = new Date(iso)
+  const bs = Number.isNaN(d.getTime()) ? null : toBs(d)
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        minWidth: 24,
-        height: 24,
-        borderRadius: 'var(--r-xs)',
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
-
-/** States a reason inside a panel that cannot show its normal content. */
-function StatedGap({ title, body }: { title: string; body: string }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 9,
-        alignItems: 'flex-start',
-        padding: 'var(--sp-md)',
-        borderRadius: 'var(--r-btn)',
-        border: '1px dashed var(--border2)',
-        background: 'var(--card2)',
-      }}
-    >
-      <Icon name="info" size={15} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 1 }} />
-      <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{title}</span>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>{body}</span>
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+      {bs && <span className="figure">{formatBs(bs)}</span>}
+      <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+        {formatAdDateTime(iso)}
       </span>
-    </div>
+    </span>
   )
 }
 
-/**
- * The render draws a dotted trend line under "Records Generated". `Page.tsx`'s
- * `Spark` is private to that module and this one needs the dots, so it is
- * eleven lines here rather than a change to a file this pass does not own.
- */
-function TrendLine({ points }: { points: number[] }) {
-  const max = Math.max(...points)
-  const min = Math.min(...points)
-  const span = max - min || 1
-  const at = (p: number, i: number) => ({ x: (i / (points.length - 1)) * 100, y: 30 - ((p - min) / span) * 26 - 2 })
+/** Law 11 — colour + icon + label, never colour alone. */
+function YearSegmentChip({ includeYear }: { includeYear: boolean }) {
+  const tone = includeYear ? STATUS.progress : STATUS.in
   return (
-    <svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden style={{ width: '100%', height: 46, display: 'block', overflow: 'visible' }}>
-      <polyline
-        points={points.map((p, i) => { const c = at(p, i); return `${c.x},${c.y}` }).join(' ')}
-        fill="none"
-        stroke={catColor(0)}
-        strokeWidth={1.6}
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-      {points.map((p, i) => {
-        const c = at(p, i)
-        return <circle key={i} cx={c.x} cy={c.y} r={1.6} fill={catColor(0)} vectorEffect="non-scaling-stroke" />
-      })}
-    </svg>
-  )
-}
-
-interface Draft {
-  name: string
-  code: string
-  description: string
-  suffix: string
-  startingNumber: string
-  separator: string
-  format: string
-  resetRule: ResetRule
-  scope: SequenceScope
-  active: boolean
-}
-
-function draftOf(row: SequenceRow): Draft {
-  return {
-    name: row.name,
-    code: row.code,
-    description: row.description ?? '',
-    suffix: '',
-    startingNumber: STARTING_NUMBER,
-    separator: '-',
-    format: row.format ?? '',
-    resetRule: row.resetRule ?? 'Never',
-    scope: row.scope ?? 'Global',
-    active: row.status === 'Active',
-  }
-}
-
-/** Rewrites the leading literal, so Prefix and Format can never disagree. */
-function withPrefix(format: string, prefix: string): string {
-  const parts = format.split('-')
-  parts[0] = prefix.toUpperCase().replace(/[^A-Z0-9]/g, '')
-  return parts.join('-')
-}
-
-/** Rewrites the `N` run, so Padding Length and Format can never disagree. */
-function withPadding(format: string, width: number): string {
-  const n = Math.min(Math.max(width, 1), 12)
-  return format
-    .split('-')
-    .map((p) => (/^N+$/.test(p) ? 'N'.repeat(n) : p))
-    .join('-')
-}
-
-/**
- * §10.6's phone layout — *"one sequence per card, preview under the fields."*
- *
- * The preview is passed in rather than recomputed here, so the card and the
- * table row can only ever print the same string.
- */
-function SequenceCard({
-  row,
-  preview,
-  selected,
-  onSelect,
-}: {
-  row: SequenceRow
-  preview: string
-  selected: boolean
-  onSelect: () => void
-}) {
-  const gap = row.format === null
-  return (
-    <div
+    <span
       style={{
-        borderTop: '1px solid var(--border)',
-        padding: 14,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 9,
-        background: selected ? 'var(--nav-active-bg)' : 'transparent',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        height: 21,
+        padding: '0 8px',
+        borderRadius: 'var(--r-badge)',
+        background: tone.bg,
+        color: tone.fg,
+        fontSize: 'var(--t-th)',
+        fontWeight: 700,
+        whiteSpace: 'nowrap',
       }}
     >
+      <Icon name={includeYear ? 'calendar' : 'check'} size={11} />
+      {includeYear ? 'Resets yearly' : 'Continuous'}
+    </span>
+  )
+}
+
+function PrefixChip({ prefix }: { prefix: string }) {
+  return (
+    <span
+      className="figure"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        height: 20,
+        padding: '0 7px',
+        borderRadius: 'var(--r-chip)',
+        /*
+         * A prefix is an IDENTIFIER, not a state.
+         *
+         * This wore `STATUS.primary` — the hue v4.1 §2 assigns exactly one
+         * meaning, "committed / scheduled". Spending it on a literal string
+         * like "INV-" teaches the eye that blue means nothing in particular,
+         * which is the whole failure the seven-hue table exists to prevent
+         * ("a hue never means two things").
+         *
+         * A recessed surface reads as "this is a value" without claiming a
+         * status. The mono face (`className="figure"`, already here) is what
+         * actually signals identifier-ness.
+         */
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
+        color: 'var(--text2)',
+        fontSize: 'var(--t-meta)',
+        fontWeight: 700,
+      }}
+    >
+      {prefix}
+    </span>
+  )
+}
+
+/**
+ * §10.6's phone layout — one sequence per card, the preview under the fields.
+ * The preview string is passed in so a card and a table row can only ever
+ * print the same figure.
+ */
+function SequenceCard({ row, next }: { row: NumberSequenceRow; next: string }) {
+  return (
+    <article style={{ borderTop: '1px solid var(--border)', padding: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-          {row.name}
+          {row.sequenceKey}
         </span>
-        <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-          {row.code}
-        </span>
-        <span
-          style={{
-            marginLeft: 'auto',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            height: 19,
-            padding: '0 7px',
-            borderRadius: 5,
-            background: row.status === 'Active' ? STATUS.in.bg : STATUS.neutral.bg,
-            color: row.status === 'Active' ? STATUS.in.fg : STATUS.neutral.fg,
-            fontSize: 'var(--t-th)',
-            fontWeight: 700,
-          }}
-        >
-          <Icon name={row.status === 'Active' ? 'check' : 'eye'} size={10} />
-          {row.status}
+        <PrefixChip prefix={row.prefix} />
+        <span style={{ marginLeft: 'auto' }}>
+          <YearSegmentChip includeYear={row.includeYear} />
         </span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '6px 10px' }}>
-        <CardField label="Prefix" value={row.prefix} />
-        <CardField label="Padding" value={row.format ? String(paddingOf(row.format)) : '—'} />
-        <CardField label="Current" value={row.counter ?? '—'} />
+        <CardField label="Format" value={formatConvention(row)} mono />
+        <CardField label="Padding" value={String(row.padding)} />
+        <CardField label="Counter" value={String(row.currentValue)} />
       </div>
 
-      {/* "preview under the fields" — literally. */}
       <div
         style={{
           padding: '9px 11px',
@@ -333,201 +281,171 @@ function SequenceCard({
         }}
       >
         <span style={{ display: 'block', fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-          Preview
+          Next number
         </span>
-        <span
-          className="identifier"
-          style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: gap ? 'var(--muted)' : 'var(--text)' }}
-        >
-          {preview}
+        <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+          {next}
         </span>
       </div>
 
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-label={`Configure ${row.code} – ${row.name}`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          /* Law 15 — 44×44. */
-          minHeight: 44,
-          borderRadius: 'var(--r-btn)',
-          border: '1px solid var(--border)',
-          background: 'transparent',
-          color: 'var(--text2)',
-          fontSize: 'var(--t-meta)',
-          fontWeight: 700,
-          fontFamily: 'inherit',
-          cursor: 'pointer',
-        }}
-      >
-        <Icon name="tool" size={13} />
-        Configure
-      </button>
-    </div>
+      <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', display: 'flex', gap: 6, alignItems: 'baseline' }}>
+        <span style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Last advanced</span>
+        <WhenCell iso={row.updatedAtAd} />
+      </div>
+    </article>
   )
 }
 
-function CardField({ label, value }: { label: string; value: string }) {
+function CardField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
         {label}
       </span>
-      <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>
+      <span className={mono ? 'identifier' : 'figure'} style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>
         {value}
       </span>
     </span>
   )
 }
 
+/**
+ * The configuration panel's LOCAL draft of the three live format columns.
+ * Keyed to its sequence so a selection change discards a stale draft without
+ * an effect; `paddingText` is text so the field can be emptied mid-edit.
+ */
+interface Draft {
+  key: string
+  prefix: string
+  paddingText: string
+  includeYear: boolean
+}
+
+function draftOf(row: NumberSequenceRow): Draft {
+  return { key: row.sequenceKey, prefix: row.prefix, paddingText: String(row.padding), includeYear: row.includeYear }
+}
+
+/** The RPC `lpad`s to whatever is stored; the draft clamps to 1–12 as the old build did — 1 IS "no padding". */
+function draftPadding(text: string): number {
+  const n = Number.parseInt(text, 10)
+  if (Number.isNaN(n) || n < 1) return 1
+  return Math.min(n, 12)
+}
+
 export default function NumberingSequences() {
   const viewport = useViewport()
-  const [moduleFilter, setModuleFilter] = useState<SequenceModule | typeof ALL_MODULES>(ALL_MODULES)
-  const [statusFilter, setStatusFilter] = useState<string>(ALL_STATUS)
-  const [query, setQuery] = useState('')
-  const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState<number>(PER_PAGE[0])
+  const { user } = useAuth()
 
-  const [selectedCode, setSelectedCode] = useState(DEFAULT_SEQUENCE_CODE)
-  const [draft, setDraft] = useState<Draft>(() => draftOf(SEQUENCES.find((s) => s.code === DEFAULT_SEQUENCE_CODE) ?? (SEQUENCES[0] as SequenceRow)))
-  const [tab, setTab] = useState<ConfigTab>('General')
-  const [branchCode, setBranchCode] = useState(BRANCHES[0]?.code ?? 'KTM')
-  const [warehouseCode, setWarehouseCode] = useState(WAREHOUSES[0]?.code ?? 'MAIN')
+  /* RLS on `number_sequences` admits staff only (0033). A Client session gets
+     zero rows — restricted, never empty. */
+  const restriction = numberingRestriction(user?.role)
+
+  /* Phase 2.7 — the draft editor's gate. See SETTINGS_ONLY_UNAVAILABLE. */
+  const mayManage = canManageSettings(user?.role ?? 'Client')
+
+  const fetchSequences = useCallback((f: ListFilters) => listNumberSequences({ ...f, withCount: true }), [])
+  /* The whole registry, unpaged and unfiltered — one row per document kind,
+     bounded by migration, so there is nothing for a filter bar to do. */
+  const list = useList<NumberSequenceRow>(fetchSequences, {})
+
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const selected = list.rows.find((r) => r.sequenceKey === selectedKey) ?? list.rows[0] ?? null
+
+  const [draft, setDraft] = useState<Draft | null>(null)
+  /* A draft belongs to one sequence; when the selection moves, the stale draft
+     is ignored and the stored row is re-drafted — no effect needed. */
+  const activeDraft = selected ? (draft && draft.key === selected.sequenceKey ? draft : draftOf(selected)) : null
+
   const [testCount, setTestCount] = useState(0)
-  const [period, setPeriod] = useState<string>(SUMMARY_PERIODS[0])
 
-  const previewRef = useRef<HTMLDivElement>(null)
-
-  const selected = SEQUENCES.find((s) => s.code === selectedCode) ?? (SEQUENCES[0] as SequenceRow)
-
-  function select(code: string) {
-    const row = SEQUENCES.find((s) => s.code === code)
-    if (!row) return
-    setSelectedCode(code)
-    setDraft(draftOf(row))
+  function select(key: string) {
+    setSelectedKey(key)
     setTestCount(0)
   }
 
-  /* ── filtering ───────────────────────────────────────────────────────── */
+  /* ── KPI figures — questions the schema answers, derived from the ONE full
+        fetch (the registry is the whole table; nothing here narrows the list
+        client-side). '—' while unknown, never a fabricated 0. ─────────────── */
 
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return SEQUENCES.filter((s) => {
-      if (moduleFilter !== ALL_MODULES && s.module !== moduleFilter) return false
-      if (statusFilter !== ALL_STATUS && s.status !== statusFilter) return false
-      if (!q) return true
-      return [s.code, s.name, s.prefix, s.module, s.format ?? '', s.resetRule ?? '', s.scope ?? '']
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    })
-  }, [moduleFilter, statusFilter, query])
-
-  const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
-  const current = Math.min(page, pageCount)
-  const visible = rows.slice((current - 1) * perPage, current * perPage)
-
-  function setModule(m: SequenceModule | typeof ALL_MODULES) {
-    setModuleFilter(m)
-    setPage(1)
+  const known = !list.loading && list.error === null
+  let yearless = 0
+  let yearScoped = 0
+  let lastMoved: string | null = null
+  for (const r of list.rows) {
+    if (r.includeYear) yearScoped += 1
+    else yearless += 1
+    if (lastMoved === null || Date.parse(r.updatedAtAd) > Date.parse(lastMoved)) lastMoved = r.updatedAtAd
   }
 
-  /* ── preview, derived from the draft ─────────────────────────────────── */
+  const kpis: Kpi[] = [
+    {
+      label: 'Registered Sequences',
+      value: known && list.total !== null ? String(list.total) : known ? String(list.rows.length) : '—',
+      icon: 'file',
+      accent: 'primary',
+      note: 'One per document kind',
+    },
+    {
+      label: 'Year-less',
+      value: known ? String(yearless) : '—',
+      icon: 'check',
+      accent: 'success',
+      note: 'Continuous counter — never resets',
+    },
+    {
+      label: 'Year-scoped',
+      value: known ? String(yearScoped) : '—',
+      icon: 'calendar',
+      accent: 'progress',
+      note: 'Counter restarts each calendar year',
+    },
+    {
+      label: 'Last Advanced',
+      value: known && lastMoved !== null ? formatAdDateTime(lastMoved) : '—',
+      icon: 'timer',
+      accent: 'neutral',
+      note: 'Most recent counter movement',
+    },
+  ]
 
-  const padding = draft.format ? paddingOf(draft.format) : 0
-  const nextCounter = selected.counter ? advance(padTo(Number(selected.counter), padding), 1) : null
-  const currentCounter = selected.counter ? padTo(Number(selected.counter), padding) : null
-  const sep = draft.separator === 'none' ? '' : draft.separator
+  /* ── the selected sequence's stored shape, and the draft's what-if shape ── */
 
-  const segments = draft.format && nextCounter
-    ? segmentsOf(draft.format, {
-        year: PREVIEW_YEAR,
-        month: PREVIEW_MONTH,
-        day: PREVIEW_DAY,
-        branchCode,
-        warehouseCode,
-        counter: nextCounter,
-      })
-    : []
+  const selectedShape: SequenceShape | null = selected
+    ? {
+        prefix: selected.prefix,
+        padding: selected.padding,
+        includeYear: selected.includeYear,
+        currentYear: selected.currentYear,
+        currentValue: selected.currentValue,
+      }
+    : null
 
-  const suffix = draft.suffix.trim().toUpperCase()
-  const livePreview = segments.length > 0 ? [...segments.map((s) => s.value), ...(suffix ? [suffix] : [])].join(sep) : ''
+  const draftShape: SequenceShape | null =
+    selected && activeDraft
+      ? {
+          prefix: activeDraft.prefix,
+          padding: draftPadding(activeDraft.paddingText),
+          includeYear: activeDraft.includeYear,
+          currentYear: selected.currentYear,
+          currentValue: selected.currentValue,
+        }
+      : null
 
-  const testNumbers =
-    testCount > 0 && draft.format && selected.counter
-      ? Array.from({ length: testCount }, (_, i) =>
-          [
-            ...segmentsOf(draft.format, {
-              year: PREVIEW_YEAR,
-              month: PREVIEW_MONTH,
-              day: PREVIEW_DAY,
-              branchCode,
-              warehouseCode,
-              counter: advance(padTo(Number(selected.counter), padding), i + 1),
-            }).map((s) => s.value),
-            ...(suffix ? [suffix] : []),
-          ].join(sep),
-        )
-      : []
+  const draftChanged =
+    selected !== null &&
+    draftShape !== null &&
+    (draftShape.prefix !== selected.prefix ||
+      draftShape.padding !== selected.padding ||
+      draftShape.includeYear !== selected.includeYear)
 
-  /**
-   * §10.6's `preview` column.
-   *
-   * **This is `issue()`, not a re-render of the format.** The spec's own
-   * warning — *"editing a live sequence is gated and written to audit"* — only
-   * means anything if the column an operator reads before editing agrees with
-   * the generator the rest of the product mints from. A preview that disagrees
-   * with `issue()` is worse than no preview: it invites an edit made against a
-   * string nothing will ever produce.
-   *
-   * So the column calls the generator with the row's own stored counter and
-   * lets it normalise the padding, exactly as `data/numbering.ts` does for
-   * every module. Under the 12 Aug ruling that reads `B-4861`, `INV-492`,
-   * `C-2481` — never `BR-2026-0715`, which §10.6's wireframe still draws and
-   * which Rulings §2 supersedes.
-   *
-   * The preview dates itself to `PREVIEW_YEAR/MONTH/DAY` rather than to the
-   * clock so the four unruled formats that still carry a `YYYY` token (MT,
-   * CASE, PAY, EXP) render deterministically beside the panel below, which uses
-   * the same three constants.
-   */
-  function previewOf(s: SequenceRow): string {
-    if (!s.format || s.counter === null) return 'Not configured'
-    return issue(s.code, Number(s.counter), {
-      year: PREVIEW_YEAR,
-      month: PREVIEW_MONTH,
-      day: PREVIEW_DAY,
-      branchCode,
-      warehouseCode,
-    })
-  }
-
-  /* Asked through the engine, not by matching the literal 'BR' here — the
-     reservation lives in `kindOf()` and nowhere else. Requirement 3. */
-  const branchApplies = draft.scope === 'Per Branch' || formatHas(draft.format, 'BRANCH')
-  const warehouseApplies = draft.scope === 'Per Warehouse' || formatHas(draft.format, 'WAREHOUSE')
+  const testNumbers = selectedShape && testCount > 0 ? previewNextNumbers(selectedShape, testCount) : []
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {SEED_ERRORS.length > 0 && (
-        <div role="alert" style={{ ...cardStyle, padding: 'var(--sp-md)', borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-          <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>Sequence seed does not reconcile</strong>
-          {SEED_ERRORS.map((e) => (
-            <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {e}
-            </span>
-          ))}
-        </div>
-      )}
-
+    <div className="settings-v2" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
       <PageHeader
         icon="queues"
         title="Numbering Sequences"
-        description="Configure and manage all auto-generated numbers used across Babin Rentals OS."
+        description="The live registry next_document_number() mints from — one counter per document kind, read directly from the database."
         actions={
           <>
             <Unavailable reason="Creating a sequence needs the confirmation and audit path — not available in this build.">
@@ -550,1120 +468,347 @@ export default function NumberingSequences() {
                 Reset Counter
               </Button>
             </Unavailable>
-            <Unavailable reason="Nothing to refresh — this build reads a static seed, not a live counter service.">
-              <Button icon="refresh" disabled>
-                Refresh
-              </Button>
-            </Unavailable>
+            {/* Live since the conversion: this re-reads the registry. The seed
+                build stated "nothing to refresh"; that is no longer true. */}
+            <Button icon="refresh" onClick={list.refetch}>
+              Refresh
+            </Button>
           </>
         }
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <KpiStrip items={KPIS} columns={6} />
+      {/* KPI counts would leak how much of a registry exists to a session RLS
+          refuses, so the strip renders only past the restriction. */}
+      {!restriction.restricted && <KpiStrip items={kpis} columns={4} />}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: 'var(--sp-md)' }}>
-            <SideRail width={210} label="Categories">
-              <Card title="Sequence Categories" bodyStyle={{ padding: 'var(--sp-sm)' }}>
-                {CATEGORIES.map((c, i) => {
-                  const on = moduleFilter === (c.module ?? ALL_MODULES)
-                  return (
-                    <button
-                      key={c.name}
-                      type="button"
-                      onClick={() => setModule(c.module ?? ALL_MODULES)}
-                      aria-pressed={on}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 9,
-                        width: '100%',
-                        height: 34,
-                        padding: '0 9px',
-                        borderRadius: 'var(--r-sm)',
-                        border: 'none',
-                        background: on ? 'var(--nav-active-bg)' : 'transparent',
-                        color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: on ? 600 : 500,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <Icon name={c.icon} size={14} style={{ color: on ? 'var(--nav-active-accent)' : catColor(i), flexShrink: 0 }} />
-                      <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {c.name}
-                      </span>
-                      {/* `--muted` on the selected row's tint measures 4.38:1 — under AA. */}
-                      <span className="figure" style={{ fontSize: 'var(--t-meta)', color: on ? 'var(--text2)' : 'var(--muted)' }}>
-                        {countFor(c.module)}
-                      </span>
-                    </button>
-                  )
-                })}
-              </Card>
-            </SideRail>
-
-            <Card
-              title="All Sequences"
-              action={
-                <>
-                  <Select
-                    aria-label="Filter by module"
-                    value={moduleFilter}
-                    onChange={(e) => setModule(e.target.value as SequenceModule | typeof ALL_MODULES)}
-                    style={{ ...fieldStyle, width: 'auto', height: 30 }}
-                  >
-                    <option value={ALL_MODULES}>{ALL_MODULES}</option>
-                    {MODULES.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </Select>
-                  <Select
-                    aria-label="Filter by status"
-                    value={statusFilter}
-                    onChange={(e) => {
-                      setStatusFilter(e.target.value)
-                      setPage(1)
-                    }}
-                    style={{ ...fieldStyle, width: 'auto', height: 30 }}
-                  >
-                    <option value={ALL_STATUS}>{ALL_STATUS}</option>
-                    {STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </Select>
-                  <span style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 170 }}>
-                    <Icon name="search" size={13} style={{ position: 'absolute', left: 9, color: 'var(--muted)' }} />
-                    <Input
-                      type="search"
-                      value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value)
-                        setPage(1)
-                      }}
-                      placeholder="Search sequences…"
-                      aria-label="Search sequences by module, prefix, name or format"
-                      style={{ ...fieldStyle, paddingLeft: 27 }}
-                    />
-                  </span>
-                </>
-              }
-              bodyStyle={{ padding: 0 }}
-            >
-              {/* PHONE — §10.6: "one sequence per card, preview under the
-                  fields." A nine-column table below 768 is a horizontal
-                  scrollbar hiding the column that matters, which is the
-                  preview. */}
-              {viewport === 'phone' ? (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {visible.map((s) => (
-                    <SequenceCard
-                      key={s.code}
-                      row={s}
-                      preview={previewOf(s)}
-                      selected={s.code === selectedCode}
-                      onSelect={() => select(s.code)}
-                    />
-                  ))}
-                  {visible.length === 0 && (
-                    <div style={{ padding: 18 }}>
-                      <EmptyState
-                        icon={<Icon name="search" size={22} />}
-                        title="No sequence matches this filter"
-                        description="Clear the search or pick another category."
-                        actionLabel="Clear filters"
-                        onAction={() => {
-                          setModule(ALL_MODULES)
-                          setStatusFilter(ALL_STATUS)
-                          setQuery('')
-                          setPage(1)
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+      <PageBody
+        {...restriction}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.refetch}
+        hasRows={list.rows.length > 0}
+        empty={list.isEmpty}
+        emptyIsFiltered={list.isFiltered}
+        noun="number sequences"
+        skeleton="table"
+        skeletonRows={6}
+        emptyTitle="No sequences in the registry"
+        emptyMessage={
+          'The live database seeds this table (migrations 0012, 0055, 0056 — ten sequences). ' +
+          'An empty read means this session’s data source serves none: the mock corpus does not carry number_sequences.'
+        }
+      >
+        <Card
+          title="Sequence Registry"
+          action={
+            <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+              Next numbers are computed read-only — only next_document_number() mints.
+            </span>
+          }
+          bodyStyle={{ padding: 0 }}
+        >
+          {viewport === 'phone' ? (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {list.rows.map((r) => (
+                <SequenceCard key={r.sequenceKey} row={r} next={previewNextNumber(r)} />
+              ))}
+            </div>
+          ) : (
+            <div className="admin-table-shell">
+              <DataTableShell ariaLabel="Document numbering sequences" data-table-scroll style={{ overflowX: 'auto' }}>
+                <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
-                      {/*
-                        §10.6's own column set is `sequence │ prefix │ padding │
-                        current │ preview`. Padding and Preview were missing
-                        here; they are the two the spec's warning is about, so
-                        they are added rather than left to the panel below.
-                        Code, Format, Reset Rule, Scope and Status survive —
-                        Rulings §1, a panel is not removed because a narrower
-                        drawing omits it.
-                      */}
-                      {['Code', 'Sequence Name', 'Prefix', 'Format', 'Padding', 'Current Counter', 'Preview', 'Reset Rule', 'Scope', 'Status', 'Actions'].map((h) => (
-                        <th key={h} style={th}>
+                      {['Sequence', 'Prefix', 'Format', 'Padding', 'Year Segment', 'Current Counter', 'Next Number', 'Last Advanced'].map((h) => (
+                        <th key={h} className="admin-th" style={th}>
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.map((s) => {
-                      const on = s.code === selectedCode
-                      const gap = s.format === null
-                      return (
-                        <tr
-                          key={s.code}
-                          style={{
-                            borderBottom: '1px solid var(--border)',
-                            background: on ? 'var(--nav-active-bg)' : 'transparent',
-                          }}
+                    {list.rows.map((r) => (
+                      <tr key={r.sequenceKey} className="admin-row" style={{ borderTop: '1px solid var(--border)' }}>
+                        <td className="identifier admin-td settings-mono" style={{ ...td, fontWeight: 700 }}>
+                          {r.sequenceKey}
+                        </td>
+                        <td className="admin-td" style={td}>
+                          <PrefixChip prefix={r.prefix} />
+                        </td>
+                        {/* Derived from the row's own columns (formatConvention),
+                            so this column can never disagree with the generator. */}
+                        <td className="identifier admin-td settings-mono" style={{ ...td, color: 'var(--text2)' }}>
+                          {formatConvention(r)}
+                        </td>
+                        <td className="figure admin-td settings-mono" style={{ ...td, color: 'var(--text2)' }}>
+                          {r.padding}
+                        </td>
+                        <td className="admin-td" style={td}>
+                          <YearSegmentChip includeYear={r.includeYear} />
+                        </td>
+                        <td className="figure admin-td settings-mono" style={{ ...td, fontWeight: 600 }}>
+                          {r.currentValue}
+                          {r.includeYear && (
+                            <span className="figure settings-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 500 }}>
+                              in {r.currentYear}
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          className="identifier admin-td settings-mono"
+                          style={{ ...td, fontWeight: 700 }}
+                          title="Computed from the stored counter via the next_document_number() convention — reading this consumes nothing."
                         >
-                          <td className="identifier" style={{ ...td, fontWeight: 700 }}>
-                            {s.code}
-                          </td>
-                          <td style={td}>{s.name}</td>
-                          <td style={td}>
-                            <span
-                              className="figure"
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                height: 18,
-                                padding: '0 6px',
-                                borderRadius: 4,
-                                background: STATUS.primary.bg,
-                                color: STATUS.primary.fg,
-                                fontSize: 'var(--t-meta)',
-                                fontWeight: 700,
-                              }}
-                            >
-                              {s.prefix}
-                            </span>
-                          </td>
-                          <td
-                            className={gap ? undefined : 'figure'}
-                            style={{ ...td, color: gap ? 'var(--muted)' : 'var(--text2)', fontStyle: gap ? 'italic' : 'normal' }}
-                            title={gap ? 'No format supplied by the render or the spec for this sequence.' : undefined}
-                          >
-                            {s.format ?? 'Not configured'}
-                          </td>
-                          {/* Padding is the length of the format's `N` run —
-                              `paddingOf`, the one place that decides it. Under
-                              the 12 Aug ruling every ruled sequence reads `1`,
-                              which is what "no zero padding" looks like. */}
-                          <td className="figure" style={{ ...td, color: gap ? 'var(--muted)' : 'var(--text2)' }}>
-                            {s.format ? paddingOf(s.format) : '—'}
-                          </td>
-                          <td className="figure" style={{ ...td, fontWeight: 600, color: gap ? 'var(--muted)' : 'var(--text)' }}>
-                            {s.counter ?? '—'}
-                          </td>
-                          <td className="identifier" style={{ ...td, fontWeight: 700, color: gap ? 'var(--muted)' : 'var(--text)' }}>
-                            {previewOf(s)}
-                          </td>
-                          <td style={{ ...td, color: 'var(--text2)' }}>{s.resetRule ?? '—'}</td>
-                          <td style={{ ...td, color: 'var(--text2)' }}>{s.scope ?? '—'}</td>
-                          <td style={td}>
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 'var(--sp-xs)',
-                                height: 19,
-                                padding: '0 7px',
-                                borderRadius: 5,
-                                background: s.status === 'Active' ? STATUS.in.bg : STATUS.neutral.bg,
-                                color: s.status === 'Active' ? STATUS.in.fg : STATUS.neutral.fg,
-                                fontSize: 'var(--t-meta)',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <Icon name={s.status === 'Active' ? 'check' : 'eye'} size={10} />
-                              {s.status}
-                            </span>
-                          </td>
-                          <td style={td}>
-                            <span style={{ display: 'flex', gap: 'var(--sp-xs)' }}>
-                              <button
-                                type="button"
-                                onClick={() => select(s.code)}
-                                aria-label={`Configure ${s.code} – ${s.name}`}
-                                title={`Load ${s.code} into the configuration and preview panels`}
-                                style={{
-                                  display: 'grid',
-                                  placeItems: 'center',
-                                  width: 24,
-                                  height: 24,
-                                  borderRadius: 'var(--r-xs)',
-                                  border: '1px solid var(--border)',
-                                  background: 'transparent',
-                                  color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                                  cursor: 'pointer',
-                                  fontFamily: 'inherit',
-                                }}
-                              >
-                                <Icon name="tool" size={12} />
-                              </button>
-                              <Unavailable reason="The row menu (archive · duplicate · audit history) is specified but not built yet.">
-                                <button
-                                  type="button"
-                                  disabled
-                                  aria-label={`More actions for ${s.code}`}
-                                  style={{
-                                    display: 'grid',
-                                    placeItems: 'center',
-                                    width: 24,
-                                    height: 24,
-                                    borderRadius: 'var(--r-xs)',
-                                    border: '1px solid var(--border)',
-                                    background: 'transparent',
-                                    color: 'var(--muted)',
-                                    cursor: 'not-allowed',
-                                    opacity: 0.6,
-                                    fontFamily: 'inherit',
-                                  }}
-                                >
-                                  <Icon name="more_vert" size={12} />
-                                </button>
-                              </Unavailable>
-                            </span>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {visible.length === 0 && (
-                      <tr>
-                        <td colSpan={11} style={{ ...td, padding: 22, textAlign: 'center', color: 'var(--text2)', whiteSpace: 'normal' }}>
-                          <EmptyState
-                            icon={<Icon name="search" size={22} />}
-                            title="No sequence matches this filter"
-                            description="Clear the search or pick another category."
-                            actionLabel="Clear filters"
-                            onAction={() => {
-                              setModule(ALL_MODULES)
-                              setStatusFilter(ALL_STATUS)
-                              setQuery('')
-                              setPage(1)
-                            }}
-                          />
+                          {previewNextNumber(r)}
+                        </td>
+                        <td className="admin-td" style={{ ...td, color: 'var(--text2)' }}>
+                          <WhenCell iso={r.updatedAtAd} />
                         </td>
                       </tr>
-                    )}
+                    ))}
                   </tbody>
                 </table>
-              </div>
-              )}
+              </DataTableShell>
+            </div>
+          )}
+        </Card>
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  borderTop: '1px solid var(--border)',
-                  fontSize: 'var(--t-meta)',
-                  color: 'var(--text2)',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span>
-                  {rows.length === 0
-                    ? 'Showing 0 sequences'
-                    : `Showing ${(current - 1) * perPage + 1} to ${Math.min(current * perPage, rows.length)} of ${rows.length} sequences`}
-                </span>
-                <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                  Rows per page
-                  <Select
-                    value={perPage}
-                    onChange={(e) => {
-                      setPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    className="figure"
-                    style={{ ...fieldStyle, width: 'auto', height: 26 }}
-                  >
-                    {PER_PAGE.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <span style={{ display: 'flex', gap: 3 }}>
-                  <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                    <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
+        {selected && selectedShape && activeDraft && draftShape && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: viewport === 'phone' ? 'minmax(0,1fr)' : 'repeat(2, minmax(0,1fr))',
+              gap: 'var(--sp-md)',
+              marginTop: 'var(--sp-md)',
+              alignItems: 'start',
+            }}
+          >
+            <Card title="Next Number Preview">
+              <label style={{ display: 'block' }}>
+                <span style={fieldLabel}>Select Sequence</span>
+                <Select value={selected.sequenceKey} onChange={(e) => select(e.target.value)} style={fieldStyle}>
+                  {list.rows.map((r) => (
+                    <option key={r.sequenceKey} value={r.sequenceKey}>
+                      {r.sequenceKey} ({r.prefix})
+                    </option>
                   ))}
-                  <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
+                </Select>
+              </label>
+
+              <div style={{ marginTop: 'var(--sp-md)' }}>
+                <span style={fieldLabel}>Next Number</span>
+                <div
+                  className="identifier settings-mono"
+                  aria-live="polite"
+                  style={{
+                    padding: '11px 12px',
+                    borderRadius: 'var(--r-btn)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card2)',
+                    fontSize: 'var(--t-h3)',
+                    fontWeight: 700,
+                    color: 'var(--text)',
+                    letterSpacing: '0.06em',
+                    textAlign: 'center',
+                    overflowX: 'auto',
+                  }}
+                >
+                  {previewNextNumber(selectedShape)}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--sp-md)', marginTop: 11, flexWrap: 'wrap' }}>
+                {[
+                  { l: 'Format', v: formatConvention(selectedShape), mono: true },
+                  { l: 'Current Counter', v: String(selected.currentValue), mono: false },
+                  { l: 'Padding', v: String(selected.padding), mono: false },
+                  { l: 'Year Segment', v: selected.includeYear ? `Yes — ${selected.currentYear}` : 'No', mono: false },
+                ].map((x) => (
+                  <span key={x.l} style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{x.l}</span>
+                    <span
+                      className={x.mono ? 'identifier' : 'figure'}
+                      style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', marginTop: 1 }}
+                    >
+                      {x.v}
+                    </span>
+                  </span>
+                ))}
+                <span style={{ marginLeft: 'auto' }}>
+                  <Button icon="arrow_right" onClick={() => setTestCount(testCount > 0 ? 0 : 5)}>
+                    {testCount > 0 ? 'Hide Test Numbers' : 'Test Next 5 Numbers'}
+                  </Button>
                 </span>
               </div>
 
-              {UNCONFIGURED_CODES.length > 0 && (
-                <p style={{ margin: 0, padding: '0 12px 11px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  {UNCONFIGURED_CODES.join(' · ')} are registered sequences for which no format, counter, reset rule or scope is
-                  supplied anywhere — not by the render, not by the spec, and not by the 12 Aug identifier ruling, which covers
-                  Booking, Client, Membership, Invoice, Quote and Bundle only. Nothing is invented in their place.
-                </p>
-              )}
-            </Card>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
-            <Card title="Sequence Preview Generator">
-              <div ref={previewRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 9 }}>
-                <label style={{ minWidth: 0 }}>
-                  <span style={fieldLabel}>Select Sequence</span>
-                  <Select value={selectedCode} onChange={(e) => select(e.target.value)} style={fieldStyle}>
-                    {SEQUENCES.map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.code} – {s.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                <label style={{ minWidth: 0 }} title={branchApplies ? undefined : `${draft.scope} sequence — it keeps no per-branch counter and its format has no BR token.`}>
-                  <span style={fieldLabel}>Branch</span>
-                  <Select
-                    value={branchCode}
-                    disabled={!branchApplies}
-                    onChange={(e) => setBranchCode(e.target.value)}
-                    style={{ ...fieldStyle, opacity: branchApplies ? 1 : 0.55, cursor: branchApplies ? 'pointer' : 'not-allowed' }}
-                  >
-                    {BRANCHES.map((b) => (
-                      <option key={b.code} value={b.code}>
-                        {b.name} ({b.code})
-                        {b.confirmed ? '' : ' — code unconfirmed'}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                <label style={{ minWidth: 0 }} title={warehouseApplies ? undefined : 'Applies only to Per Warehouse sequences. No seeded sequence uses that scope.'}>
-                  <span style={fieldLabel}>Warehouse (Optional)</span>
-                  <Select
-                    value={warehouseCode}
-                    disabled={!warehouseApplies}
-                    onChange={(e) => setWarehouseCode(e.target.value)}
-                    style={{ ...fieldStyle, opacity: warehouseApplies ? 1 : 0.55, cursor: warehouseApplies ? 'pointer' : 'not-allowed' }}
-                  >
-                    {WAREHOUSES.map((w) => (
-                      <option key={w.code} value={w.code}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              </div>
-
-              {segments.length === 0 ? (
-                <div style={{ marginTop: 'var(--sp-md)' }}>
-                  <StatedGap
-                    title={`${selected.code} – ${selected.name} has no format`}
-                    body="This sequence is named in the spec's default system list, but no format, counter, reset rule or scope is supplied for it anywhere. There is nothing to preview until one is decided."
-                  />
-                </div>
-              ) : (
-                <>
-                  {/* Each segment is labelled and coloured so the format reads as
-                      a structure, not just as a string. */}
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 'var(--sp-md)', flexWrap: 'wrap' }}>
-                    {segments.map((p, i) => (
-                      <span key={`${p.kind}-${i}`} style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                        {i > 0 && <span style={{ color: 'var(--muted)', paddingBottom: 'var(--sp-sm)' }}>{sep || '·'}</span>}
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 3 }}>
-                            {p.label}
-                          </span>
-                          <span
-                            className="figure"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              height: 32,
-                              padding: '0 11px',
-                              borderRadius: 'var(--r-sm)',
-                              border: `1px solid ${BRAND[p.tone]}`,
-                              background: 'var(--card2)',
-                              color: 'var(--text)',
-                              fontSize: 'var(--t-ui)',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {p.value}
-                          </span>
-                        </span>
-                      </span>
-                    ))}
-                    {suffix && (
-                      <span style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                        <span style={{ color: 'var(--muted)', paddingBottom: 'var(--sp-sm)' }}>{sep || '·'}</span>
-                        <span>
-                          <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 3 }}>
-                            SUFFIX
-                          </span>
-                          <span
-                            className="figure"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              height: 32,
-                              padding: '0 11px',
-                              borderRadius: 'var(--r-sm)',
-                              border: `1px solid ${BRAND.success}`,
-                              background: 'var(--card2)',
-                              color: 'var(--text)',
-                              fontSize: 'var(--t-ui)',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {suffix}
-                          </span>
-                        </span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ marginTop: 'var(--sp-md)' }}>
-                    <span style={fieldLabel}>Live Preview</span>
-                    <div
-                      className="figure"
-                      aria-live="polite"
-                      style={{
-                        padding: '11px 12px',
-                        borderRadius: 'var(--r-btn)',
-                        border: '1px solid var(--border)',
-                        background: 'var(--card2)',
-                        fontSize: 'var(--t-h3)',
-                        fontWeight: 700,
-                        color: 'var(--text)',
-                        letterSpacing: '0.06em',
-                        textAlign: 'center',
-                        overflowX: 'auto',
-                      }}
-                    >
-                      {livePreview}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--sp-md)', marginTop: 11, flexWrap: 'wrap' }}>
-                    {[
-                      { l: 'Next Number', v: livePreview },
-                      { l: 'Current Counter', v: currentCounter ?? '—' },
-                      { l: 'Padding Length', v: String(padding) },
-                      { l: 'Total Length', v: String(livePreview.length) },
-                    ].map((x) => (
-                      <span key={x.l} style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{x.l}</span>
-                        <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', marginTop: 1 }}>
-                          {x.v}
-                        </span>
-                      </span>
-                    ))}
-                    <span style={{ marginLeft: 'auto' }}>
-                      <Button icon="arrow_right" onClick={() => setTestCount(testCount > 0 ? 0 : 5)}>
-                        {testCount > 0 ? 'Hide Test Numbers' : 'Test Next 5 Numbers'}
-                      </Button>
-                    </span>
-                  </div>
-
-                  {testNumbers.length > 0 && (
-                    <ol
-                      style={{
-                        margin: '10px 0 0',
-                        padding: '9px 12px',
-                        listStyle: 'none',
-                        borderRadius: 'var(--r-btn)',
-                        border: '1px solid var(--border)',
-                        background: 'var(--card2)',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '4px 16px',
-                      }}
-                    >
-                      {testNumbers.map((n, i) => (
-                        <li key={n} className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
-                          <span style={{ color: 'var(--muted)', marginRight: 5 }}>{i + 1}.</span>
-                          {n}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </>
+              {testNumbers.length > 0 && (
+                <ol
+                  style={{
+                    margin: '10px 0 0',
+                    padding: '9px 12px',
+                    listStyle: 'none',
+                    borderRadius: 'var(--r-btn)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card2)',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '4px 16px',
+                  }}
+                >
+                  {testNumbers.map((n, i) => (
+                    <li key={n} className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
+                      <span className="figure" style={{ color: 'var(--muted)', marginRight: 5 }}>{i + 1}.</span>
+                      {n}
+                    </li>
+                  ))}
+                </ol>
               )}
 
               <p style={{ margin: '9px 0 0', ...panelNote }}>
-                Preview updates automatically when the configuration beside it changes. Nothing here advances a real counter.
+                Computed from the stored counter using next_document_number()&rsquo;s own formatting rules (0055). The RPC has no
+                dry-run — calling it consumes a number — so nothing on this page invokes it, and a concurrent mint elsewhere can
+                outdate this preview without this page ever advancing a counter.
               </p>
             </Card>
 
+            {!mayManage ? (
+              <Card title="Sequence Configuration">
+                {/* Phase 2.7 — the gate, stated rather than a form that quietly
+                    saves nothing this role could ever persist. Inert on
+                    purpose: no field, no switch, no disabled Save to poke. */}
+                <div role="note" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <Icon name="lock" size={16} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
+                  <p style={{ margin: 0, ...panelNote }}>{SETTINGS_ONLY_UNAVAILABLE}</p>
+                </div>
+              </Card>
+            ) : (
             <Card title="Sequence Configuration">
-              <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-                {CONFIG_TABS.map((t) => {
-                  const on = tab === t
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setTab(t)}
-                      aria-current={on ? 'page' : undefined}
-                      style={{
-                        height: 28,
-                        padding: '0 10px',
-                        border: 'none',
-                        borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                        background: 'transparent',
-                        color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: on ? 700 : 500,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        marginBottom: -1,
-                      }}
-                    >
-                      {t}
-                    </button>
-                  )
-                })}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 9 }}>
+                <label style={{ minWidth: 0 }}>
+                  <span style={fieldLabel}>Prefix</span>
+                  <Input
+                    value={activeDraft.prefix}
+                    onChange={(e) =>
+                      setDraft({ ...activeDraft, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })
+                    }
+                    className="identifier"
+                    style={fieldStyle}
+                  />
+                </label>
+                <label style={{ minWidth: 0 }}>
+                  <span style={fieldLabel}>Padding Length</span>
+                  <Input
+                    inputMode="numeric"
+                    value={activeDraft.paddingText}
+                    onChange={(e) => setDraft({ ...activeDraft, paddingText: e.target.value.replace(/\D/g, '') })}
+                    className="figure"
+                    style={fieldStyle}
+                  />
+                </label>
               </div>
 
-              {tab === 'General' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 9, marginTop: 11 }}>
-                  <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
-                    <span style={fieldLabel}>
-                      Sequence Name<span style={{ color: 'var(--danger-text)' }}> *</span>
-                    </span>
-                    <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={fieldStyle} />
-                  </label>
-                  <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
-                    <span style={fieldLabel}>
-                      Code<span style={{ color: 'var(--danger-text)' }}> *</span>
-                    </span>
-                    <Input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value.toUpperCase() })} style={fieldStyle} />
-                  </label>
-                  <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
-                    <span style={fieldLabel}>Description</span>
-                    <Input
-                      value={draft.description}
-                      onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                      placeholder="Optional"
-                      style={fieldStyle}
-                    />
-                  </label>
-
-                  <label style={{ gridColumn: 'span 3', minWidth: 0 }}>
-                    <span style={fieldLabel}>Prefix</span>
-                    <Input
-                      value={draft.format.split('-')[0] ?? ''}
-                      onChange={(e) => setDraft({ ...draft, format: withPrefix(draft.format, e.target.value) })}
-                      disabled={!draft.format}
-                      style={fieldStyle}
-                    />
-                  </label>
-                  <label style={{ gridColumn: 'span 3', minWidth: 0 }}>
-                    <span style={fieldLabel}>Suffix (Optional)</span>
-                    <Input value={draft.suffix} onChange={(e) => setDraft({ ...draft, suffix: e.target.value })} style={fieldStyle} />
-                  </label>
-
-                  <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
-                    <span style={fieldLabel}>
-                      Starting Number<span style={{ color: 'var(--danger-text)' }}> *</span>
-                    </span>
-                    <Input
-                      inputMode="numeric"
-                      value={draft.startingNumber}
-                      onChange={(e) => setDraft({ ...draft, startingNumber: e.target.value.replace(/\D/g, '') })}
-                      style={fieldStyle}
-                    />
-                  </label>
-                  <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
-                    <span style={fieldLabel}>
-                      Padding Length<span style={{ color: 'var(--danger-text)' }}> *</span>
-                    </span>
-                    <Input
-                      inputMode="numeric"
-                      value={padding === 0 ? '' : String(padding)}
-                      disabled={!draft.format}
-                      onChange={(e) => {
-                        const n = Number(e.target.value.replace(/\D/g, ''))
-                        if (n > 0) setDraft({ ...draft, format: withPadding(draft.format, n) })
-                      }}
-                      style={fieldStyle}
-                    />
-                  </label>
-                  <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
-                    <span style={fieldLabel}>Separator</span>
-                    <Select value={draft.separator} onChange={(e) => setDraft({ ...draft, separator: e.target.value })} style={fieldStyle}>
-                      {['-', '/', '.', '_', 'none'].map((s) => (
-                        <option key={s} value={s}>
-                          {s === 'none' ? '(none)' : s}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                </div>
-              )}
-
-              {tab === 'Format' && (
-                <div style={{ marginTop: 11 }}>
-                  <label>
-                    <span style={fieldLabel}>Format</span>
-                    <Input
-                      value={draft.format}
-                      onChange={(e) => setDraft({ ...draft, format: e.target.value.toUpperCase() })}
-                      placeholder="No format supplied for this sequence"
-                      className="figure"
-                      style={fieldStyle}
-                    />
-                  </label>
-                  <p style={{ margin: '8px 0 6px', ...panelNote }}>Tokens, joined by the separator. Spec § Number Format:</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {FORMAT_TOKENS.map((t) => (
-                      <div key={t.kind} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'baseline', fontSize: 'var(--t-meta)' }}>
-                        <span
-                          className="figure"
-                          style={{
-                            minWidth: 62,
-                            padding: '1px 6px',
-                            borderRadius: 4,
-                            background: 'var(--card2)',
-                            border: '1px solid var(--border)',
-                            color: 'var(--text)',
-                            fontWeight: 700,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {t.placeholder}
-                        </span>
-                        <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{t.label}</span>
-                        <span style={{ color: 'var(--muted)', minWidth: 0 }}>{t.note}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {tab === 'Reset Rules' && (
-                <div style={{ marginTop: 11 }}>
-                  <label style={{ maxWidth: 280, display: 'block' }}>
-                    <span style={fieldLabel}>Reset Rule</span>
-                    <Select
-                      value={draft.resetRule}
-                      onChange={(e) => setDraft({ ...draft, resetRule: e.target.value as ResetRule })}
-                      style={fieldStyle}
-                    >
-                      {RESET_RULES.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                  <p style={{ margin: '9px 0 0', ...panelNote }}>
-                    The counter returns to the Starting Number when the rule fires. Nepali Fiscal Year resets on 1 Shrawan;
-                    `lib/bs.ts` is the only place that converts a date, and it is not called for a stored value here.
-                  </p>
-                  <p style={{ margin: '6px 0 0', ...panelNote }}>
-                    Spec § Validation Rules — a counter can never move backwards, and an archived sequence generates nothing.
-                  </p>
-                </div>
-              )}
-
-              {tab === 'Scope' && (
-                <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  {SCOPES.map((s) => (
-                    <label key={s} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start', fontSize: 'var(--t-meta)', cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name="scope"
-                        checked={draft.scope === s}
-                        onChange={() => setDraft({ ...draft, scope: s })}
-                        style={{ marginTop: 2 }}
-                      />
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>{s}</span>
-                        <span style={{ display: 'block', color: 'var(--text2)' }}>
-                          {s === 'Global'
-                            ? 'One counter for the whole company.'
-                            : s === 'Per Branch'
-                              ? 'A separate counter per branch. The branch code only appears in the ID when the format carries a BR token.'
-                              : 'A separate counter per warehouse, keyed on the WH token.'}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {tab === 'Advanced' && (
-                <div style={{ marginTop: 11 }}>
-                  <StatedGap
-                    title="Advanced settings are not specified"
-                    body="The render draws this tab but shows no fields on it, and the spec names none. Nothing is invented to fill it — the tab stays empty until a decision supplies its contents."
-                  />
-                </div>
-              )}
-
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 9, marginTop: 14 }}>
-                <span>
-                  <span style={fieldLabel}>Status</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={draft.active}
-                      aria-label="Sequence active"
-                      onClick={() => setDraft({ ...draft, active: !draft.active })}
+              <div style={{ marginTop: 11 }}>
+                <span style={fieldLabel}>Year Segment</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={activeDraft.includeYear}
+                    aria-label="Include a year segment"
+                    onClick={() => setDraft({ ...activeDraft, includeYear: !activeDraft.includeYear })}
+                    style={{
+                      /* Law 15 — the pressable area is 44px even though the
+                         drawn track is smaller. */
+                      minWidth: 44,
+                      minHeight: 44,
+                      display: 'grid',
+                      placeItems: 'center',
+                      border: 'none',
+                      background: 'transparent',
+                      padding: 0,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      aria-hidden
                       style={{
                         width: 32,
                         height: 18,
                         borderRadius: 'var(--r-badge)',
                         border: '1px solid var(--border)',
-                        background: draft.active ? BRAND.success : 'var(--card2)',
+                        background: activeDraft.includeYear ? BRAND.progress : 'var(--card2)',
                         padding: 2,
                         display: 'flex',
-                        justifyContent: draft.active ? 'flex-end' : 'flex-start',
-                        cursor: 'pointer',
+                        justifyContent: activeDraft.includeYear ? 'flex-end' : 'flex-start',
                       }}
                     >
-                      {/* §4.2 — the knob takes BRAND_ON. It used to be a raw
-                          white literal, which is both a banned hex and under
-                          3:1 on the green fill in dark theme. */}
                       <span
-                        aria-hidden
-                        style={{ width: 12, height: 12, borderRadius: 'var(--r-badge)', background: draft.active ? BRAND_ON.success : 'var(--muted)' }}
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 'var(--r-badge)',
+                          background: activeDraft.includeYear ? BRAND_ON.progress : 'var(--muted)',
+                        }}
                       />
-                    </button>
-                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{draft.active ? 'Active' : 'Archived'}</span>
+                    </span>
+                  </button>
+                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    {activeDraft.includeYear
+                      ? 'Year in the number — counter restarts each calendar year'
+                      : 'No year — continuous counter, never resets'}
                   </span>
                 </span>
+              </div>
 
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 7 }}>
-                  <Button onClick={() => select(selected.code)}>Cancel</Button>
-                  <Unavailable reason={WHY_READ_ONLY}>
-                    <Button variant="primary" disabled>
-                      Save Changes
-                    </Button>
-                  </Unavailable>
-                </span>
+              <div style={{ marginTop: 'var(--sp-md)' }}>
+                <span style={fieldLabel}>Draft Preview</span>
+                <div
+                  className="identifier"
+                  aria-live="polite"
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: 'var(--r-btn)',
+                    border: `1px solid ${draftChanged ? BRAND.progress : 'var(--border)'}`,
+                    background: 'var(--card2)',
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: 700,
+                    color: 'var(--text)',
+                    letterSpacing: '0.04em',
+                    textAlign: 'center',
+                    overflowX: 'auto',
+                  }}
+                >
+                  {previewNextNumber(draftShape)}
+                </div>
+                {draftChanged && (
+                  <p style={{ margin: '6px 0 0', ...panelNote }}>
+                    <Icon name="info" size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                    Draft differs from the stored row — nothing is saved, the preview is the only thing this changes.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 7, marginTop: 14 }}>
+                <Button onClick={() => setDraft(draftOf(selected))}>Cancel</Button>
+                <Unavailable reason={WHY_READ_ONLY}>
+                  <Button variant="primary" disabled>
+                    Save Changes
+                  </Button>
+                </Unavailable>
               </div>
               <p style={{ margin: '7px 0 0', ...panelNote, textAlign: 'right' }}>
                 Edits stay local and drive the preview. Saving needs the confirmation and audit path.
               </p>
             </Card>
+            )}
           </div>
-
-          <Card title="Sequence Analytics">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={sub}>
-                  Records Generated <span style={{ fontWeight: 500, color: 'var(--muted)' }}>({ANALYTICS.generated.note})</span>
-                </div>
-                <div className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)', marginTop: 5 }}>
-                  {ANALYTICS.generated.value}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'var(--t-meta)', color: 'var(--success-text)', marginTop: 2 }}>
-                  <Icon name="arrow_up" size={10} fill />
-                  {ANALYTICS.generated.delta}
-                </div>
-                <div style={{ marginTop: 10 }}>
-                  <TrendLine points={ANALYTICS.generated.trend} />
-                </div>
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                <div style={sub}>
-                  Daily Generation Trend <span style={{ fontWeight: 500, color: 'var(--muted)' }}>(Last 7 Days)</span>
-                </div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 3 }}>{ANALYTICS.dailyTrend.avg}</div>
-                <div style={{ display: 'flex', gap: 7, marginTop: 7 }}>
-                  <div
-                    aria-hidden
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      height: 66,
-                      fontSize: 'var(--t-meta)',
-                      color: 'var(--muted)',
-                      flexShrink: 0,
-                      textAlign: 'right',
-                    }}
-                  >
-                    {ANALYTICS.dailyTrend.yTicks.map((t) => (
-                      <span key={t} className="figure">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-end', gap: 3, height: 66, borderBottom: '1px solid var(--chart-grid)' }}>
-                    {ANALYTICS.dailyTrend.bars.map((b) => (
-                      <span
-                        key={b.label}
-                        style={{ flex: 1, height: `${b.v}%`, background: catColor(0), borderRadius: '3px 3px 0 0', minWidth: 3 }}
-                        title={`${b.label}: ${b.v}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div aria-hidden style={{ display: 'flex', gap: 3, marginTop: 3, paddingLeft: 26 }}>
-                  {ANALYTICS.dailyTrend.bars.map((b) => (
-                    <span key={b.label} className="figure" style={{ flex: 1, textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                      {b.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                <div style={sub}>Top Sequences by Usage</div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', margin: '3px 0 6px' }}>{period}</div>
-                {ANALYTICS.topSequences.map((t) => (
-                  <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
-                    <span style={{ width: 66, flexShrink: 0, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {t.name}
-                    </span>
-                    {/* One hue — a per-bar rainbow across a single series encodes
-                        nothing, which is the rule `Charts.tsx` states for `HBars`. */}
-                    <span aria-hidden style={{ flex: 1, minWidth: 0, height: 8, background: 'var(--card2)', borderRadius: 2 }}>
-                      <span style={{ display: 'block', width: `${t.pct}%`, height: '100%', background: catColor(3), borderRadius: 2 }} />
-                    </span>
-                    <span className="figure" style={{ fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>
-                      {t.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                  <span style={sub}>Reset History</span>
-                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>(Last 6 Months)</span>
-                  <span style={{ marginLeft: 'auto' }}>
-                    <span style={link} aria-disabled title="The full reset log lives in the Audit trail, which is not built yet.">
-                      View all
-                    </span>
-                  </span>
-                </div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', margin: '3px 0 6px' }}>
-                  Total Resets <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{ANALYTICS.resetHistory.total}</span>
-                </div>
-                {ANALYTICS.resetHistory.rows.map((r) => (
-                  <div key={r.name} style={{ display: 'flex', gap: 6, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
-                    <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {r.name}
-                    </span>
-                    <span style={{ color: 'var(--muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>{r.rule}</span>
-                    <span className="figure" style={{ color: 'var(--text)', flexShrink: 0 }}>
-                      {r.at}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                <div style={sub}>
-                  Branch-wise Generation <span style={{ fontWeight: 500, color: 'var(--muted)' }}>({ANALYTICS.generated.note})</span>
-                </div>
-                <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', marginTop: 'var(--sp-sm)' }}>
-                  <Donut slices={ANALYTICS.branchMix} size={62} />
-                  <Legend slices={ANALYTICS.branchMix} />
-                </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <Rail>
-          <Card
-            title="Sequence Summary"
-            action={
-              <Select
-                aria-label="Summary period"
-                value={period}
-                onChange={(e) => setPeriod(e.target.value)}
-                style={{ ...fieldStyle, width: 'auto', height: 26 }}
-              >
-                {SUMMARY_PERIODS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </Select>
-            }
-          >
-            <SummaryRows rows={SUMMARY} />
-            <div aria-hidden style={{ height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 10, overflow: 'hidden' }}>
-              <div style={{ width: '100%', height: '100%', background: BRAND.success, borderRadius: 'var(--r-badge)' }} />
-            </div>
-            <div style={{ textAlign: 'right', marginTop: 9 }}>
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-                View Full Report →
-              </span>
-            </div>
-          </Card>
-
-          <Card
-            title="Alerts"
-            action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-                View All →
-              </span>
-            }
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {ALERTS.map((a) => (
-                <div key={a.text} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: 'var(--r-badge)',
-                      display: 'grid',
-                      placeItems: 'center',
-                      border: `1px solid ${BRAND[a.tone]}`,
-                      color: BRAND_TEXT[a.tone],
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Icon name={a.icon} size={11} />
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)' }}>{a.text}</span>
-                  <span className="figure" style={{ color: 'var(--text)', fontWeight: 600, flexShrink: 0 }}>
-                    {a.count}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 7 }}>
-              {QUICK_ACTIONS.map((q) => {
-                const live = q.label === 'Test Sequence'
-                const why =
-                  q.label === 'Add Sequence'
-                    ? 'Creating a sequence needs the confirmation and audit path — not available in this build.'
-                    : q.label === 'Reset Counter'
-                      ? 'Resetting a counter can re-issue an existing ID — it needs the confirmation and audit path first.'
-                      : 'Export (PDF · Excel · JSON · XML) is specified but not built yet.'
-                const tile = (
-                  <button
-                    type="button"
-                    disabled={!live}
-                    aria-label={q.label}
-                    onClick={
-                      live
-                        ? () => {
-                            setTestCount(5)
-                            previewRef.current?.scrollIntoView({ block: 'center' })
-                          }
-                        : undefined
-                    }
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '11px 4px',
-                      borderRadius: 'var(--r-btn)',
-                      border: '1px solid var(--border)',
-                      background: 'var(--card2)',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 600,
-                      cursor: live ? 'pointer' : 'not-allowed',
-                      opacity: live ? 1 : 0.55,
-                      fontFamily: 'inherit',
-                      textAlign: 'center',
-                      lineHeight: 1.25,
-                    }}
-                  >
-                    <Icon name={q.icon} size={17} style={{ color: BRAND[q.tone] }} />
-                    {q.label}
-                  </button>
-                )
-                return (
-                  <Unavailable
-                    key={q.label}
-                    style={{ display: 'grid', minWidth: 0 }}
-                    reason={live ? 'Jump to the preview generator and roll the next five numbers' : why}
-                  >
-                    {tile}
-                  </Unavailable>
-                )
-              })}
-            </div>
-          </Card>
-
-          <Card
-            title="Recent Activity"
-            action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-                View All →
-              </span>
-            }
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-              {ACTIVITY.map((a) => (
-                <div key={a.what} style={{ display: 'flex', gap: 9 }}>
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: 7,
-                      display: 'grid',
-                      placeItems: 'center',
-                      background: BRAND[a.tone],
-                      color: BRAND_ON[a.tone],
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Icon name={a.icon} size={13} />
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{a.what}</span>
-                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{a.detail}</span>
-                    <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{a.at}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/*
-            The render's "AI Numbering Insights" card was here. Deleted under
-            Law 16 — "No AI panel renders until backed by a validated
-            computation" — not under a wireframe. Its five bullets
-            (`data/numbering.ts`'s INSIGHTS) were hand-written strings sitting
-            under a heading that claims a model produced them, above a "Run AI
-            Analysis" button wired to nothing. `WIREFRAME_RULINGS_2026-08-12.md`
-            §7 applies exactly this law to Settings' "AI Branch Insights" card
-            by name; this is the same card on a different page, and
-            `Warehouses.tsx` already records the general rule — "labelling
-            deterministic arithmetic as a model output would be a false claim."
-
-            Two of the five bullets are real, checkable facts rather than
-            insights, and both are already stated elsewhere on this page without
-            an AI label: "no duplicates" is the Duplicate IDs KPI, computed from
-            `SEQUENCES`, and the MT reset is the Reset Rule column. Nothing was
-            lost. INSIGHTS stays exported from `data/numbering.ts` — the alert
-            and reset panels around it are unaffected, and a half-removal across
-            two files would be worse than an unused export.
-          */}
-        </Rail>
-      </div>
+        )}
+      </PageBody>
 
       <FooterNote
         extra={[
           'Sequence counters are append-only and never reused',
-          'Read-only build — no control here writes a counter',
+          'Numbers are minted only by next_document_number() — no control here writes a counter',
         ]}
       />
     </div>

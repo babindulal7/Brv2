@@ -2,7 +2,7 @@ import { createAction, type ActionConfig, type ActionContext } from '../core'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { idempotentInsert, safeUpdate } from '../../lib/dataAccess'
 import { supabase } from '../../lib/supabase'
-import { getClientRecordByCode } from '../../lib/queries/clients'
+import { getClientRecord } from '../../lib/queries/clients'
 
 /**
  * # BLOCK_CLIENT — the write, and the end of block-as-component-state
@@ -234,7 +234,7 @@ export const blockClientConfig: ActionConfig<BlockClientInput, BlockClientResult
     }
 
     const code = input.clientCode.trim()
-    const profile = await getClientRecordByCode(code)
+    const profile = await getClientRecord(code)
     if (!profile) {
       throw new Error(`No client with code ${code} exists, so nothing was changed.`)
     }

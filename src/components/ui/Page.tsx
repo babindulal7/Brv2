@@ -1,11 +1,15 @@
-import type { ReactNode, CSSProperties } from 'react'
+import React, { useEffect, isValidElement, type ReactNode, type CSSProperties } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
+import { InfoTooltip } from './InfoTooltip'
 import { BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
-import { FOOTER_NOTE } from '../../data/nav'
 import { CollapsibleAside } from './CollapsibleAside'
 import { useViewport } from '../../lib/device'
+import { Button as SharedButton, type ButtonProps } from './Button'
+import { Card as SharedCard } from './Card'
+import { useOptionalWorkspace } from '../../lib/workspaceContext'
+import { extractValidActions } from './PageActions'
 
 /**
  * Page furniture shared by every Generation C screen.
@@ -18,11 +22,11 @@ import { useViewport } from '../../lib/device'
 /* ── card ──────────────────────────────────────────────────────────────── */
 
 export const cardStyle = {
-  background: 'var(--card)',
+  background: 'var(--surface-card, var(--card))',
   border: '1px solid var(--border)',
   borderRadius: 'var(--r-card)',
-  boxShadow: 'var(--shadow-card)',
-  transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+  boxShadow: 'var(--shadow-card), var(--specular-rim)',
+  transition: 'transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur-theme) var(--ease), border-color var(--dur-theme) var(--ease)',
 } as const
 
 export function Card({
@@ -41,69 +45,122 @@ export function Card({
   bodyStyle?: CSSProperties
 }) {
   return (
-    <section id={id} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, ...style }}>
-      {title && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            padding: '12px 14px',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
-          {action && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>{action}</div>}
-        </div>
-      )}
-      <div style={{ padding: 14, flex: 1, minWidth: 0, ...bodyStyle }}>{children}</div>
-    </section>
+    <SharedCard
+      as="section"
+      headingLevel="h2"
+      padding="sm"
+      {...(id !== undefined ? { id } : {})}
+      {...(title !== undefined ? { title, action } : {})}
+      {...(style !== undefined ? { style } : {})}
+      {...(bodyStyle !== undefined ? { bodyStyle } : {})}
+    >
+      {children}
+    </SharedCard>
   )
 }
 
 /* ── page title block ──────────────────────────────────────────────────── */
 
 export function PageHeader({
+  leading,
   icon,
   title,
+  eyebrow,
   description,
   actions,
+  breadcrumb,
+  status,
 }: {
+  leading?: ReactNode
   icon?: IconName
   title: string
-  description?: string
+  eyebrow?: ReactNode
+  description?: ReactNode
   actions?: ReactNode
+  breadcrumb?: ReactNode
+  status?: ReactNode
 }) {
+  const ws = useOptionalWorkspace()
+
+  useEffect(() => {
+    if (ws && description) {
+      ws.setPageInfo(description)
+      return () => ws.setPageInfo(null)
+    }
+  }, [ws, description])
+
+  const resolvedEyebrow = eyebrow
+
+  const validActions = actions ? extractValidActions(actions) : []
+  const hasActions = validActions.length > 0
+
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+    <header className="page-header animate-entrance" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+      <div className="page-header__copy" style={{ minWidth: 0, flex: '1 1 16rem' }}>
+        {breadcrumb && <div style={{ marginBottom: 'var(--space-2)' }}>{breadcrumb}</div>}
+        {resolvedEyebrow && (
+          <div style={{ marginBottom: 'var(--space-2)' }}>
+            {typeof resolvedEyebrow === 'string' ? <span className="eyebrow-pill">{resolvedEyebrow}</span> : resolvedEyebrow}
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          {leading}
           {icon && (
             <span
               style={{
-                width: 30,
-                height: 30,
+                width: 32,
+                height: 32,
                 borderRadius: 'var(--r-sm)',
                 display: 'grid',
                 placeItems: 'center',
                 background: 'var(--nav-active-bg)',
                 color: 'var(--nav-active-accent)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
                 flexShrink: 0,
               }}
             >
               <Icon name={icon} size={17} fill />
             </span>
           )}
-          <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 'clamp(22px, 2vw, 28px)',
+              fontWeight: 600,
+              color: 'var(--text)',
+              letterSpacing: '-0.03em',
+              lineHeight: 1.15,
+              fontFamily: 'var(--font-display, inherit)',
+            }}
+          >
             {title}
           </h1>
+          {!ws && description && <InfoTooltip content={description} size={16} />}
+          {status}
         </div>
-        {description && (
-          <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{description}</p>
-        )}
       </div>
-      {actions && <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>{actions}</div>}
-    </div>
+      {hasActions && (
+        <div
+          className="page-header__actions"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            flexWrap: 'wrap',
+            maxWidth: '100%',
+            marginLeft: 'auto',
+            alignSelf: 'flex-start',
+            flexShrink: 0,
+          }}
+        >
+          {validActions.map((action, idx) =>
+            isValidElement(action)
+              ? React.cloneElement(action, { key: action.key ?? `hdr-act-${idx}` })
+              : <span key={`hdr-act-${idx}`}>{action}</span>
+          )}
+        </div>
+      )}
+    </header>
   )
 }
 
@@ -121,51 +178,21 @@ export function Button({
   children,
   icon,
   variant = 'secondary',
-  onClick,
-  className,
-  disabled,
-}: {
+  ...props
+}: Omit<ButtonProps, 'icon'> & {
   children: ReactNode
-  icon?: IconName
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
-  onClick?: () => void
-  className?: string
-  disabled?: boolean
+  icon?: IconName | undefined
 }) {
-  const skin =
-    variant === 'primary'
-      ? { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' }
-      : variant === 'danger'
-        ? { background: 'var(--btn-danger-bg)', color: 'var(--btn-danger-fg)', border: '1px solid transparent' }
-        : variant === 'ghost'
-          ? { background: 'transparent', color: 'var(--text2)', border: '1px solid transparent' }
-          : { background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }
-
   return (
-    <button
+    <SharedButton
       type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={['press', className].filter(Boolean).join(' ')}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        minHeight: 44,
-        padding: '0 12px',
-        borderRadius: 'var(--r-btn)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
-        fontFamily: 'inherit',
-        whiteSpace: 'nowrap',
-        ...skin,
-      }}
+      size="sm"
+      variant={variant}
+      icon={icon ? <Icon name={icon} size={16} /> : undefined}
+      {...props}
     >
-      {icon && <Icon name={icon} size={14} />}
       {children}
-    </button>
+    </SharedButton>
   )
 }
 
@@ -178,7 +205,14 @@ export interface Kpi {
   accent: BrandKey
   /** Delta line, e.g. "8.4% vs last month". */
   delta?: { direction: 'up' | 'down'; text: string; good?: boolean }
+  /** Extra explanation — shown in the card's (i) tooltip, not on its face. */
   note?: string
+  /** A secondary FIGURE (e.g. "Rs 1,234 receivable") — stays visible on the card. */
+  detail?: string
+  /** Law L1 — Every money tile carries its one-line definition tooltip (§9.3, §15.1) */
+  definition?: string
+  /** Law L2 — Every computed figure resolving to zero or less explains itself (§10.3) */
+  zeroExplanation?: string
   /** Sparkline points, 0–100, drawn as a polyline. Optional. */
   spark?: number[]
 }
@@ -215,90 +249,124 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
       aria-label="Key figures"
       style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}
     >
-      {items.map((k) => (
-        <article key={k.label} className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <span
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 'var(--r-sm)',
-                background: BRAND[k.accent],
-                color: BRAND_ON[k.accent],
-                display: 'grid',
-                placeItems: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <Icon name={k.icon} size={16} fill />
-            </span>
-            <div
-              style={{
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                color: 'var(--text2)',
-                minWidth: 0,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {k.label}
-            </div>
-          </div>
-
-          {/*
-            The value gets the card's full width rather than being indented
-            under the icon. Six cards across leaves ~190px, and "Rs 25,00,000"
-            does not fit in what is left after a 30px tile — it would either
-            wrap (reading as two numbers) or clip.
-          */}
-          <div
-            className="kpi-value"
-            style={{
-              marginTop: 9,
-              fontSize: k.value.length > 8 ? 'clamp(16px, 1.05vw, var(--t-kpi, 22px))' : 'clamp(16px, 1.5vw, var(--t-kpi, 22px))',
-              fontWeight: 700,
-              color: 'var(--text)',
-              lineHeight: 1.15,
-              letterSpacing: '-0.02em',
-              whiteSpace: 'nowrap',
-              // A figure longer than the card degrades to an ellipsis rather
-              // than bleeding past the border.
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {k.value}
-          </div>
-
-          {(k.delta || k.note) && (
-            <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
-              {k.delta && (
+      {items.map((k) => {
+        const isZero = k.value === '0' || k.value === 'Rs 0' || k.value === 'Rs. 0' || k.value === 'Rs 0.00' || k.value === '—'
+        // Definition (L1), note and zero explanation (L2) all ride in ONE (i)
+        // tooltip, like PageHeader's description (R-39: less on the card face).
+        // The delta stays inline — it is a figure, not an explanation.
+        const info = [k.definition, k.note, isZero ? k.zeroExplanation : undefined].filter((t): t is string => Boolean(t))
+        return (
+          <article key={k.label} className="surface-card kpi-tile lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 'var(--r-sm)',
+                  background: BRAND[isZero ? 'neutral' : k.accent],
+                  color: BRAND_ON[isZero ? 'neutral' : k.accent],
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Icon name={k.icon} size={16} fill />
+              </span>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  minWidth: 0,
+                  flex: 1,
+                }}
+              >
                 <span
+                  className="kpi-tile__label"
                   style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 3,
-                    fontWeight: 600,
-                    color: (k.delta.good ?? k.delta.direction === 'up') ? 'var(--success-text)' : 'var(--danger-text)',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.12em',
+                    color: 'var(--muted)',
+                    minWidth: 0,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                 >
-                  <Icon name={k.delta.direction === 'up' ? 'arrow_up' : 'arrow_down'} size={12} fill />
-                  {k.delta.text}
+                  {k.label}
                 </span>
+              </div>
+              {info.length > 0 && (
+                <InfoTooltip
+                  label={`About ${k.label}`}
+                  size={16}
+                  style={{ marginLeft: 'auto', flexShrink: 0 }}
+                  content={info.map((t) => (
+                    <p key={t} style={{ margin: 0 }}>
+                      {t}
+                    </p>
+                  ))}
+                />
               )}
-              {k.note && <span style={{ color: 'var(--muted)' }}>{k.note}</span>}
             </div>
-          )}
 
-          {k.spark && (
-            <div style={{ marginTop: 'var(--sp-sm)' }}>
-              <Spark points={k.spark} color={BRAND[k.accent]} />
+            {/*
+              The value gets the card's full width rather than being indented
+              under the icon. Six cards across leaves ~190px, and "Rs 25,00,000"
+              does not fit in what is left after a 30px tile — it would either
+              wrap (reading as two numbers) or clip.
+            */}
+            <div
+              className="kpi-value"
+              style={{
+                marginTop: 9,
+                fontSize: k.value.length > 8 ? 'clamp(16px, 1.05vw, var(--t-kpi, 22px))' : 'clamp(16px, 1.5vw, var(--t-kpi, 22px))',
+                fontWeight: 700,
+                fontFamily: 'var(--font-display)',
+                color: 'var(--text)',
+                lineHeight: 1.15,
+                letterSpacing: '-0.025em',
+                whiteSpace: 'nowrap',
+                // A figure longer than the card degrades to an ellipsis rather
+                // than bleeding past the border.
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {k.value}
             </div>
-          )}
-        </article>
-      ))}
+
+            {(k.delta || k.detail) && (
+              <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
+                {k.delta && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      fontWeight: 600,
+                      color: (k.delta.good ?? k.delta.direction === 'up') ? 'var(--success-text)' : 'var(--danger-text)',
+                    }}
+                  >
+                    <Icon name={k.delta.direction === 'up' ? 'arrow_up' : 'arrow_down'} size={12} fill />
+                    {k.delta.text}
+                  </span>
+                )}
+                {k.detail && <span style={{ color: 'var(--muted)' }}>{k.detail}</span>}
+              </div>
+            )}
+
+            {k.spark && (
+              <div style={{ marginTop: 'var(--sp-sm)' }}>
+                <Spark points={k.spark} color={BRAND[k.accent]} />
+              </div>
+            )}
+          </article>
+        )
+      })}
     </section>
   )
 }
@@ -306,11 +374,9 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
 /* ── side rails ────────────────────────────────────────────────────────── */
 
 /**
- * The right-hand summary/detail rail every deep screen carries. Collapsible —
- * the parent grid's rail track must be sized `auto` (not a fixed px) so the
- * column actually shrinks when this collapses to its handle. `width` should
- * match whatever px the track used before switching to `auto`, so the
- * expanded layout is pixel-identical to before.
+ * User ruling, 7 Oct 2026: right-hand summaries stay visible everywhere;
+ * remove the collapse handle and ignore old per-route collapse preferences.
+ * Desktop retains its sticky, scrollable rail; smaller screens reflow.
  */
 export function Rail({
   children,
@@ -323,28 +389,25 @@ export function Rail({
   width?: number
   label?: string
 }) {
+  const desktop = useViewport() === 'desktop'
   return (
-    <CollapsibleAside side="right" width={width} label={label} {...(id !== undefined ? { id } : {})}>
-      {children}
-    </CollapsibleAside>
+    <aside
+      aria-label={label}
+      {...(id !== undefined ? { id } : {})}
+      style={{ position: desktop ? 'sticky' : 'relative', top: desktop ? 'calc(var(--header-h) + var(--sp-md))' : undefined, alignSelf: 'flex-start', minWidth: 0, width: desktop ? width : '100%', maxWidth: '100%' }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, maxHeight: desktop ? 'calc(100dvh - var(--header-h) - var(--sp-md) * 2)' : undefined, overflowY: desktop ? 'auto' : undefined, overscrollBehavior: desktop ? 'contain' : undefined }}>
+        {children}
+      </div>
+    </aside>
   )
 }
 
 /**
- * `Rail` at desktop; the same children as a plain column below 1180.
+ * `Rail` at desktop; the same children as a plain column below 1280.
  *
- * Rulings §7 (binding): *"'Right rails collapse below 1180' means **reflow**,
- * not **hide**… Do not wrap those in `CollapsibleAside`, and do not change its
- * default: other pages depend on it."* `Rail` **is** `CollapsibleAside`, which
- * defaults to collapsed at tablet *and* phone, so any screen that renders
- * `<Rail>` unconditionally puts its rail content behind a handle on the
- * warehouse tablet this product targets.
- *
- * The pages that got this right hand-rolled the same three lines each
- * (`Finance.tsx`, `OperationsQueues.tsx`, `Payments.tsx`). This is that shape
- * once, so a screen only has to pick the right component rather than remember
- * the rule. The parent grid still has to drop its rail track below 1180 —
- * `RailGrid` below does that half.
+ * Rulings §7: below 1280 means reflow, not hide. The parent grid must
+ * drop its rail track too; useRailGridColumns below handles that half.
  */
 export function ReflowRail({
   children,
@@ -372,7 +435,7 @@ export function ReflowRail({
 
 /**
  * The other half of `ReflowRail`: the `content | rail` grid's own tracks. The
- * rail track has to disappear below 1180, or the reflowed column lands in a
+ * rail track has to disappear below 1280, or the reflowed column lands in a
  * second column that is still there and the content is squeezed anyway.
  *
  * A hook rather than a wrapper component because the screens that need it
@@ -395,7 +458,7 @@ export function useBandColumns(): (n: number) => number {
 
 /**
  * The left-hand filter/navigation rail a handful of list screens carry.
- * Same collapse mechanics as `Rail`, mirrored to the left edge.
+ * Retains its own collapse mechanics; right-hand summaries stay visible.
  */
 export function SideRail({
   children,
@@ -416,7 +479,7 @@ export function SideRail({
 }
 
 /** Label/value rows — the shape every "… Summary" card in the renders uses. */
-export function SummaryRows({ rows }: { rows: Array<{ label: string; value: string; tone?: BrandKey }> }) {
+export function SummaryRows({ rows }: { rows: Array<{ label: string; value: React.ReactNode; tone?: BrandKey }> }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
       {rows.map((r) => (
@@ -426,7 +489,7 @@ export function SummaryRows({ rows }: { rows: Array<{ label: string; value: stri
             className="figure"
             style={{
               fontWeight: 600,
-              color: r.tone ? BRAND_TEXT[r.tone] : 'var(--text)',
+              color: (typeof r.value === 'number' && r.value === 0) || (typeof r.value === 'string' && /^(?:(?:Rs\.?|NPR)\s*)?0(?:\.0+)?\s*%?$/.test(r.value.trim())) ? 'var(--muted)' : r.tone ? BRAND_TEXT[r.tone] : 'var(--text)',
               whiteSpace: 'nowrap',
             }}
           >
@@ -441,29 +504,29 @@ export function SummaryRows({ rows }: { rows: Array<{ label: string; value: stri
 /* ── footer note bar ───────────────────────────────────────────────────── */
 
 export function FooterNote({ extra }: { extra?: string[] }) {
-  const parts = [FOOTER_NOTE.dates, FOOTER_NOTE.timezone, ...(extra ?? [])]
+  const parts = [...new Set((extra ?? []).map((part) => part.trim()).filter(Boolean))]
+  if (parts.length === 0) return null
+
+  // Extra information rides in ONE (i) tooltip, like KpiStrip and PageHeader —
+  // the page keeps its content, the notes stay one hover/tap away.
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--sp-md)',
-        flexWrap: 'wrap',
-        padding: '11px 2px 0',
-        borderTop: '1px solid var(--border)',
-        marginTop: 'var(--sp-xs)',
-      }}
+      className="footer-note"
+      style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 2px 0', marginTop: 'var(--sp-xs)' }}
     >
-      <Icon name="info" size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-      {parts.map((p, i) => (
-        <span key={p} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
-          {i > 0 && <span aria-hidden style={{ color: 'var(--muted)' }}>|</span>}
-          {p}
-        </span>
-      ))}
-      <span className="figure" style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-        {FOOTER_NOTE.version}
-      </span>
+      <InfoTooltip
+        label="About this page"
+        size={16}
+        content={parts.map((p) => (
+          <p key={p} style={{ margin: 0 }}>
+            {p}
+          </p>
+        ))}
+      />
     </div>
   )
 }
+
+export { PageActions, type PageActionsProps } from './PageActions'
+export { ScreenHeader, type ScreenHeaderProps } from './ScreenHeader'
+export { OverflowMenu, type OverflowMenuItem, type OverflowMenuProps } from './OverflowMenu'

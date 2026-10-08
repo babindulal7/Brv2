@@ -12833,12 +12833,12 @@ export type Database = {
         | "timeout"
         | "insufficient balance"
       delivery_method:
-        | "Customer Pickup"
+        | "Client Pickup"
         | "Babin Delivery"
         | "Courier"
         | "Third Party"
       delivery_type:
-        | "Customer Pickup"
+        | "Client Pickup"
         | "Babin Delivery"
         | "Courier"
         | "Third Party"
@@ -13182,7 +13182,7 @@ export type Database = {
         | "CUSTOM TEXT"
         | "AUTO NUMBER"
       numbering_sequence_status: "Active" | "Disabled" | "Archived"
-      operation_kind: "Packing" | "Handover" | "Return" | "Reset" | "Cleaning"
+      operation_kind: "Packing" | "Handover" | "Return" | "Reset" | "Cleaning" | "Inspection"
       org_unit_status: "Active" | "Archived"
       otp_delivery_channel: "SMS" | "WhatsApp"
       overlap_behaviour: "skip" | "queue" | "kill"
@@ -14291,13 +14291,13 @@ export const Constants = {
         "insufficient balance",
       ],
       delivery_method: [
-        "Customer Pickup",
+        "Client Pickup",
         "Babin Delivery",
         "Courier",
         "Third Party",
       ],
       delivery_type: [
-        "Customer Pickup",
+        "Client Pickup",
         "Babin Delivery",
         "Courier",
         "Third Party",
@@ -14670,7 +14670,7 @@ export const Constants = {
         "AUTO NUMBER",
       ],
       numbering_sequence_status: ["Active", "Disabled", "Archived"],
-      operation_kind: ["Packing", "Handover", "Return", "Reset", "Cleaning"],
+      operation_kind: ["Packing", "Handover", "Return", "Reset", "Cleaning", "Inspection"],
       org_unit_status: ["Active", "Archived"],
       otp_delivery_channel: ["SMS", "WhatsApp"],
       overlap_behaviour: ["skip", "queue", "kill"],

@@ -1,16 +1,18 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageActions, Button, Rail, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
-import { STATUS, type StatusKey } from '../../lib/status'
+import { DataTableShell } from '../../components/ui/DataTable'
+import { STATUS, PAYMENT_STATUS_TONE } from '../../lib/status'
 import { useViewport } from '../../lib/device'
-import { formatMoney } from '../../lib/money'
-import { toBs, formatBs } from '../../lib/bs'
+import { formatMoney, toRupees } from '../../lib/money'
+import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
-import { canRecordPayment } from '../../lib/rbac'
+import { canRecordPayment, canReversePayment } from '../../lib/rbac'
 import { useList } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import {
@@ -19,12 +21,20 @@ import {
   paymentsInPeriod,
   financeRestriction,
   listInvoices,
-  outstandingInvoices,
+  payableInvoices,
   type PaymentListRow,
 } from '../../lib/queries/finance'
 import type { Database } from '../../types/supabase'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { RefundPaymentModal } from './modals/RefundPaymentModal'
+import { DateField } from '../../components/ui/DateField'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import '../../components/ui/list-workspace.css'
+import { Pagination } from '../../components/ui/Pagination'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { gateContext } from '../../lib/fieldGating'
+import { paymentGlance, paymentDetailGroups } from '../../data/paymentIntel'
+import './finance.css'
 
 /**
  * **Finance ▸ Payments** — `updated mds/09_FINANCE.md` §9.3, `/finance/payments`.
@@ -187,11 +197,17 @@ export function paymentDateRange(fromDay: string, toDay: string): PaymentDateRan
   }
 }
 
-/** The complete set sent to Postgres: the chip's predicate with the day range bound onto it. */
-export function paymentFilters(chip: PaymentChip, fromDay: string, toDay: string): ListFilters {
+export const ROWS_PER_PAGE = 25
+
+/** The complete set sent to Postgres: the chip's predicate with the day range bound onto it and page bounds. */
+export function paymentFilters(chip: PaymentChip, fromDay: string, toDay: string, page = 1): ListFilters {
   const base = paymentChipFilters(chip)
   const range = paymentDateRange(fromDay, toDay)
-  return range ? { ...base, dateRange: range } : base
+  const filters = range ? { ...base, dateRange: range } : base
+  return {
+    ...filters,
+    page: { index: Math.max(0, page - 1), size: ROWS_PER_PAGE },
+  }
 }
 
 /* ── row rendering ──────────────────────────────────────────────────────── */
@@ -219,12 +235,7 @@ export const NO_METHOD_TITLE =
 export function formatPaymentAt(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  const day = d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Kathmandu',
-  })
+  const day = formatAd(d)
   const time = d.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
@@ -255,16 +266,12 @@ export function paymentBsLabel(iso: string): string | null {
  * `payment_status`, including the member that cannot be reached, so adding an
  * enum member is a type error rather than an undefined lookup.
  */
-const STATUS_TONE: Record<PaymentStatus, StatusKey> = {
-  Received: 'in',
-  Refunded: 'neutral',
-  Failed: 'danger',
-  Cancelled: 'neutral',
-}
+/* The map moved to `lib/status.ts`: the booking's payment history and the
+   hover Intel card render these same rows, and each carried its own copy. */
 
 /** Law 11 — colour is never the sole carrier. Dot **and** word **and** tone. */
 function StatusBadge({ status }: { status: PaymentStatus }) {
-  const tok = STATUS[STATUS_TONE[status]]
+  const tok = STATUS[PAYMENT_STATUS_TONE[status]]
   return (
     <span
       style={{
@@ -319,7 +326,26 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * This ledger looks as though it already clears the floor, and that is the part
+ * worth naming: the height comes from `ReverseAction`, whose button carries
+ * `minHeight: 44` and pushes its own cell to 64px. But `ReverseAction` returns
+ * null when the session lacks `canRecordPayment`, so for every read-only reader
+ * the row collapses to 10 + one line + 10 and the geometry of the table becomes
+ * a function of a permission check. That is the wrong thing for a row height to
+ * depend on. The next control to land in this ledger inherits a ~38px row, and
+ * a 44px target on a 38px row overhangs its neighbours by ~3px each side where
+ * the rows touch — in that band the later row in the DOM wins the tap, which
+ * here means a reversal opened against the WRONG payment.
+ *
+ * Stating the floor on `td` makes the row own its height instead of borrowing
+ * it from whichever control happens to be tall and happens to be allowed.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 const inputStyle = {
   minHeight: 44,
@@ -347,65 +373,12 @@ export function chipFromParam(param: string | null): PaymentChip {
 }
 
 /* ── REVERSAL ─────────────────────────────────────────────────────────────
- *
- * §9.3's row carries a `⋮`, and the section is titled "record · refund ·
- * reversals". Law 4 makes the only correction a compensating row, so the action
- * is Reverse. Two limits, both structural, both surfaced on the control itself
- * rather than discovered by an operator mid-correction:
- *
- *  1. **The reversal is recorded against the INVOICE, not against this payment.**
- *     `payment_reversals.original_payment_id` (0006:215) is the real linkage, and
- *     nothing in `src/actions/` reaches it: `refundPayment`'s whole input is
- *     `{ id: string }` and `RefundPaymentModal` is invoice-scoped. Widening that
- *     input is a change to the action contract, which is not this screen's to
- *     make. The button says so.
- *  2. **An advance has no invoice to reverse against.** `payments.invoice_id` is
- *     nullable (0006:181) and null is an ordinary state — money taken before the
- *     invoice was raised. There is nothing to pass, so the control is disabled
- *     with that reason rather than passing the payment's own id into a prop named
- *     `invoiceId`, which is precisely the class of fabrication this codebase
- *     keeps removing.
- *
- * `invoiceId` carries `invoiceNo`, not the uuid, because that is the existing
- * contract at the only other call site (`Finance.tsx` passes
- * `selectedInvoiceForRefund.invoiceNo`) and the modal renders it in its own
- * title.
- *
- * ## `currentPaidPaisa` — the cap this route was skipping
- *
- * This mount passed NO `currentPaidPaisa`, and the modal's cap read
- * `if (currentPaidPaisa !== undefined && …)`. So the reversal ceiling was not
- * merely unstated here, it was **switched off**: an operator could reverse any
- * figure at all against an invoice from this screen. The half of that defect
- * that lives in the modal is fixed there (absence now refuses); this is the
- * other half.
- *
- * The figure is `invoices.paid_amount`, and `PaymentListRow` genuinely does not
- * carry it — a payment row knows its own amount, never the invoice's running
- * total. Substituting this payment's amount would put a false figure behind the
- * modal's "Only … has been received against …" sentence, so it is still not
- * done. What IS available is the invoice row itself: this screen already reads
- * `invoices` for the Record Payment modal, and `InvoiceListRow.paidAmount` is
- * that exact column. `reversalPaidPaisa` below matches on `invoiceNo`, which is
- * `text not null unique` (0006:76, :112), so a match is the invoice — never a
- * near-miss.
- *
- * ⚠ Coverage is partial and the refusal, not a guess, is what covers the rest.
- * That read is `outstandingInvoices()` — 'Sent' and 'Partially Paid' only — so a
- * reversal against a fully settled invoice finds nothing and hands the modal
- * `undefined`, which now refuses and says the figure is unavailable. Refusing is
- * the correct behaviour for "we did not read what was received"; it is not a
- * claim that nothing was received.
- *
- * TODO(persistence): a single-invoice read (`invoices` by `invoice_no`) would
- * close the gap. `lib/queries/finance.ts` has no such reader — only list sets —
- * and adding one is that module's change, not this screen's.
+ * Law 4 corrections name the immutable payment directly. This includes advance
+ * payments; the interface checks the receipt amount and Postgres enforces the
+ * remaining cumulative cap under concurrent submissions.
  */
 const REVERSAL_SCOPE_NOTE =
-  'Reversal is recorded against the invoice, not against this individual payment — ' +
-  'payment_reversals.original_payment_id is not reachable from the current action.'
-const REVERSAL_NO_INVOICE_NOTE =
-  'This payment is an advance taken before any invoice was raised, so there is no invoice to reverse against.'
+  'Corrects this receipt only.'
 
 /**
  * Why no `↳ reversal row` is drawn beneath its original.
@@ -414,8 +387,7 @@ const REVERSAL_NO_INVOICE_NOTE =
  * otherwise indistinguishable from "no payment has ever been reversed".
  */
 const NO_REVERSAL_ROWS_NOTE =
-  'Reversal rows are not shown beneath their original yet: corrections live in payment_reversals, ' +
-  'which has no reader in lib/queries/finance.ts. Its absence here is not a claim that none exist.'
+  'Payment reversals are recorded separately and are not shown in this list.'
 
 /* ── DEPOSITS ─────────────────────────────────────────────────────────────
  *
@@ -430,11 +402,7 @@ const NO_REVERSAL_ROWS_NOTE =
  * table by construction, so summing anything here could only produce a figure
  * about something else.
  */
-const DEPOSIT_LINES: ReadonlyArray<{ label: string; source: string }> = [
-  { label: 'Held', source: 'security_deposits' },
-  { label: 'Applied', source: 'deposit_movements' },
-  { label: 'Refunded', source: 'deposit_movements' },
-]
+const DEPOSIT_LINES = ['Held', 'Applied', 'Refunded'] as const
 
 /* ── fetchers ─────────────────────────────────────────────────────────────
  *
@@ -488,8 +456,9 @@ export default function Payments({
   onRetry: propOnRetry,
 }: PaymentsProps = {}) {
   const [params, setParams] = useSearchParams()
-  /* Law 13/14 — one width reading, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — one width reading, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const tabular = viewport !== 'phone'
   const railBesideList = viewport === 'desktop'
 
@@ -510,30 +479,17 @@ export default function Payments({
    * writing to it. Absent, not disabled — `MovementList.tsx:307`.
    */
   const { user } = useAuth()
+  const paymentGate = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
   const canTakePayment = user ? canRecordPayment(user.role) : false
 
-  /*
-   * The row's Reverse control had NO capability gate at all — it was drawn for
-   * any money-visible session, so an Admin or a Manager was offered a reversal
-   * that `actions/core.ts` would refuse only after the amount and the reason had
-   * been typed.
-   *
-   * `canRecordPayment` is the rule, and it is not a choice made here:
-   * `actions/core.ts:110-112` resolves BOTH `payment.create` and
-   * `payment.refund` through it, and `refundPayment` declares
-   * `permissions: ['payment.refund']`. Gating on the same predicate the
-   * dispatcher will apply is what stops the UI offering what the engine refuses.
-   * Money out is the same rule as money in — which is also why this is a
-   * separate boolean from `money`: reading the receipt ledger is not moving it.
-   *
-   * TODO(decision): `lib/rbac` has no refund-specific rule, so a reversal
-   * inherits Coordinator from `canRecordPayment`. Taking an advance at the
-   * counter and paying money back out are plausibly not the same authority —
-   * `canVoidInvoice` is the narrower Owner/Accounts shape — but narrowing it
-   * here would invent a product decision AND desync the UI from the dispatcher.
-   * The rule belongs in `lib/rbac` + `actions/core.ts` together, and PLAN.md §4.
-   */
-  const canReverse = canTakePayment
+  // docs/PERMISSIONS.md F-a and the payment_reversals RLS policy agree exactly.
+  const canReverse = user ? canReversePayment(user.role) : false
+
+  const [recordOpen, setRecordOpen] = useState(false)
+  const [reversing, setReversing] = useState<PaymentListRow | null>(null)
+
+  const hasLoadedInvoices = useRef(false)
+  const shouldLoadInvoices = recordOpen
 
   /* See the block above `Payments()` for why both of these close over `money`. */
   const fetchPayments = useCallback(
@@ -545,10 +501,13 @@ export default function Payments({
   )
   const fetchInvoices = useCallback(
     async (filters: ListFilters) => {
-      if (!money) return { rows: [], total: 0 }
+      if (!money || (!shouldLoadInvoices && !hasLoadedInvoices.current)) {
+        return { rows: [], total: 0 }
+      }
+      hasLoadedInvoices.current = true
       return listInvoices(filters)
     },
-    [money],
+    [money, shouldLoadInvoices],
   )
 
   const chip = chipFromParam(params.get('status'))
@@ -557,8 +516,8 @@ export default function Payments({
   const range = paymentDateRange(fromDay, toDay)
   const isFiltered = chip !== 'All' || range !== null
 
-  const [recordOpen, setRecordOpen] = useState(false)
-  const [reversing, setReversing] = useState<PaymentListRow | null>(null)
+  const pageParam = parseInt(params.get('page') ?? '1', 10)
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
 
   const patch = (next: Record<string, string | null>) => {
     const merged = new URLSearchParams(params)
@@ -570,6 +529,10 @@ export default function Payments({
   }
   const clearFilters = () => setParams(new URLSearchParams())
 
+  const setPage = (nextPage: number) => {
+    patch({ page: nextPage > 1 ? String(nextPage) : null })
+  }
+
   /*
    * The one list. Every predicate server-side.
    *
@@ -579,59 +542,77 @@ export default function Payments({
    * `payment_type` set are different shapes, so a baseline comparison cannot
    * answer "did the operator narrow this".
    */
-  const list = useList<PaymentListRow>(fetchPayments, paymentFilters(chip, fromDay, toDay), {
+  const list = useList<PaymentListRow>(fetchPayments, paymentFilters(chip, fromDay, toDay, page), {
     isFilteredOverride: isFiltered,
   })
 
+  const total = list.total
+  const pageCount = total === null ? 1 : Math.max(1, Math.ceil(total / ROWS_PER_PAGE))
+
+  useEffect(() => {
+    if (total !== null && page > pageCount && pageCount > 0) {
+      patch({ page: pageCount > 1 ? String(pageCount) : null })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- page bounds clamp
+  }, [page, pageCount, total])
+
   /*
-   * The invoices the Record Payment modal offers. Issued and not yet settled —
-   * a draft has not been sent to anybody and a paid invoice is closed, so
-   * neither is something to take money against. `baseline` is the same set, so
-   * an empty result reads as "nothing outstanding", not as "your filters matched
-   * nothing".
+   * The invoices the Record Payment modal offers.
+   *
+   * ⚠ Deferred: only fetched once the operator opens Record Payment or clicks Reverse.
    */
-  const invoiceFilters = outstandingInvoices()
+  const invoiceFilters = payableInvoices()
   const invoiceList = useList(fetchInvoices, invoiceFilters, { baseline: invoiceFilters })
+
+  useEffect(() => {
+    if (shouldLoadInvoices && !hasLoadedInvoices.current) {
+      invoiceList.refetch()
+    }
+  }, [shouldLoadInvoices, invoiceList])
 
   /**
    * Narrowed to what `RecordPaymentModal` declares, and mapped exactly as
-   * `Finance.tsx:430-440` maps it, so one modal cannot be fed two different
-   * meanings of the same field. `id` is the invoice NUMBER and `booking` the
-   * booking NUMBER — that file's own `TODO(decision)` records that the action
-   * receives the number in a field named `bookingId`; matching it here keeps the
-   * open question in one place instead of two.
+   * `Finance.tsx` maps it, so one modal cannot be fed two different meanings of
+   * the same field.
+   *
+   * ⚠ **`id` is the invoice's UUID now** (MONEY-05). It was `r.invoiceNo`, and
+   * the modal resolved the payment by that number — which cannot settle a Draft,
+   * because R-15 gives a Draft no number at all. `invoiceNo` travels alongside
+   * as the picker's label and is `null` on a Draft, rendered as
+   * "Draft (no number)". `booking` is still the booking NUMBER and is still
+   * display-only.
    */
   const modalInvoices = useMemo(
     () =>
       invoiceList.rows.map((r) => ({
-        id: r.invoiceNo,
+        id: r.id,
+        invoiceNo: r.invoiceNo,
         client: r.clientName,
         amount: formatMoney(r.totalAmount),
         status: r.status,
         booking: r.bookingNo,
+        // R-39 D1 — prefills the Amount field with what the invoice still owes.
+        outstandingRupees: toRupees(r.outstandingAmount),
       })),
     [invoiceList.rows],
   )
 
-  /**
-   * `invoices.paid_amount` for the invoice the payment being reversed settles —
-   * the cap the reversal modal bounds itself with. See the REVERSAL block above
-   * for why this is a lookup against the invoice rows rather than anything read
-   * off the payment, and for what `undefined` means here (refusal, not "zero
-   * received").
-   *
-   * This is a single-key lookup, not list filtering — `listQuery.ts`'s rule that
-   * narrowing happens server-side is about which ROWS a list shows, and nothing
-   * here changes the list.
-   */
-  const reversalPaidPaisa = useMemo(() => {
-    if (!reversing || reversing.invoiceNo === null) return undefined
-    return invoiceList.rows.find((r) => r.invoiceNo === reversing.invoiceNo)?.paidAmount
-  }, [reversing, invoiceList.rows])
-
   const refreshAll = () => {
     list.refetch()
-    invoiceList.refetch()
+    if (hasLoadedInvoices.current) {
+      invoiceList.refetch()
+    }
+  }
+
+  const openRecord = () => {
+    if (!hasLoadedInvoices.current) {
+      invoiceList.refetch()
+    }
+    setRecordOpen(true)
+  }
+
+  const openReverse = (row: PaymentListRow) => {
+    setReversing(row)
   }
 
   const rows = list.rows
@@ -648,7 +629,7 @@ export default function Payments({
     !money || list.total === null ? '' : ` — ${list.total} ${list.total === 1 ? 'payment' : 'payments'}`
 
   const railContent = (
-    <div style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="finance-deposits-rail" style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         <Icon name="lock" size={14} style={{ flexShrink: 0, color: 'var(--muted)' }} />
         <h3 style={{ margin: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
@@ -657,13 +638,13 @@ export default function Payments({
       </div>
 
       <dl style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {DEPOSIT_LINES.map((d) => (
-          <div key={d.label} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-            <dt style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{d.label}</dt>
+        {DEPOSIT_LINES.map((label) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+            <dt style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{label}</dt>
             <dd
               className="figure"
               style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
-              title={`Not read — ${d.source} has no query in lib/queries/finance.ts.`}
+              title="Deposit total unavailable"
             >
               —
             </dd>
@@ -672,20 +653,14 @@ export default function Payments({
       </dl>
 
       <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-        Not tracked yet — <span className="identifier">security_deposits</span> and{' '}
-        <span className="identifier">deposit_movements</span> have no query in this app. A dash is a missing
-        reading, never a zero.
-      </p>
-
-      <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-        A deposit is a liability, not revenue: it never touches Rental Total or Outstanding, and it can never
-        appear in the ledger beside this — a table CHECK forbids a payment of type Security Deposit.
+        Deposit totals are unavailable in this view. Deposits are separate from rental charges and Outstanding.
       </p>
     </div>
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
+      <div className="finance-v2">
       {/* Page when routed, subtitle + actions when hosted as Finance's Payments
           tab. See `TabHeader.tsx` for why the description and the actions
           survive the demotion and only the `<h1>` goes. */}
@@ -693,96 +668,82 @@ export default function Payments({
         embedded={embedded}
         icon="card"
         title="Payments"
-        description="The receipt ledger. Payments are immutable — a correction is a reversal row, never an edit."
+        description="Review receipts and refunds."
         actions={
-          <>
-            {/* §9.3's one header action. Hidden, not disabled, for a session that
-                cannot see money — Law 6 asks call sites to OMIT the figure and
-                the affordance, and a disabled button still says money is here.
-                `canTakePayment` narrows it further to the roles allowed to
-                record one; see its definition above. */}
-            {money && canTakePayment && (
-              <Button icon="plus" variant="primary" onClick={() => setRecordOpen(true)}>
-                Record Payment
-              </Button>
-            )}
-            <Button icon="refresh" onClick={refreshAll}>
-              Refresh
-            </Button>
-          </>
+          !embedded ? (
+            <PageActions
+              primary={
+                money && canTakePayment ? (
+                  <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={openRecord}>
+                    {phone ? '' : 'Record Payment'}
+                  </Button>
+                ) : undefined
+              }
+              secondary={[
+                <Button key="refresh" icon="refresh" aria-label="Refresh" onClick={refreshAll}>
+                  {phone ? '' : 'Refresh'}
+                </Button>,
+              ]}
+            />
+          ) : undefined
         }
       />
 
       {/* §9.3 filter row — `(All)(Received)(Refunded)(Reversed)  [method ▾][date▾]` */}
-      <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div role="group" aria-label="Payment filters" style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+      <div className="list-workspace__controls" style={{ gap: 'var(--sp-md)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', order: 0 }}>
+          From
+          <DateField
+            ariaLabel="Payments from this Kathmandu day"
+            value={fromDay}
+            onChange={(v) => patch({ from: v || null, page: null })}
+            showBs={false}
+            clearable
+            style={inputStyle}
+          />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', order: 0 }}>
+          To
+          <DateField
+            ariaLabel="Payments up to and including this Kathmandu day"
+            value={toDay}
+            onChange={(v) => patch({ to: v || null, page: null })}
+            showBs={false}
+            clearable
+            align="right"
+            style={inputStyle}
+          />
+        </label>
+        <div
+          role="group"
+          aria-label="Payment filters"
+          className="finance-chip-track rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            gap: 'var(--sp-sm)',
+            flexWrap: phone ? 'nowrap' : 'wrap',
+            overflowX: phone ? 'auto' : undefined,
+            paddingBottom: phone ? 2 : 0,
+            order: 2,
+            width: '100%',
+          }}
+        >
           {PAYMENT_CHIPS.map((c) => (
             <button
               key={c}
               type="button"
-              onClick={() => patch({ status: CHIP_PARAM[c] })}
+              onClick={() => patch({ status: CHIP_PARAM[c], page: null })}
               aria-pressed={chip === c}
+              className={`finance-filter-chip ${chip === c ? 'is-active' : ''}`}
               style={chipStyle(chip === c)}
-              {...(c === 'Refunded'
-                ? {
-                    title:
-                      'Refunds are payment_type = Refund. The payment_status member "Refunded" is derived from a reversal row and is never written, so filtering on it would match nothing.',
-                  }
-                : {})}
             >
               {c}
             </button>
           ))}
 
-          {/* Drawn, disabled, and carrying its reason — see the header. */}
-          <button
-            type="button"
-            disabled
-            aria-label="Reversed — not tracked yet. Reversals live in payment_reversals, which has no reader in lib/queries/finance.ts."
-            title="Not tracked yet — payment_reversals has no reader in lib/queries/finance.ts, and it carries a narrower role list of its own."
-            style={chipStyle(false, true)}
-          >
-            Reversed
-            <Icon name="info" size={13} />
-          </button>
         </div>
 
-        {/* [method ▾] — the column renders, the narrowing cannot. */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          Method
-          <select
-            disabled
-            aria-label="Method — not filterable yet. The channel lives on bank_accounts and the payments select does not join it with !inner."
-            title="Not filterable yet — payments has no method column; the channel comes from bank_accounts through an embed that PostgREST cannot filter the parent by."
-            style={{ ...inputStyle, opacity: 0.55, cursor: 'not-allowed' }}
-          >
-            <option>Not filterable yet</option>
-          </select>
-        </label>
-
-        {/* [date ▾] — genuinely server-side, at Kathmandu day boundaries. */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          From
-          <input
-            type="date"
-            aria-label="Payments from this Kathmandu day"
-            value={fromDay}
-            onChange={(e) => patch({ from: e.target.value || null })}
-            style={inputStyle}
-          />
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          To
-          <input
-            type="date"
-            aria-label="Payments up to and including this Kathmandu day"
-            value={toDay}
-            onChange={(e) => patch({ to: e.target.value || null })}
-            style={inputStyle}
-          />
-        </label>
-
-        {isFiltered && <Button onClick={clearFilters}>Clear filters</Button>}
+        {isFiltered && <Button onClick={clearFilters} style={{ order: 3 }}>Clear filters</Button>}
       </div>
 
       <div
@@ -794,6 +755,11 @@ export default function Payments({
         }}
       >
         <Card title={`Payments${countSuffix}`} bodyStyle={{ padding: tabular ? 0 : 10 }}>
+          {total !== null && (
+            <AppPageToolbar
+              pagination={<Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />}
+            />
+          )}
           {/*
             Fixed ladder: restricted → error → loading → empty → children.
             `financeRestriction` outranks everything, so a money-blind session is
@@ -808,14 +774,18 @@ export default function Payments({
             hasRows={rows.length > 0}
             empty={list.isEmpty}
             emptyIsFiltered={list.isFiltered}
+            onClearFilters={clearFilters}
+            /* From main's Phase 9 work: an empty ledger offers its one next
+               step, to the roles that may record a payment. */
+            {...(!isFiltered && canTakePayment ? { emptyActionLabel: 'Record Payment', onEmptyAction: openRecord } : {})}
             noun="payments"
             skeleton="table"
             skeletonRows={5}
             emptyTitle={isFiltered ? 'No payments match these filters' : 'No payments yet'}
             emptyMessage={
               isFiltered
-                ? 'No payment matches this filter. Clear it to see the whole ledger.'
-                : 'No payment has been recorded yet. Recording one is how it gets here — a payment is never edited afterwards.'
+                ? 'Clear filters to see the full ledger.'
+                : 'No payments have been recorded yet.'
             }
             {...(isFiltered
               ? { onClearFilters: clearFilters }
@@ -829,13 +799,14 @@ export default function Payments({
                 {rows.map((p) => (
                   <article
                     key={p.id}
+                    className="finance-card-item"
                     style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
-                      <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>
-                        {p.paymentNo}
-                      </span>
-                      <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>
+                      <IntelCard glance={paymentGlance(p, paymentGate)} detail={paymentDetailGroups(p, paymentGate)} detailTitle={p.paymentNo} detailSubtitle={`${p.clientName} · ${p.status}`} entityType="payment" entityId={p.paymentNo} context="payments" gateContext={paymentGate}>
+                        <span className="identifier finance-mono" style={{ fontWeight: 700, color: 'var(--text)' }} data-intel-identifier>{p.paymentNo}</span>
+                      </IntelCard>
+                      <span className="figure finance-mono" style={{ fontWeight: 700, color: 'var(--text)' }}>
                         {formatMoney(p.amount)}
                       </span>
                     </div>
@@ -843,7 +814,7 @@ export default function Payments({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
                       <Link
                         to={`/rentals/${p.bookingNo}`}
-                        className="identifier"
+                        className="identifier finance-mono"
                         style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}
                       >
                         {p.bookingNo}
@@ -880,13 +851,14 @@ export default function Payments({
                     </div>
 
                     <span
+                      className="finance-mono"
                       style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
                       {...(paymentBsLabel(p.paymentDateAd) ? { title: paymentBsLabel(p.paymentDateAd) as string } : {})}
                     >
                       {formatPaymentAt(p.paymentDateAd)}
                     </span>
 
-                    <ReverseAction row={p} onOpen={setReversing} canReverse={canReverse} full />
+                    <ReverseAction row={p} onOpen={openReverse} canReverse={canReverse} full />
                   </article>
                 ))}
               </div>
@@ -894,8 +866,8 @@ export default function Payments({
 
             {/* DESKTOP + TABLET — pay# │ BR# │ client │ method │ amount │ date │ ⋮ */}
             {tabular && (
-              <div data-table-scroll style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+              <DataTableShell ariaLabel="Payments" className="finance-table-shell" data-table-scroll style={{ overflowX: 'auto' }}>
+                <table className="finance-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       {['Payment', 'Booking', 'Client', 'Method', 'Type', 'Amount', 'Status', 'Date', ''].map((h, i) => (
@@ -907,14 +879,16 @@ export default function Payments({
                   </thead>
                   <tbody>
                     {rows.map((p) => (
-                      <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td className="identifier" style={{ ...td, fontWeight: 600 }}>
-                          {p.paymentNo}
+                      <tr key={p.id} className="finance-row" style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td className="identifier finance-mono" style={{ ...td, fontWeight: 600 }}>
+                          <IntelCard glance={paymentGlance(p, paymentGate)} detail={paymentDetailGroups(p, paymentGate)} detailTitle={p.paymentNo} detailSubtitle={`${p.clientName} · ${p.status}`} entityType="payment" entityId={p.paymentNo} context="payments" gateContext={paymentGate}>
+                            <span data-intel-identifier>{p.paymentNo}</span>
+                          </IntelCard>
                         </td>
                         <td style={td}>
                           <Link
                             to={`/rentals/${p.bookingNo}`}
-                            className="identifier"
+                            className="identifier finance-mono"
                             style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--t-meta)' }}
                           >
                             {p.bookingNo}
@@ -938,7 +912,7 @@ export default function Payments({
                           the only thing that says which direction it went.
                         */}
                         <td style={{ ...td, color: 'var(--text2)' }}>{p.paymentType}</td>
-                        <td className="figure" style={{ ...td, fontWeight: 700 }}>
+                        <td className="figure finance-mono" style={{ ...td, fontWeight: 700 }}>
                           {formatMoney(p.amount)}
                         </td>
                         {/* Likewise: under (All), a Failed or Cancelled row would
@@ -947,18 +921,25 @@ export default function Payments({
                           <StatusBadge status={p.status} />
                         </td>
                         <td
+                          className="finance-mono"
                           style={{ ...td, color: 'var(--text2)' }}
                           {...(paymentBsLabel(p.paymentDateAd) ? { title: paymentBsLabel(p.paymentDateAd) as string } : {})}
                         >
                           {formatPaymentAt(p.paymentDateAd)}
                         </td>
                         <td style={td}>
-                          <ReverseAction row={p} onOpen={setReversing} canReverse={canReverse} />
+                          <ReverseAction row={p} onOpen={openReverse} canReverse={canReverse} />
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </DataTableShell>
+            )}
+
+            {total !== null && total > ROWS_PER_PAGE && (
+              <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                <Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />
               </div>
             )}
           </PageBody>
@@ -986,17 +967,11 @@ export default function Payments({
           </p>
         </Card>
 
-        {/* Rulings §7 — below 1180 the rail REFLOWS beneath the list rather than
+        {/* Rulings §7 — below 1280 the rail REFLOWS beneath the list rather than
             hiding behind `CollapsibleAside`'s handle. */}
         {railBesideList ? <Rail label="Deposits">{railContent}</Rail> : railContent}
       </div>
 
-      <FooterNote
-        extra={[
-          'Payments are immutable — corrections are reversal rows, never edits',
-          'Deposits are a separate liability and never touch Outstanding',
-        ]}
-      />
 
       {/*
         Mounted only while open, and unmounted on close: `RecordPaymentModal`
@@ -1016,22 +991,21 @@ export default function Payments({
         />
       )}
 
-      {/* `canReverse` alongside `money`, on the same reasoning the Record
-          Payment mount above carries it: a role change mid-session must not
-          leave an open reversal form belonging to a session that may not post
-          one. `currentPaidPaisa` is the cap this mount used to omit entirely —
-          see the REVERSAL block. */}
-      {money && canReverse && reversing && reversing.invoiceNo !== null && (
+      {/* The interface caps one receipt; the database remains the concurrent,
+          cumulative authority. */}
+      {money && canReverse && reversing && (
         <RefundPaymentModal
-          isOpen={reversing.invoiceNo !== null}
+          isOpen
           onClose={() => setReversing(null)}
           onSuccess={() => refreshAll()}
-          invoiceId={reversing.invoiceNo}
+          paymentId={reversing.id}
+          paymentNo={reversing.paymentNo}
+          paymentAmountPaisa={reversing.amount}
           client={reversing.clientName}
-          currentPaidPaisa={reversalPaidPaisa}
         />
       )}
-    </div>
+      </div>
+    </PageShell>
   )
 }
 
@@ -1047,37 +1021,20 @@ function ReverseAction({
 }: {
   row: PaymentListRow
   onOpen: (row: PaymentListRow) => void
-  /**
-   * `rbac.canRecordPayment` for the signed-in session — the same predicate
-   * `actions/core.ts` resolves `refundPayment`'s `payment.refund` through.
-   * Required, not defaulted: a `canReverse = true` default would silently
-   * restore the ungated behaviour at any call site that forgot it, which is
-   * exactly how this control came to have no gate.
-   */
+  /** `rbac.canReversePayment`, aligned with payment_reversals RLS. */
   canReverse: boolean
   full?: boolean
 }) {
-  /*
-   * ABSENT, not disabled — `MovementList.tsx:307`. A greyed Reverse still tells
-   * a Warehouse-adjacent or Admin session that reversing money is something this
-   * screen does. The `disabled` below answers a different question (this payment
-   * is an advance with no invoice to reverse against), which is a fact about the
-   * ROW and is worth stating; who may act is a fact about the SESSION and is
-   * not.
-   */
+  /* Absent, not disabled: an unauthorized session must not be told this exists. */
   if (!canReverse) return null
 
-  const linked = row.invoiceNo !== null
-  const label = linked
-    ? `Reverse payment ${row.paymentNo}. ${REVERSAL_SCOPE_NOTE}`
-    : `Reverse payment ${row.paymentNo} — unavailable. ${REVERSAL_NO_INVOICE_NOTE}`
+  const label = `Reverse payment ${row.paymentNo}. ${REVERSAL_SCOPE_NOTE}`
 
   return (
     <button
       type="button"
-      disabled={!linked}
       aria-label={label}
-      title={linked ? REVERSAL_SCOPE_NOTE : REVERSAL_NO_INVOICE_NOTE}
+      title={REVERSAL_SCOPE_NOTE}
       onClick={() => onOpen(row)}
       style={{
         display: 'inline-flex',
@@ -1090,12 +1047,12 @@ function ReverseAction({
         borderRadius: 'var(--r-btn)',
         border: '1px solid var(--border)',
         background: 'var(--card)',
-        color: linked ? 'var(--text2)' : 'var(--muted)',
+        color: 'var(--text2)',
         fontSize: 'var(--t-meta)',
         fontWeight: 600,
         fontFamily: 'inherit',
-        cursor: linked ? 'pointer' : 'not-allowed',
-        opacity: linked ? 1 : 0.55,
+        cursor: 'pointer',
+        opacity: 1,
         whiteSpace: 'nowrap',
       }}
     >

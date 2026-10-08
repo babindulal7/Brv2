@@ -1,86 +1,66 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { recordExport } from '../../lib/exportAudit'
+import { Link, useSearchParams } from 'react-router-dom'
+import { CreateDocumentModal } from './CreateDocumentModal'
+import './documents.css'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { Select } from '../../components/ui/Select'
-import { Card, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, Rail } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { useViewport } from '../../lib/device'
 import { ScreenHeader } from '../finance/TabHeader'
-import { Unavailable } from '../../components/ui/Unavailable'
-import { Donut, Legend, catColor } from '../../components/ui/Charts'
+import { catColor } from '../../components/ui/Charts'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
-import { canViewMoney } from '../../lib/rbac'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
 import { gateContext } from '../../lib/fieldGating'
-import { useMenuFlip } from '../../lib/menuFlip'
 import { IntelCard } from '../../components/ui/IntelCard'
 import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
-import { documentGlance, documentDetailGroups } from '../../data/documentIntel'
 import {
+  listDocuments,
+  documentGlance,
+  documentDetailGroups,
   ALL_TAB,
   ALL_BRANCHES,
   ALL_RELATED,
   ALL_STATUS,
   ALL_TYPES,
-  ARCHIVED_NOT_RECYCLE_BIN,
   BRANCHES,
   DOC_STATUS,
   DOC_STATUSES,
-  MISSING_TOTAL,
-  NOT_BUILT,
-  PENDING_SIGNATURE_TOTAL,
   PER_PAGE,
   RELATED_TARGET,
-  ROW_MENU,
   SORTS,
-  categoriesFor,
   documentsFor,
+  categoriesFor,
   expiringFor,
-  kpisFor,
   missingFor,
-  quickActionsFor,
-  summarySlices,
-} from '../../data/documents'
-import type { CategoryKey, DocRow, RelatedKind, SortKey } from '../../data/documents'
+  type CategoryKey,
+  type DocRow,
+  type RelatedKind,
+  type SortKey,
+} from '../../lib/queries/documents'
+import { DateField } from '../../components/ui/DateField'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { ListControlRow } from '../../components/ui/ListWorkspace'
+import { Pagination } from '../../components/ui/Pagination'
+import { IS_MOCK } from '../../lib/supabase'
+import { ErrorBanner } from '../../components/ui/StateViews'
 
-/**
- * `lib/auth.tsx` carries eight *shift* roles; `lib/rbac.ts` is written against
- * Foundation §11's six *system* roles. Mapping rather than casting matters: a
- * cast hands `canViewMoney` a string it has no rule for and it answers `true`.
- * Same table as `RentalsList` — it belongs in `lib/rbac.ts`, which this pass
- * does not own.
- */
-
-const th = {
-  textAlign: 'left' as const,
-  padding: '9px 8px',
-  fontSize: 'var(--t-th)',
-  fontWeight: 600,
-  color: 'var(--text2)',
-  whiteSpace: 'nowrap' as const,
-  borderBottom: '1px solid var(--border)',
-}
-const td = {
-  padding: '9px 8px',
-  fontSize: 'var(--t-meta)',
-  color: 'var(--text)',
-  verticalAlign: 'top' as const,
-  whiteSpace: 'nowrap' as const,
-}
-/** Pins the Actions column so it survives the table's horizontal scroll. */
-const stickyRight = {
-  position: 'sticky' as const,
-  right: 0,
-  textAlign: 'right' as const,
-  borderLeft: '1px solid var(--border)',
-}
+/* Law 15 — the law is the hit area, and `--tap` holds the number. Kept as
+   `minHeight` so the three call sites that used to bump this to 34 or shrink it
+   to 28 (search, sort, rows-per-page) can no longer opt below the floor: a
+   local `height` loses to `min-height`, which is exactly what we want here. */
 const fieldStyle = {
   width: '100%',
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-sm)',
   border: '1px solid var(--input-border)',
@@ -173,178 +153,6 @@ function DocTile({ icon, index }: { icon: IconName; index: number }) {
   )
 }
 
-function ActionIcon({ name, label, why }: { name: IconName; label: string; why: string }) {
-  return (
-    <button
-      type="button"
-      disabled
-      aria-label={`${label} — unavailable`}
-      title={`${label} — ${why}`}
-      style={{
-        width: 24,
-        height: 24,
-        borderRadius: 'var(--r-xs)',
-        border: 'none',
-        background: 'transparent',
-        color: 'var(--disabled)',
-        cursor: 'not-allowed',
-        display: 'grid',
-        placeItems: 'center',
-      }}
-    >
-      <Icon name={name} size={14} />
-    </button>
-  )
-}
-
-/**
- * §11's row menu — Download · Print · Email · WhatsApp · Share Link ·
- * Duplicate · Archive. **No Delete**: §6 keeps every document for ever.
- *
- * The menu itself is real; each entry that needs storage or delivery says why
- * it cannot run. `Open related record` is the one that works today.
- */
-/** Tallest the menu gets — the related-record link, divider, all 7 `ROW_MENU` entries, and the closing note. */
-const DOC_MENU_H = 320
-
-function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle: () => void }) {
-  const target = RELATED_TARGET[row.relatedKind]
-  const { ref, up, measure } = useMenuFlip<HTMLButtonElement>(DOC_MENU_H)
-  return (
-    <span style={{ position: 'relative', display: 'inline-flex' }}>
-      <button
-        ref={ref}
-        type="button"
-        aria-label={`Actions for ${row.id}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => {
-          if (!open) measure()
-          onToggle()
-        }}
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: 'var(--r-xs)',
-          border: 'none',
-          background: open ? 'var(--hover-card)' : 'transparent',
-          color: 'var(--muted)',
-          cursor: 'pointer',
-          display: 'grid',
-          placeItems: 'center',
-        }}
-      >
-        <Icon name="more_vert" size={14} />
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          style={{
-            position: 'absolute',
-            right: 0,
-            ...(up ? { bottom: 30 } : { top: 30 }),
-            minWidth: 208,
-            padding: 6,
-            borderRadius: 'var(--r-btn)',
-            background: 'var(--dropdown)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-modal)',
-            zIndex: 30,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {target.route ? (
-            <Link
-              to={`${target.route}/${row.relatedTo}`}
-              role="menuitem"
-              style={{ ...menuItem, color: 'var(--text)', cursor: 'pointer' }}
-            >
-              <Icon name="external_link" size={15} style={{ color: 'var(--text2)' }} />
-              <span style={{ flex: 1 }}>Open {row.relatedTo}</span>
-            </Link>
-          ) : (
-            <span
-              role="menuitem"
-              aria-disabled
-              tabIndex={0}
-              title={`${target.label} screen is not built yet`}
-              style={{ ...menuItem, color: 'var(--muted)', cursor: 'not-allowed' }}
-            >
-              <Icon name="external_link" size={15} style={{ color: 'var(--disabled)' }} />
-              <span style={{ flex: 1 }}>Open {row.relatedTo}</span>
-            </span>
-          )}
-
-          <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
-
-          {ROW_MENU.map((m) => (
-            <span
-              key={m.label}
-              role="menuitem"
-              aria-disabled
-              tabIndex={0}
-              title={NOT_BUILT}
-              style={{ ...menuItem, color: 'var(--muted)', cursor: 'not-allowed' }}
-            >
-              <Icon name={m.icon} size={15} style={{ color: 'var(--disabled)' }} />
-              <span style={{ flex: 1 }}>{m.label}</span>
-              <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />
-            </span>
-          ))}
-
-          {/* §6 — the absence of Delete is the point, so the menu says so. */}
-          <p style={{ margin: '6px 8px 2px', fontSize: 'var(--t-th)', color: 'var(--muted)', whiteSpace: 'normal', lineHeight: 1.4 }}>
-            {ARCHIVED_NOT_RECYCLE_BIN}
-          </p>
-        </div>
-      )}
-    </span>
-  )
-}
-
-const menuItem = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 9,
-  width: '100%',
-  height: 32,
-  padding: '0 9px',
-  borderRadius: 'var(--r-sm)',
-  border: 'none',
-  background: 'transparent',
-  fontSize: 'var(--t-meta)',
-  fontFamily: 'inherit',
-  textAlign: 'left' as const,
-  textDecoration: 'none',
-}
-
-function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        minWidth: 26,
-        height: 26,
-        borderRadius: 7,
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
-
 /**
  * **Create Document** — the one control on this screen that claimed to work.
  *
@@ -373,8 +181,6 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
  * to. `CreateDocumentInput` already takes `relatedBookingId`, and nothing in
  * this repo rules who chooses it. A page may not answer that (CLAUDE.md).
  */
-const CREATE_UNAVAILABLE =
-  'Not built yet — document storage is unwired, and no form asks what the document should be called'
 
 /**
  * **Documents** — built against `03 Core Modules/Documents.PNG` with the
@@ -414,23 +220,63 @@ const CREATE_UNAVAILABLE =
  */
 export default function Documents({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth()
+  /* §8.3 — the shared hook, same call site as every other screen. `role` is
+     still read off the session below, but only for `gateContext`'s field-level
+     gating; the money answer itself has one owner. */
+  const money = useCanViewMoney()
   const role: SystemRole = user ? user.role : 'Client'
-  const money = canViewMoney(role)
   // `gateContext` returns a fresh object each call — memoized so it is a
   // stable dependency for the row-intel memo below instead of invalidating
   // it on every render.
   const gctx = useMemo(() => gateContext(role), [role])
 
-  const categories = useMemo(() => categoriesFor(money), [money])
-  const allDocs = useMemo(() => documentsFor(money), [money])
-  const kpis = useMemo(() => kpisFor(money), [money])
-  const slices = useMemo(() => summarySlices(categories), [categories])
-  const missing = useMemo(() => missingFor(money), [money])
-  const expiring = useMemo(() => expiringFor(money), [money])
-  const quickActions = useMemo(() => quickActionsFor(money), [money])
+  const [docRows, setDocRows] = useState<DocRow[]>(() => IS_MOCK ? documentsFor(money) : [])
+  const [docError, setDocError] = useState<string | null>(null)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+
+  const refetchDocs = useCallback(() => {
+    setDocError(null)
+    listDocuments().then((res) => {
+      setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
+    }).catch((error: unknown) => setDocError(error instanceof Error ? error.message : 'Documents could not be loaded.'))
+  }, [money])
+
+  useEffect(() => {
+    let mounted = true
+    listDocuments().then((res) => {
+      if (mounted) {
+        setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
+      }
+    }).catch((error: unknown) => { if (mounted) setDocError(error instanceof Error ? error.message : 'Documents could not be loaded.') })
+    return () => {
+      mounted = false
+    }
+  }, [money])
+
+  const allDocs: DocRow[] = docRows
+  const categories = useMemo(() => categoriesFor(money, allDocs), [money, allDocs])
+  const missing = useMemo(() => IS_MOCK ? missingFor(money) : [], [money])
+  const expiring = useMemo(() => IS_MOCK ? expiringFor(money) : [], [money])
   const total = useMemo(() => categories.reduce((a, c) => a + c.count, 0), [categories])
 
-  const [category, setCategory] = useState<CategoryKey | 'All'>('All')
+  /*
+   * 3.7 — the category selection (the tab strip and the rail's category list,
+   * one shared selection) lives in the URL as `?cat=`, per the house pattern
+   * (Inventory `?tab=`, OperationsQueues `patch()`): a category is linkable
+   * and survives a reload. `replace: true` keeps tab flicks out of the
+   * history stack.
+   *
+   * The key is `cat`, not `tab`, deliberately: this screen is also hosted as
+   * Finance's Documents tab (`embedded`), so its param must never collide
+   * with a `?tab=` that strip may claim.
+   *
+   * Validated against `categories` — the MONEY-FILTERED list — so a
+   * money-blind session pasting `?cat=finance` lands on All rather than being
+   * told a Finance category exists (§14 / Foundation §8.3).
+   */
+  const [params, setParams] = useSearchParams()
+  const catParam = params.get('cat')
+  const category: CategoryKey | 'All' = categories.find((c) => c.key.toLowerCase() === catParam)?.key ?? 'All'
   const [query, setQuery] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -439,6 +285,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const [related, setRelated] = useState(ALL_RELATED)
   const [branch, setBranch] = useState(ALL_BRANCHES)
   const [sort, setSort] = useState<SortKey>('Created Date')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   /*
     Spec 9.5 draws a card grid ("TABLET 3-up · PHONE 2-up") and this screen
     had no width read at all: `cards` defaulted to false at every width, so a
@@ -448,13 +295,13 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     count is set per band rather than left to `auto-fill`.
   */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const desktop = viewport === 'desktop'
   const [cards, setCards] = useState(false)
   const cardView = viewport === 'phone' ? true : cards
-  const [perPage, setPerPage] = useState<number>(PER_PAGE[0] ?? 10)
+  const [perPage, setPerPage] = useState<number>(25)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [menuFor, setMenuFor] = useState<string | null>(null)
 
   const types = useMemo(() => {
     const set = new Set(allDocs.map((d) => d.type))
@@ -480,9 +327,22 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   }
 
   function pickCategory(c: CategoryKey | 'All') {
-    setCategory(c)
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (c === 'All') next.delete('cat')
+        else next.set('cat', c.toLowerCase())
+        return next
+      },
+      { replace: true },
+    )
     setPage(1)
-    setMenuFor(null)
+  }
+
+  function clearDocumentFilters() {
+    clearAll()
+    pickCategory('All')
+    setSelected(new Set())
   }
 
   const rows = useMemo(() => {
@@ -518,6 +378,16 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     return sorted
   }, [allDocs, category, query, type, status, related, branch, from, to, sort])
 
+  const documentFilterCount = [
+    category !== 'All',
+    query.trim() !== '',
+    from !== '' || to !== '',
+    type !== ALL_TYPES,
+    status !== ALL_STATUS,
+    related !== ALL_RELATED,
+    branch !== ALL_BRANCHES,
+  ].filter(Boolean).length
+
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
   const current = Math.min(page, pageCount)
   // Memoized so its identity only changes when the page's actual row set
@@ -547,6 +417,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         .map(cell)
         .join(','),
     )
+    recordExport({ list: 'documents', module: 'Operations', rowCount: rows.length, columns: head })
     const blob = new Blob([[head.map(cell).join(','), ...body].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -591,125 +462,70 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }} onClick={() => setMenuFor(null)}>
-      <ScreenHeader
-        embedded={embedded}
-        icon="file"
-        title="Documents"
-        description="Every rental and finance document in one place. Create, manage, send and track — a document exists once."
-        actions={
-          <>
-            <Unavailable reason={NOT_BUILT}>
-              <Button icon="upload" disabled>
-                Upload Document
+    <PageShell width="full">
+      <div className="doc-v2">
+        {docError && <ErrorBanner title="Documents could not be loaded." message={docError} onRetry={refetchDocs} />}
+        <ScreenHeader
+          embedded={embedded}
+          leading={
+            <FilterButton
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              activeCount={documentFilterCount}
+              controls="documents-filters"
+              expanded={filtersOpen}
+            />
+          }
+          title="Documents"
+          actions={
+            <>
+              <Button icon="download" aria-label="Export documents" onClick={exportCsv}>
+                {phone ? '' : 'Export'}
               </Button>
-            </Unavailable>
-            <Unavailable reason={NOT_BUILT}>
-              <Button icon="upload" disabled>
-                Import
+              <Button
+                icon="plus"
+                variant="primary"
+                aria-label="Create Document"
+                onClick={() => setIsCreateOpen(true)}
+              >
+                {phone ? '' : 'Create Document'}
               </Button>
-            </Unavailable>
-            <Button icon="download" onClick={exportCsv}>
-              Export
-            </Button>
-            <Unavailable reason={CREATE_UNAVAILABLE}>
-              <Button icon="plus" variant="primary" disabled>
-                Create Document
-              </Button>
-            </Unavailable>
-          </>
-        }
-      />
+            </>
+          }
+        />
 
-      <KpiStrip items={kpis} columns={kpis.length} />
 
-      {/* §2 — tabs. The rail's category list below shares this one selection,
-          so the two controls can never disagree about what is on screen. */}
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-        {[{ key: 'All' as const, tab: ALL_TAB }, ...categories].map((t) => {
-          const on = category === t.key
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => pickCategory(t.key)}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                height: 36,
-                padding: '0 12px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                marginBottom: -1,
-              }}
-            >
-              {t.tab}
-            </button>
-          )
-        })}
-      </div>
+        {/* §2 — tabs. The rail's category list below shares this one selection,
+            so the two controls can never disagree about what is on screen. */}
+        <div className="doc-tab-track rsp-chip-scroll">
+          {[{ key: 'All' as const, tab: ALL_TAB, count: total }, ...categories].map((t) => {
+            const on = category === t.key
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => pickCategory(t.key)}
+                aria-current={on ? 'page' : undefined}
+                className={`doc-tab-btn ${on ? 'is-active' : ''}`}
+              >
+                <span>{t.tab}</span>
+                <span className="doc-tab-count doc-mono">{t.count}</span>
+              </button>
+            )
+          })}
+        </div>
 
-      {/* The render's three columns: a ~200px category + filter rail, the list,
-          and a 300px summary rail. The left rail is a little wider here so
-          "Maintenance Documents" sets on one line at the theme's UI size. */}
-      <div style={{ display: 'grid', gridTemplateColumns: desktop ? 'auto minmax(0,1fr) auto' : 'minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
-        {/* ── left rail ─────────────────────────────────────────────────── */}
-        {(() => {
-          const categoriesContent = (
-          <>
-          <Card title="Document Categories" bodyStyle={{ padding: 6 }}>
-            {[{ key: 'All' as const, rail: ALL_TAB, icon: 'file' as IconName, count: total }, ...categories].map((c) => {
-              const on = category === c.key
-              const tint = c.key === 'All' ? 'var(--text2)' : catColor(categoryIndex(c.key as CategoryKey))
-              return (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={() => pickCategory(c.key)}
-                  aria-pressed={on}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--sp-sm)',
-                    width: '100%',
-                    height: 32,
-                    padding: '0 8px',
-                    borderRadius: 'var(--r-sm)',
-                    border: 'none',
-                    background: on ? 'var(--nav-active-bg)' : 'transparent',
-                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: on ? 700 : 500,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <Icon name={c.icon} size={14} style={{ color: on ? 'var(--nav-active-accent)' : tint, flexShrink: 0 }} />
-                  <span
-                    style={{
-                      flex: 1,
-                      textAlign: 'left',
-                      minWidth: 0,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {c.rail}
-                  </span>
-                  <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', flexShrink: 0 }}>
-                    {c.count.toLocaleString('en-IN')}
-                  </span>
-                </button>
-              )
-            })}
-          </Card>
-
+        {/* Filters open from the list toolbar and occupy no grid width. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
+            gap: 'var(--sp-md)',
+            alignItems: 'start',
+          }}
+        >
+          {(() => {
+            const categoriesContent = (
+            <>
           <Card
             title="Filters"
             action={
@@ -737,24 +553,27 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               <div>
                 <span style={labelStyle}>Date Range</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <Input
-                    type="date"
-                    aria-label="Created from"
+                  <DateField
+                    ariaLabel="Created from"
                     value={from}
-                    onChange={(e) => {
-                      setFrom(e.target.value)
+                    onChange={(v) => {
+                      setFrom(v)
                       setPage(1)
                     }}
+                    showBs={false}
+                    clearable
                     style={fieldStyle}
                   />
-                  <Input
-                    type="date"
-                    aria-label="Created to"
+                  <DateField
+                    ariaLabel="Created to"
                     value={to}
-                    onChange={(e) => {
-                      setTo(e.target.value)
+                    onChange={(v) => {
+                      setTo(v)
                       setPage(1)
                     }}
+                    showBs={false}
+                    clearable
+                    align="right"
                     style={fieldStyle}
                   />
                 </div>
@@ -843,57 +662,49 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           </Card>
           </>
           )
-          /* Rulings §7 — reflow, not hide. `order: 2` puts the categories and
-             filters beneath the list below 1180 instead of behind a handle. */
-          return desktop ? (
-            <SideRail width={228} label="Categories">{categoriesContent}</SideRail>
-          ) : (
-            <div style={{ order: 2, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{categoriesContent}</div>
+          return (
+            <FilterDrawer
+              id="documents-filters"
+              open={filtersOpen}
+              onClose={() => setFiltersOpen(false)}
+              desktopMode="overlay"
+              width={360}
+              resultCount={rows.length}
+              noun={rows.length === 1 ? 'document' : 'documents'}
+              activeCount={documentFilterCount}
+              onClearAll={clearDocumentFilters}
+              standardFooter
+              onApply={() => setFiltersOpen(false)}
+            >
+              {categoriesContent}
+            </FilterDrawer>
           )
         })()}
 
         {/* ── centre ────────────────────────────────────────────────────── */}
         <Card bodyStyle={{ padding: 0 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              padding: '10px 12px',
-              borderBottom: '1px solid var(--border)',
-              flexWrap: 'wrap',
-            }}
-          >
-            {/* Stripped when hosted as Finance's Documents tab: the Shell already
-                renders a search field for `/finance`, and two search boxes on one
-                page filtering different sets is the duplication `CONFLICTS.md`
-                §09.2 named. `query` itself stays wired — the state, the filter
-                and the empty state's "clear the search" affordance are unchanged,
-                so nothing downstream has to know which mount it is in. */}
-            {!embedded && (
-              <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
-                <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
-                <Input
-                  type="search"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value)
-                    setPage(1)
-                  }}
-                  placeholder="Search in documents…"
-                  aria-label="Search documents by name, ID, type, record or client"
-                  style={{ ...fieldStyle, height: 34, paddingLeft: 30 }}
-                />
-              </span>
-            )}
-            {embedded && <span style={{ flex: 1, minWidth: 0 }} />}
-
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <ListControlRow
+            search={
+              <SearchInput
+                value={query}
+                onChange={(val) => {
+                  setQuery(val)
+                  setPage(1)
+                }}
+                onClear={() => {
+                  setQuery('')
+                  setPage(1)
+                }}
+                placeholder="Search in documents…"
+                aria-label="Search documents by name, ID, type, record or client"
+              />
+            }
+            sort={<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort by
               <Select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortKey)}
-                style={{ ...fieldStyle, width: 'auto', height: 34 }}
+                className="doc-sort-select"
               >
                 {SORTS.map((s) => (
                   <option key={s} value={s}>
@@ -901,9 +712,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   </option>
                 ))}
               </Select>
-            </label>
-
-            <span style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
+            </label>}
+            view={<span className="doc-view-toggle">
               {([['Table', false], ['Cards', true]] as const).map(([label, isCards]) => {
                 // `cardView`, not `cards` — below 768 the width forces cards, so
                 // the pressed state has to say what is actually rendering.
@@ -916,72 +726,40 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                     aria-pressed={on}
                     aria-label={`${label} view`}
                     title={`${label} view`}
-                    style={{
-                      // Law 15 — 44××4 at every width; this was 30×28.
-                      minWidth: 44,
-                      minHeight: 44,
-                      borderRadius: 7,
-                      border: 'none',
-                      background: on ? 'var(--card)' : 'transparent',
-                      color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                      cursor: 'pointer',
-                      display: 'grid',
-                      placeItems: 'center',
-                      boxShadow: on ? 'var(--shadow-card)' : 'none',
-                    }}
+                    className={`doc-view-btn ${on ? 'is-active' : ''}`}
                   >
                     <Icon name={isCards ? 'queues' : 'checklist'} size={15} />
                   </button>
                 )
               })}
-            </span>
-          </div>
+            </span>}
+          />
+
+          <AppPageToolbar
+            pagination={
+              <Pagination
+                page={current}
+                total={rows.length}
+                pageSize={perPage}
+                pageSizeOptions={PER_PAGE}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPerPage(size)
+                  setPage(1)
+                }}
+              />
+            }
+          />
 
           {/* §11 — the bulk bar appears only on selection. */}
           {selected.size > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-sm)',
-                padding: '8px 12px',
-                borderBottom: '1px solid var(--border)',
-                background: 'var(--nav-active-bg)',
-                flexWrap: 'wrap',
-              }}
-            >
-              <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--nav-active-accent)' }}>
+            <div className="doc-bulk-bar">
+              <span className="doc-bulk-count figure doc-mono">
                 {selected.size} selected
               </span>
-              {/*
-                §9.5 — *"Merge: pick several → [Consolidate] (on demand, not
-                monthly)."* Consolidate joins the bulk bar because that is what
-                the wireframe describes: a selection verb, not a scheduled job.
-                "On demand, not monthly" is a real instruction — it rules out
-                the batch/statement-run reading — and the control being here
-                rather than in a settings screen is what encodes it.
-
-                Drawn disabled with its own reason, not the shared one: merging
-                is not merely unbuilt, it is undecided. Nothing rules whether the
-                consolidated PDF is a NEW document in the register (and if so,
-                under which type and whose number from `numbering.ts`) or a
-                one-off download that is never stored. Law 3 makes that a
-                consequential difference — a new document has a terminal action
-                and an audit trail; a download has neither. TODO(decision).
-
-                Archive keeps its place beside it: §9.5's *"Terminal action is
-                Archive"*, and there is no Delete anywhere on this screen.
-              */}
-              <Unavailable reason="Consolidating several documents into one is not built, and the shape is not ruled: whether the result is a new document in the register — with its own type, its own number from numbering.ts and its own terminal action — or a one-off download that is never stored. TODO(decision) — PLAN.md §4.">
-                <Button icon="file" disabled>
-                  Consolidate
-                </Button>
-              </Unavailable>
-              {['Download', 'Email', 'Archive'].map((b) => (
-                <Unavailable key={b} reason={NOT_BUILT}>
-                  <Button disabled>{b}</Button>
-                </Unavailable>
-              ))}
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                ({rows.filter((r) => selected.has(r.id)).length} documents)
+              </span>
               <button
                 type="button"
                 onClick={() => setSelected(new Set())}
@@ -1016,47 +794,49 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </div>
           ) : cardView ? (
             <div
+              className="doc-cards-grid"
               style={{
-                display: 'grid',
                 gridTemplateColumns:
                   viewport === 'phone' ? 'repeat(2, minmax(0,1fr))' : viewport === 'tablet' ? 'repeat(3, minmax(0,1fr))' : 'repeat(auto-fill, minmax(238px, 1fr))',
-                gap: 'var(--sp-md)',
-                padding: 'var(--sp-md)',
               }}
             >
               {visible.map((d) => {
                 const cat = categories.find((c) => c.key === d.category)
+                const bs = toBs(d.createdAd)
                 return (
-                  <article key={d.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                  <article key={d.id} className="doc-card">
+                    <div className="doc-card-header">
                       <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span className="doc-card-title">
                           {d.name}
                         </span>
-                        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                        <span className="identifier doc-card-id doc-mono">
                           {d.id}
                         </span>
                       </span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <div className="doc-card-meta">
                       <TypeChip text={d.type} />
                       <StatusPill status={d.status} />
                     </div>
-                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{d.party}</span>
-                    <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                      {d.recordState} · <span className="figure">{formatAd(d.createdAd)}</span>
-                    </span>
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 500 }}>{d.party}</span>
+                    <div className="doc-card-footer">
+                      {d.recordState !== d.status && <span>{d.recordState}</span>}
+                      <span className="figure doc-mono">
+                        {bs ? formatBs(bs) : formatAd(d.createdAd)}
+                      </span>
+                    </div>
                   </article>
                 )
               })}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+            <DataTableShell ariaLabel="Documents" data-table-scroll className="doc-table-shell">
+              <table className="doc-table">
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    <th style={{ ...th, width: 30 }}>
+                    <th className="doc-th" style={{ width: 30 }}>
                       <input
                         type="checkbox"
                         aria-label="Select every document on this page"
@@ -1071,18 +851,17 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                         }
                       />
                     </th>
-                    <th style={th}>{sortHeader('Document Name', 'Document Name')}</th>
-                    <th style={th}>{sortHeader('Type', 'Type')}</th>
-                    <th style={th}>Related To</th>
+                    <th className="doc-th">{sortHeader('Document Name', 'Document Name')}</th>
+                    <th className="doc-th">{sortHeader('Type', 'Type')}</th>
+                    <th className="doc-th">Related To</th>
                     {/* The render's header reads "Client / Vendor"; the word
                         "customer" appears nowhere in this product. */}
-                    <th style={th}>{sortHeader('Client / Vendor', 'Client / Vendor')}</th>
-                    <th style={th}>{sortHeader('Status', 'Status')}</th>
-                    <th style={th}>{sortHeader('Created On', 'Created Date')}</th>
+                    <th className="doc-th">{sortHeader('Client / Vendor', 'Client / Vendor')}</th>
+                    <th className="doc-th">{sortHeader('Status', 'Status')}</th>
+                    <th className="doc-th">{sortHeader('Created On', 'Created Date')}</th>
                     {/* Eight columns do not fit a 300px-rail layout below a very
                         wide viewport, so the actions pin to the right edge and
                         stay reachable instead of scrolling out of sight. */}
-                    <th style={{ ...th, ...stickyRight, background: 'var(--th-bg)' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1091,8 +870,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                     const bs = toBs(d.createdAd)
                     const target = RELATED_TARGET[d.relatedKind]
                     return (
-                      <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ ...td, width: 30 }}>
+                      <tr key={d.id} className="doc-row">
+                        <td className="doc-td" style={{ width: 30 }}>
                           <input
                             type="checkbox"
                             aria-label={`Select ${d.id}`}
@@ -1101,21 +880,25 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           />
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           <IntelCard
                             glance={glance}
                             detail={detail}
                             detailTitle={d.name}
                             detailSubtitle={`${d.id} · ${d.type}`}
+                            entityType="document"
+                            entityId={d.id}
+                            context="documents"
+                            gateContext={gctx}
                           >
                             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                               <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
                               <span style={{ minWidth: 0 }}>
-                                <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                <span data-intel-identifier style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
                                   {d.name}
                                 </span>
                                 {/* §4 — one prefix per type; templates carry id · version. */}
-                                <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                                <span data-intel-identifier className="identifier doc-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
                                   {d.id}
                                 </span>
                               </span>
@@ -1123,15 +906,15 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           </IntelCard>
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           <TypeChip text={d.type} />
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           {target.route ? (
                             <Link
                               to={`${target.route}/${d.relatedTo}`}
-                              className="identifier"
+                              className="identifier doc-mono"
                               style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
                             >
                               {d.relatedTo}
@@ -1139,20 +922,18 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           ) : d.relatedTo === '—' ? (
                             <span style={{ color: 'var(--muted)' }}>—</span>
                           ) : (
-                            <Unavailable reason={`The ${target.label} screen is not built yet`}>
-                              <span className="identifier" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
-                                {d.relatedTo}
-                              </span>
-                            </Unavailable>
+                            <span className="identifier doc-mono" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                              {d.relatedTo}
+                            </span>
                           )}
                         </td>
 
-                        <td style={{ ...td, color: 'var(--text2)', whiteSpace: 'normal' }}>{d.party}</td>
+                        <td className="doc-td" style={{ color: 'var(--text2)', whiteSpace: 'normal' }}>{d.party}</td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           <StatusPill status={d.status} />
                           {/* §5.2 — the record's state, never merged into the pill. */}
-                          <span
+                          {d.recordState !== d.status && <span
                             style={{
                               display: 'block',
                               marginTop: 'var(--sp-xs)',
@@ -1163,100 +944,33 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                             }}
                           >
                             {d.recordState}
-                          </span>
+                          </span>}
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           {/* §3 — BS above AD, both from the one Date Engine. */}
-                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
+                          <span className="figure doc-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>
                             {bs ? formatBs(bs) : '—'}
                           </span>
-                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                          <span className="figure doc-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
                             {formatAd(d.createdAd)}, {d.createdTime}
                           </span>
                         </td>
 
-                        <td
-                          style={{ ...td, ...stickyRight, padding: '9px 6px', background: 'var(--card)' }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
-                            <ActionIcon name="eye" label="View" why={NOT_BUILT} />
-                            <ActionIcon name="download" label="Download" why={NOT_BUILT} />
-                            <ActionIcon name="upload" label="Send" why={NOT_BUILT} />
-                            <RowMenu
-                              row={d}
-                              open={menuFor === d.id}
-                              onToggle={() => setMenuFor((m) => (m === d.id ? null : d.id))}
-                            />
-                          </span>
-                        </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--sp-md)',
-              padding: '10px 12px',
-              flexWrap: 'wrap',
-              fontSize: 'var(--t-meta)',
-              color: 'var(--text2)',
-              borderTop: '1px solid var(--border)',
-            }}
-          >
-            <span>
-              {rows.length === 0
-                ? 'Showing 0 documents'
-                : `Showing ${(current - 1) * perPage + 1} to ${Math.min(current * perPage, rows.length)} of ${rows.length} documents`}
-            </span>
-
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-              <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
-              ))}
-              <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
-            </span>
-
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              Rows per page
-              <Select
-                value={perPage}
-                onChange={(e) => {
-                  setPerPage(Number(e.target.value))
-                  setPage(1)
-                }}
-                className="figure"
-                style={{ ...fieldStyle, width: 'auto', height: 28 }}
-              >
-                {PER_PAGE.map((n) => (
-                  <option key={n} value={n}>
-                    {n} / page
-                  </option>
-                ))}
-              </Select>
-            </label>
-          </div>
         </Card>
 
         {/* ── right rail ────────────────────────────────────────────────── */}
         {(() => {
           const summaryContent = (
           <>
-          <Card title="Document Summary">
-            <div style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
-              <Donut slices={slices} centreLabel="Total" centreValue={total.toLocaleString('en-IN')} size={96} />
-              <Legend slices={slices} />
-            </div>
-          </Card>
-
           <Card
             title="Pending Signatures"
             action={
@@ -1286,22 +1000,19 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               {allDocs
                 .filter((d) => d.status === 'Pending Signature' && !d.archived)
                 .map((p) => (
-                  <div key={p.id} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                  <div key={p.id} className="doc-alert-item">
                     <Icon name="crew" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: 'block', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <span style={{ display: 'block', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {p.type}
                       </span>
                       <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                        <span className="identifier">{p.relatedTo}</span> · {p.party}
+                        <span className="identifier doc-mono">{p.relatedTo}</span> · {p.party}
                       </span>
                     </span>
                     <span
-                      className="figure"
+                      className="doc-alert-ageing doc-mono"
                       style={{
-                        fontSize: 'var(--t-th)',
-                        fontWeight: 700,
-                        flexShrink: 0,
                         color: p.ageingSevere ? 'var(--danger-text)' : 'var(--progress-text)',
                       }}
                     >
@@ -1310,32 +1021,22 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   </div>
                 ))}
               <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <span className="figure">{PENDING_SIGNATURE_TOTAL}</span> documents pending signature across the
+                <span className="figure doc-mono">{allDocs.filter((doc) => doc.status === 'Pending Signature').length}</span> documents pending signature across the
                 installation.
               </p>
             </div>
           </Card>
 
-          <Card
-            title="Missing Documents"
-            action={
-              <Unavailable
-                reason="A missing document has no row to open — the gate that requires it lives on the booking"
-                style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}
-              >
-                View All
-              </Unavailable>
-            }
-          >
+          <Card title="Missing Documents">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {missing.map((m) => (
-                <div key={m.doc + m.booking} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                <div key={m.doc + m.booking} className="doc-alert-item">
                   <Icon name="alert_triangle" size={13} style={{ color: 'var(--danger-text)', flexShrink: 0 }} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>{m.doc}</span>
                     {/* §0 — the panel names the booking and the client. */}
                     <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                      <Link to={`/rentals/${m.booking}`} className="identifier" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                      <Link to={`/rentals/${m.booking}`} className="identifier doc-mono" style={{ color: 'var(--link)', textDecoration: 'none' }}>
                         {m.booking}
                       </Link>{' '}
                       · {m.client}
@@ -1360,7 +1061,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 </div>
               ))}
               <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <span className="figure">{MISSING_TOTAL}</span> missing in active rentals — each blocks its own gate.
+                {IS_MOCK ? <><span className="figure doc-mono">{missing.length}</span> missing in active rentals.</> : 'Missing-document checks are not tracked yet.'}
               </p>
             </div>
           </Card>
@@ -1371,10 +1072,10 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           <Card title="Expiring / Due Soon">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {expiring.map((e) => (
-                <div key={e.doc} style={{ fontSize: 'var(--t-meta)' }}>
+                <div key={e.doc} className="doc-alert-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
                   <span style={{ display: 'block', color: 'var(--text)', fontWeight: 600 }}>{e.doc}</span>
                   <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
-                    {e.what} <span style={{ color: 'var(--progress-text)', fontWeight: 700 }}>{e.when}</span>
+                    {e.what} <span className="doc-mono" style={{ color: 'var(--progress-text)', fontWeight: 700 }}>{e.when}</span>
                   </span>
                   <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{e.action}</span>
                 </div>
@@ -1382,68 +1083,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </div>
           </Card>
 
-          <Card title="Quick Actions" bodyStyle={{ padding: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(quickActions.length, 4)}, minmax(0,1fr))`, gap: 7 }}>
-              {quickActions.map((q) => (
-                <button
-                  key={q.label}
-                  type="button"
-                  disabled
-                  title={`${q.label} — ${NOT_BUILT}`}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '10px 4px',
-                    borderRadius: 10,
-                    border: '1px solid var(--border)',
-                    background: 'var(--card2)',
-                    color: 'var(--disabled)',
-                    fontSize: 'var(--t-th)',
-                    fontWeight: 600,
-                    fontFamily: 'inherit',
-                    cursor: 'not-allowed',
-                    textAlign: 'center',
-                    lineHeight: 1.25,
-                  }}
-                >
-                  <Icon name={q.icon} size={17} />
-                  {q.label}
-                </button>
-              ))}
-            </div>
-
-            {/* The one tile with somewhere real to go. */}
-            <button
-              type="button"
-              onClick={() => pickCategory('Templates')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 7,
-                width: '100%',
-                height: 34,
-                marginTop: 'var(--sp-sm)',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--btn-secondary-border)',
-                background: 'var(--btn-secondary-bg)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-              }}
-            >
-              <Icon name="checklist" size={14} />
-              Document Templates
-            </button>
-
-            <p style={{ margin: '8px 2px 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
-              Creating and uploading documents needs storage, which is unwired — the tiles stay visible and say so.
-            </p>
-          </Card>
           </>
           )
           return desktop ? (
@@ -1454,13 +1093,12 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         })()}
       </div>
 
-      <FooterNote
-        extra={[
-          'A document exists once and is linked wherever needed',
-          ARCHIVED_NOT_RECYCLE_BIN,
-          'Category counts are installation totals; the table lists the seeded sample',
-        ]}
+      <CreateDocumentModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onSuccess={refetchDocs}
       />
-    </div>
+      </div>
+    </PageShell>
   )
 }

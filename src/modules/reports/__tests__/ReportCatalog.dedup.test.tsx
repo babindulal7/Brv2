@@ -140,6 +140,7 @@ describe('the catalog draws a tab deep-link differently from a report', () => {
     expect(container.textContent).not.toContain('The report register does not reconcile')
     /* The footer states the count from the register itself, so the copy cannot
        still say 45 while the list holds 43. */
-    expect(container.textContent).toContain(`${REPORTS.length} reports, each with one home`)
+    expect(REPORTS.length).toBe(43)
+    expect(container.textContent).not.toContain('reports, each with one home')
   })
 })

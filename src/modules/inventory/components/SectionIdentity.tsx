@@ -1,9 +1,27 @@
 import Icon from '../../../components/ui/Icon'
 import { Field, SectionCard, inputStyle, fieldRow } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { EQUIPMENT_CATEGORIES } from '../../../data/addEquipment'
+import { useInventoryCategories } from '../../../lib/queries/inventory'
 
 export function SectionIdentity() {
+  /*
+   * The categories that EXIST, read from `inventory_categories`.
+   *
+   * This offered `data/addEquipment.ts`'s `EQUIPMENT_CATEGORIES` — the
+   * seventeen members of the `product_category` ENUM. The TABLE holds six rows
+   * (Camera, Lens, Lighting, Audio, Grip, Support, seeded by
+   * `0012_seed_data.sql:115-123`, the only insert into it in any migration), and
+   * `products.category_id` is NOT NULL against it. `createEquipment` resolves the
+   * chosen label by name, so **eleven of the seventeen refused the save** after
+   * this form had reported every gate clear — the same shape as the warehouse
+   * picker below it, and the action's own error already named the gap.
+   *
+   * The NAME is still what the action resolves; only the list changed. Reading
+   * the table also means that if the other eleven enum members are ever seeded,
+   * they appear here with no code change.
+   */
+  const { rows: categories, loading: categoriesLoading } = useInventoryCategories()
+
   const {
     assetCode,
     name,
@@ -57,7 +75,7 @@ export function SectionIdentity() {
             </div>
 
             <div style={fieldRow}>
-              <Field label="Asset Code" hint="Auto, read-only. This is also the SKU — §4.">
+              <Field label="Asset Code" hint={/* Auto, read-only. This is also the SKU — §4. */ "Auto, read-only. This is also the SKU —"}>
                 <input value={assetCode} readOnly className="identifier" style={{ ...inputStyle(), background: 'var(--card)', color: 'var(--nav-active-accent)' }} />
               </Field>
               <Field label="Category" required error={errors.category}>
@@ -68,10 +86,16 @@ export function SectionIdentity() {
                   }}
                   style={inputStyle(Boolean(errors.category))}
                 >
-                  <option value="">Select a category</option>
-                  {EQUIPMENT_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                  <option value="">
+                    {categoriesLoading
+                      ? 'Loading categories…'
+                      : categories.length === 0
+                        ? 'No category exists to file this under'
+                        : 'Select a category'}
+                  </option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
                     </option>
                   ))}
                 </select>
@@ -93,7 +117,16 @@ export function SectionIdentity() {
 
             {/* §3 — Manufacturer appears only when it differs from Brand. */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', cursor: 'pointer' }}>
+              {/* The tick stays 15px. Blowing a native checkbox up to 44 looks
+                  like a rendering fault, and §5 is clear that the law is the hit
+                  area and not the paint. A <label> forwards every click to the
+                  control it wraps, so the label IS the target: give it
+                  min-height 44 and the whole sentence — box, wording and the
+                  grey aside — becomes one comfortable thumb-sized row. Same
+                  wrapper Handover, Packing and Reset already use for their line
+                  checkboxes, and it uses their plain number rather than
+                  --tap so the three read identically side by side. */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minHeight: 44, fontSize: 'var(--t-meta)', color: 'var(--text2)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={manufacturerDiffers}
@@ -174,6 +207,7 @@ export function SectionIdentity() {
                 <input
                   ref={thumbInput}
                   type="file"
+                  aria-label="Upload thumbnail image"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(e) => {
                     addImages(e.target.files, 'thumb')
@@ -185,12 +219,32 @@ export function SectionIdentity() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
                 <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Images</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-sm)' }}>
+                {/* The gap was --sp-sm (8). Each remove glyph now carries a 44px
+                    hit area that reaches ~11px past the top-right corner of its
+                    own thumbnail, so at 8px two chips' targets would have met in
+                    the gutter — and the one later in the DOM would have quietly
+                    eaten the edge of its neighbour, including "Add More". --sp-lg
+                    (16) leaves 5px of clear air on both axes. Spacing problem,
+                    spacing fix. */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
                   {gallery.map((g) => (
-                    <span key={g.id} style={{ position: 'relative', width: 74, height: 60, borderRadius: 'var(--r-xs)', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                      <img src={g.url} alt={g.file.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    /* Two spans where there used to be one. The old single span
+                       carried the rounding, the border, the clip AND the remove
+                       button, and `overflow: hidden` clips hit-testing as hard
+                       as it clips paint — a 44px pseudo-element on a button
+                       pinned to the corner would have been sliced back to about
+                       33px and we would have shipped a target that only looked
+                       compliant. So the clip now wraps the image alone and the
+                       button is a sibling outside it, free to grow. Same 74x60
+                       box on screen: border-box is global, so the inner span at
+                       inset 0 paints exactly where the outer one used to. */
+                    <span key={g.id} style={{ position: 'relative', width: 74, height: 60 }}>
+                      <span style={{ position: 'absolute', inset: 0, borderRadius: 'var(--r-xs)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        <img src={g.url} alt={g.file.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </span>
                       <button
                         type="button"
+                        className="tap"
                         onClick={() => {
                           URL.revokeObjectURL(g.url)
                           setGallery((prev) => prev.filter((x) => x.id !== g.id))
@@ -212,6 +266,10 @@ export function SectionIdentity() {
                           padding: 0,
                         }}
                       >
+                        {/* 18px of paint is deliberate: a 44px badge would bury
+                            the thumbnail it is meant to sit on. `.tap` extends
+                            the hit area instead and leaves the glyph alone —
+                            §5's "the law is the HIT AREA, not the paint". */}
                         <Icon name="close" size={11} />
                       </button>
                     </span>
@@ -245,6 +303,7 @@ export function SectionIdentity() {
                 <input
                   ref={galleryInput}
                   type="file"
+                  aria-label="Upload gallery images"
                   multiple
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(e) => {

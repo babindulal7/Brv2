@@ -1,0 +1,181 @@
+{
+  "_metadata": {
+    "version": "1.0.0",
+    "updated_at": "2026-10-01",
+    "country": "Nepal",
+    "jurisdiction": "Kathmandu Valley",
+    "currency": "NPR",
+    "sources": [
+      "Department of Customs Nepal 2026-27 Harmonized Tariff",
+      "Nepal Rastra Bank Foreign Exchange Bulletin",
+      "Nepal Motion Picture Association (NMPA) Directory",
+      "Babin Rentals Internal Dealer Records"
+    ]
+  },
+  "authorized_dealers": [
+    {
+      "id": "DLR-SONY-NP",
+      "name": "Sony Light & Sound Nepal",
+      "location": "Pako, New Road, Kathmandu",
+      "authorized_brands": ["Sony Alpha", "Sony Cinema Line", "Sony Pro Audio"],
+      "services": ["Official Sony Pro Warranty", "Sensor Cleaning", "Mount Calibration", "Board Replacement"],
+      "turnaround_days": {
+        "minor": 2,
+        "board_replacement": 14,
+        "sensor_replacement": 30
+      },
+      "verified": true
+    },
+    {
+      "id": "DLR-SOHETO-NP",
+      "name": "Soheto Nepal Pvt Ltd",
+      "location": "Teku, Kathmandu",
+      "authorized_brands": ["Sachtler", "Teradek", "SmallHD", "Angenieux", "SWIT"],
+      "services": ["Broadcast Rigging", "Tripod Fluid Head Servicing", "Wireless Video Repair", "Custom SDI Cables"],
+      "turnaround_days": {
+        "minor": 1,
+        "hydraulic_rebuild": 7,
+        "board_replacement": 21
+      },
+      "verified": true
+    },
+    {
+      "id": "DLR-DJI-NP",
+      "name": "DJI Authorized Store Nepal",
+      "location": "Infinity Tower, Gongabu, Kathmandu",
+      "authorized_brands": ["DJI Ronin", "DJI Transmission", "DJI Focus Pro", "DJI Drones"],
+      "services": ["Gimbal Motor Balancing", "Arm Lock Servicing", "Focus Motor Repair", "OEM Spares"],
+      "turnaround_days": {
+        "minor": 2,
+        "motor_replacement": 10,
+        "firmware_recovery": 1
+      },
+      "verified": true
+    },
+    {
+      "id": "DLR-APUTURE-NP",
+      "name": "Aputure / Amaran Nepal Channel",
+      "location": "Putalisadak, Kathmandu",
+      "authorized_brands": ["Aputure", "Amaran", "DeSisti"],
+      "services": ["LED Fixture Servicing", "Cooling Fan Cleaning/Replacement", "Ballast Cable Swaps"],
+      "turnaround_days": {
+        "minor": 1,
+        "fan_replacement": 3,
+        "power_board": 18
+      },
+      "verified": true
+    }
+  ],
+  "customs_tariffs_2026_27": {
+    "camera_body_digital": {
+      "hs_code": "8525.89.00",
+      "customs_duty_pct": 15.0,
+      "vat_pct": 13.0,
+      "effective_multiplier": 1.2995,
+      "description": "Digital cinema cameras and professional video bodies"
+    },
+    "lenses_optical": {
+      "hs_code": "9002.11.00",
+      "customs_duty_pct": 10.0,
+      "vat_pct": 13.0,
+      "effective_multiplier": 1.243,
+      "description": "Camera objective lenses, cine primes, and zooms"
+    },
+    "video_monitors": {
+      "hs_code": "8528.52.00",
+      "customs_duty_pct": 15.0,
+      "vat_pct": 13.0,
+      "effective_multiplier": 1.2995,
+      "description": "Production monitors, EVFs, and on-camera field monitors"
+    },
+    "lighting_fixtures": {
+      "hs_code": "9405.42.00",
+      "customs_duty_pct": 15.0,
+      "vat_pct": 13.0,
+      "effective_multiplier": 1.2995,
+      "description": "LED studio and cinema lights, COB fixtures, and panels"
+    },
+    "lithium_batteries": {
+      "hs_code": "8507.60.00",
+      "customs_duty_pct": 10.0,
+      "vat_pct": 13.0,
+      "effective_multiplier": 1.243,
+      "description": "V-mount and camera lithium-ion accumulators"
+    },
+    "camera_support_gimbals": {
+      "hs_code": "8479.89.90",
+      "customs_duty_pct": 10.0,
+      "vat_pct": 13.0,
+      "effective_multiplier": 1.243,
+      "description": "3-axis motorized gimbals, sliders, and mechanical stabilization"
+    }
+  },
+  "procurement_parameters": {
+    "fx_hedging_buffer_pct": 1.5,
+    "transit_insurance_pct": 0.8,
+    "warranty_risk_reserve_pct": 5.0,
+    "local_clearing_flat_npr": 8500
+  },
+  "repair_ratio_thresholds": {
+    "cables_and_plates": { "min_pct": 1.0, "max_pct": 10.0, "default_action": "REPLACE_IN_HOUSE" },
+    "connectors_and_covers": { "min_pct": 5.0, "max_pct": 20.0, "default_action": "REPAIR_LOCAL" },
+    "gimbal_motors_arms": { "min_pct": 10.0, "max_pct": 30.0, "default_action": "AUTHORIZED_SERVICE" },
+    "lens_mount_mechanics": { "min_pct": 10.0, "max_pct": 35.0, "default_action": "OPTICAL_TECH_ALIGN" },
+    "camera_io_boards": { "min_pct": 15.0, "max_pct": 40.0, "default_action": "SERVICE_BOARD_SWAP" },
+    "optical_groups_led": { "min_pct": 25.0, "max_pct": 60.0, "default_action": "CASE_BY_CASE" },
+    "sensor_mainboard_burn": { "min_pct": 40.0, "max_pct": 80.0, "default_action": "WRITE_OFF_REPLACE" },
+    "swollen_battery": { "min_pct": 0.0, "max_pct": 100.0, "default_action": "IMMEDIATE_DESTRUCTION_RETIRE" }
+  },
+  "spare_parts_tiering": {
+    "tier_a_in_hub_shelf": [
+      "Shielded 12G-SDI BNC Cables (0.5m, 1m, 5m)",
+      "Ultra High Speed HDMI Cables (0.5m, 1.5m)",
+      "USB-C 100W PD Braided Power Cables",
+      "SMA and RP-SMA External Antennas",
+      "Arca / Manfrotto / Ronin Quick Release Plates",
+      "1/4-20 and 3/8-16 Hex Rigging Fasteners",
+      "15mm Carbon Fiber Rods (10cm, 20cm, 30cm)",
+      "Lens Support Bracket Spares",
+      "Dual NP-FZ100 Fast Chargers",
+      "Light Stand Aluminum Locking Knobs",
+      "Braided Steel Safety Rigging Cables"
+    ],
+    "tier_b_local_dealer_stock": [
+      "DJI BG30 Battery Grips",
+      "Ronin Focus Motors & Rod Mounts",
+      "Monitor Sunhoods & Cages",
+      "D-Tap to 2-Pin LEMO / Fischer Cables",
+      "COB Fixture OEM Cooling Fans"
+    ],
+    "tier_c_authorized_service_center": [
+      "Sony FX3 / FX6 Mainboard & Sensor Assembly",
+      "RED Komodo Optical Low Pass Filter (OLPF) & SDI Board",
+      "Cine Lens Internal Glass Groups & Iris Mechanism",
+      "600W+ High Voltage LED Driver Motherboards"
+    ]
+  },
+  "iata_battery_compliance": {
+    "category_1": {
+      "wh_max": 100,
+      "carry_on": "PERMITTED",
+      "checked": "FORBIDDEN",
+      "max_units_passenger": 20,
+      "airline_approval": false
+    },
+    "category_2": {
+      "wh_min": 101,
+      "wh_max": 160,
+      "carry_on": "PERMITTED_WITH_APPROVAL",
+      "checked": "FORBIDDEN",
+      "max_units_passenger": 2,
+      "airline_approval": true
+    },
+    "category_3": {
+      "wh_min": 161,
+      "carry_on": "FORBIDDEN",
+      "checked": "FORBIDDEN",
+      "freight_mode": "CARGO_AIRCRAFT_ONLY_UN3480_CLASS_9",
+      "airline_approval": true
+    }
+  }
+}

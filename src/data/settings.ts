@@ -3,10 +3,11 @@ import type { Slice } from '../components/ui/Charts'
 import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney, roundHalfUp, grouped } from '../lib/money'
 import type { Paisa } from '../lib/money'
-import { BRANCH, FOOTER_NOTE } from './nav'
+import { APP_VERSION, BRANCH } from './nav'
 import { WAREHOUSES } from './warehouse'
 import type { Warehouse } from './warehouse'
 import { PLANS } from './membership'
+import { openCasesCount } from './cases'
 
 /*
  * `FEE_PER_CREW_DAY_PAISA` used to be declared here too, at rupees(500), dead
@@ -41,9 +42,8 @@ import { PLANS } from './membership'
  *    is stored, and `Rs` never becomes `NPR`.
  *  · the render's activity row reads "role: Warehouse Staff". The business 8
  *    (ruled 8 Aug 2026) names it **Warehouse** — there is one role vocabulary.
- *  · the render's System Summary reads `v3.2.0`. The footer bar on the same
- *    page reads v3.0.0 from `nav.FOOTER_NOTE`; the version is read from there
- *    so the page cannot state two versions of itself.
+ *  · the render's System Summary reads `v3.2.0`. The page reads its version
+ *    from `nav.APP_VERSION` so it cannot state two versions of itself.
  *  · the render's Monthly Revenue tile claims +18.4% month over month, which is
  *    Head Office's own growth rather than the group's. The group figure is
  *    derived from the three branch growths instead (15.5%).
@@ -494,7 +494,11 @@ export const BRANCH_ALERTS: CountAlert[] = [
   { label: 'Maintenance Due', count: 12, tone: 'progress', icon: 'tool', dest: { kind: 'route', to: '/inventory' } },
   { label: 'Overdue Returns', count: 5, tone: 'danger', icon: 'return_arrow', dest: { kind: 'route', to: '/rentals' } },
   { label: 'Staff Shortage', count: 2, tone: 'progress', icon: 'users', dest: { kind: 'route', to: '/crew' } },
-  { label: 'Open Cases', count: 8, tone: 'primary', icon: 'flag', dest: { kind: 'route', to: '/operations/cases' } },
+  /* Derived, not typed — cases.ts correction #2: this tile navigates to the
+     Cases page, so its figure MUST be the page's own `isOpenStatus` count or
+     the click contradicts the destination (§5.8). The hand-typed 8 it
+     replaced disagreed with the 12 the page derives. */
+  { label: 'Open Cases', count: openCasesCount(), tone: 'primary', icon: 'flag', dest: { kind: 'route', to: '/inventory/cases' } },
 ]
 
 export type Priority = 'Critical' | 'High' | 'Medium' | 'Low'
@@ -670,7 +674,7 @@ export const DEPOSIT_BY_CATEGORY_UNAVAILABLE =
  * TODO(decision) — the cancellation fee tiers. Rendered as "not tracked yet".
  */
 export const CANCELLATION_TIERS_UNAVAILABLE =
-  'No cancellation fee tiers exist in this build. A booking is cancelled as a named terminal transition (Law 3) and no fee is computed. The notice periods and their percentages are an owner decision that has not been taken, so this reads "not tracked yet" rather than showing a schedule the business never agreed.'
+  /* No cancellation fee tiers exist in this build. A booking is cancelled as a named terminal transition (Law 3) and no fee is computed. The notice periods and their percentages are an owner decision that has not been taken, so this reads "not tracked yet" rather than showing a schedule the business never agreed. */ "Cancellation fees have not been defined. Cancelling a booking does not calculate a fee."
 
 /* ── system summary ────────────────────────────────────────────────────── */
 
@@ -681,12 +685,10 @@ export interface SummaryRow {
 }
 
 /**
- * The version is read from `nav.FOOTER_NOTE`, which the footer bar on this same
- * page also renders. The render hard-codes `v3.2.0` here and the product would
- * have stated two versions of itself in one viewport.
+ * The version comes from the app's single version source.
  */
 export const SYSTEM_SUMMARY: SummaryRow[] = [
-  { label: 'System version', value: FOOTER_NOTE.version.split(' ').pop() ?? '', tone: 'default' },
+  { label: 'System version', value: APP_VERSION.split(' ').pop() ?? '', tone: 'default' },
   { label: 'Database', value: 'Healthy', tone: 'good' },
   { label: 'Storage used', value: '246.8 GB / 1 TB', tone: 'default' },
   { label: 'Backup status', value: 'Successful', tone: 'good' },

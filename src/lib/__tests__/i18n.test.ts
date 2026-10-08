@@ -78,7 +78,7 @@ describe('font stacks', () => {
   it('keeps the identifier face identical in both languages', () => {
     // A packer matching SN-FX3-102 off a label must read the same face either way.
     expect(FONT_STACK.ne.mono).toBe(FONT_STACK.en.mono)
-    expect(FONT_STACK.ne.mono).toContain('JetBrains Mono')
+    expect(FONT_STACK.ne.mono).toContain('Source Sans 3')
   })
 
   it('falls back to a Devanagari system face rather than to Latin', () => {

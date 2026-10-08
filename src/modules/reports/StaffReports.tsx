@@ -1,4 +1,6 @@
-import { PageHeader, Card, ReflowRail, cardStyle, useBandColumns } from '../../components/ui/Page'
+import { useEffect, useState } from 'react'
+import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -6,17 +8,12 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { STAFF_METRICS, STAFF_LIST } from '../../data/staffReports'
-
-function StaffKpiCard({ label, value, accent, note }: any) {
-  return (
-    <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', background: `var(--${accent}-bg, var(--card))` }}>
-      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: '24px', fontWeight: 700, color: `var(--${accent})` }}>{value}</div>
-      <div style={{ fontSize: 'var(--t-meta)', color: `var(--${note.tone})` }}>{note.text}</div>
-    </Card>
-  )
-}
+import {
+  STAFF_METRICS,
+  STAFF_LIST,
+  getStaffReportsSummary,
+  type StaffReportsSummary,
+} from '../../lib/queries/staffReports'
 
 /**
  * The export body.
@@ -49,11 +46,19 @@ function staffCsv(isManager: boolean, myName: string | undefined): ReportCsvRow[
 }
 
 export default function StaffReports() {
-  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     four or six cards side by side is unreadable below 1180. */
-  const bandCols = useBandColumns()
   const money = useCanViewMoney()
   const { user } = useAuth()
+  const [, setSummary] = useState<StaffReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getStaffReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Law 6 — revenue handled and collections are the report; there is no
   // money-free version of it, so the shared RESTRICTED state stands in for the
@@ -98,82 +103,92 @@ export default function StaffReports() {
         }}
       />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
-        <StaffKpiCard
-          label="Revenue Handled"
-          value={formatMoney(STAFF_METRICS.revenueHandled as Paisa)}
-          icon="dollar"
-          accent="primary"
-          note={{ text: 'Total gross handled this month', tone: 'neutral' }}
-        />
-        <StaffKpiCard
-          label="Collection Rate"
-          value={`${STAFF_METRICS.collectionRate}%`}
-          icon="check"
-          accent="success"
-          note={{ text: 'Average across all staff', tone: 'success' }}
-        />
-        <StaffKpiCard
-          label="Tasks Completed"
-          value={STAFF_METRICS.tasksCompleted}
-          icon="check"
-          accent="progress"
-          note={{ text: 'Across all workspaces', tone: 'neutral' }}
-        />
-        <StaffKpiCard
-          label="Avg Response Time"
-          value={STAFF_METRICS.averageResponseTime}
-          icon="clock"
-          accent="warning"
-          note={{ text: 'Time to acknowledge task', tone: 'neutral' }}
-        />
+      {/* The shared strip — typed items, icon tile drawn, viewport clamp built
+          in. The old hand-rolled `StaffKpiCard` was `any`-typed and silently
+          dropped its `icon` prop ("clock" was not even a registry name — never
+          caught, because nothing rendered it). */}
+      <KpiStrip
+        columns={4}
+        items={[
+          {
+            label: 'Revenue Handled',
+            value: formatMoney(STAFF_METRICS.revenueHandled as Paisa),
+            icon: 'dollar',
+            accent: 'primary',
+            note: 'Total gross handled this month',
+          },
+          {
+            label: 'Collection Rate',
+            value: `${STAFF_METRICS.collectionRate}%`,
+            icon: 'check',
+            accent: 'success',
+            note: 'Average across all staff',
+          },
+          {
+            label: 'Tasks Completed',
+            value: String(STAFF_METRICS.tasksCompleted),
+            icon: 'check',
+            accent: 'progress',
+            note: 'Across all workspaces',
+          },
+          {
+            label: 'Avg Response Time',
+            value: STAFF_METRICS.averageResponseTime,
+            icon: 'timer',
+            accent: 'neutral',
+            note: 'Time to acknowledge task',
+          },
+        ]}
+      />
+
+      {/* Rulings §7 — this table is the report's CONTENT, not a rail. It used
+          to be passed into `ReflowRail`, which at desktop is a 288px sticky
+          collapsible box, so the whole seven-column table rendered inside one
+          self-scrolling rail. There is no aside content on this page, so there
+          is no rail at all. */}
+      <section aria-label="Staff Breakdown" style={cardStyle}>
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Team Breakdown</div>
+        <DataTableShell ariaLabel="Staff team breakdown" data-table-scroll style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 640 }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Staff</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Role</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Revenue Handled</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collections</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collection Rate</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Tasks</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Performance Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {STAFF_LIST.map((s) => {
+                const rate = ((s.collections / s.revenueHandled) * 100).toFixed(1)
+                // RBAC for performance score
+                const canSeeScore = isManager || s.name === myName
+
+                return (
+                  <tr key={s.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{s.name}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textTransform: 'capitalize' }}>{s.role}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{formatMoney(s.revenueHandled as Paisa)}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right', color: 'var(--success)' }}>{formatMoney(s.collections as Paisa)}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{rate}%</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>{s.tasksCompleted}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center', fontWeight: 600 }}>
+                      {canSeeScore ? (
+                        <span style={{ color: s.performanceScore >= 90 ? 'var(--success)' : 'var(--primary)' }}>{s.performanceScore}</span>
+                      ) : (
+                        <span style={{ color: 'var(--text3)' }}>Hidden</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </DataTableShell>
       </section>
-
-      <ReflowRail>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <section aria-label="Staff Breakdown" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Team Breakdown</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Staff</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Role</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Revenue Handled</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collections</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collection Rate</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Tasks</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Performance Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {STAFF_LIST.map((s) => {
-                  const rate = ((s.collections / s.revenueHandled) * 100).toFixed(1)
-                  // RBAC for performance score
-                  const canSeeScore = isManager || s.name === myName
-
-                  return (
-                    <tr key={s.id} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{s.name}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textTransform: 'capitalize' }}>{s.role}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{formatMoney(s.revenueHandled as Paisa)}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right', color: 'var(--success)' }}>{formatMoney(s.collections as Paisa)}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{rate}%</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>{s.tasksCompleted}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center', fontWeight: 600 }}>
-                        {canSeeScore ? (
-                          <span style={{ color: s.performanceScore >= 90 ? 'var(--success)' : 'var(--primary)' }}>{s.performanceScore}</span>
-                        ) : (
-                          <span style={{ color: 'var(--text3)' }}>Hidden</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </section>
-        </div>
-      </ReflowRail>
     </div>
   )
 }

@@ -1,13 +1,14 @@
 import { Card } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import { toRupees } from '../../../lib/money'
-import { FEE_PER_CREW_DAY_PAISA } from '../../../data/crew'
+import { FEE_PER_CREW_DAY_PAISA } from '../../../lib/queries/crew'
 import {
   MEMBERSHIP_MATRIX,
   DEPOSIT_BY_CATEGORY_UNAVAILABLE,
   CANCELLATION_TIERS_UNAVAILABLE,
-} from '../../../data/settings'
-import type { Dest } from '../../../data/settings'
+} from '../../../lib/queries/settings'
+import type { Dest } from '../../../lib/queries/settings'
 import { NotTrackedYet, SectionCards, ToneChip, td } from './shared'
 import type { Section } from './shared'
 
@@ -64,7 +65,7 @@ export const FINANCIAL_SECTIONS: Section[] = [
     fields: [
       {
         label: 'VAT rate',
-        note: 'Applied after discount, per Foundation §2.1.',
+        note: /* Applied after discount, per Foundation §2.1. */ "Applied after discount, per",
         settingKey: 'vatRatePercent',
         readBy: 'New Rental, the Pricing Calculator and Create Invoice',
       },
@@ -76,7 +77,7 @@ export const FINANCIAL_SECTIONS: Section[] = [
       },
       {
         label: 'Crew coordination fee',
-        note: `Per crew-day, billed as its own line on Crew Assist bookings — Crew Booking spec v3.2 §2. Defaults from data/crew.ts (Rs ${toRupees(FEE_PER_CREW_DAY_PAISA)}). Proposed default, not yet confirmed.`,
+        note: `Default charge per crew-day (Rs ${toRupees(FEE_PER_CREW_DAY_PAISA)}). Proposed default, not yet confirmed.`,
         settingKey: 'crewCoordinationFeeRupees',
         readBy: 'Crew Assist’s payout ledger',
       },
@@ -138,6 +139,19 @@ export const FINANCIAL_SECTIONS: Section[] = [
     ],
   },
   {
+    key: 'deposit-rules',
+    title: 'Deposit rules',
+    icon: 'lock',
+    fields: [
+      {
+        label: 'Allow closing without settling the deposit',
+        note: 'Off by default. When On, Manager and above see "Close without settling deposit" on a rental whose deposit is still held; it needs a written reason of at least 10 characters and is recorded in the audit log. The deposit stays held — nothing is released, refunded or turned into revenue. The database refuses a skip without the reason or from a lower role, whatever this says.',
+        settingKey: 'allowDepositSkipOnClose',
+        readBy: 'the Close control on a booking',
+      },
+    ],
+  },
+  {
     key: 'booking-rules',
     title: 'Booking rules',
     icon: 'lock',
@@ -173,7 +187,7 @@ export function FinancialPane() {
           </span>
         }
       >
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Membership matrix" data-table-scroll style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
             <thead>
               <tr>
@@ -205,12 +219,11 @@ export function FinancialPane() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
         <p style={{ margin: '10px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.55 }}>
-          Law 10 caps any discount at 25% and demands a reason of at least ten characters plus a named approver above 10% — no
-          role bypasses it, Owner included. A plan discount does not pre-authorise anything; it sets the starting figure the
-          gate then judges.
-        </p>
+          {/* Discounts are ungated — ruled by the owner, 31 Aug 2026 (Law 10 as amended). No reason, no approver, no cap
+          below 100%; a negative discount is refused because it is a price rise, and above 100% because it is a negative
+          price. A plan discount simply sets the starting figure. */}Discounts may be between 0% and 100%. </p>
       </Card>
 
       <Card title="Cancellation fee tiers">

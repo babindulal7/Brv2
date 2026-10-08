@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+/* R3-1: the cross-engine agreement check below compares money.ts's gate with
+   rbac.ts's rank rule. They disagreed on the sign until 16 Aug 2026. */
+import { canApproveDiscount } from '../rbac'
 import {
   type Paisa,
   type PriceInput,
@@ -13,9 +16,9 @@ import {
   calculatePrice,
   discountGate,
   DISCOUNT_CAP,
-  DISCOUNT_APPROVAL_THRESHOLD,
   crewBilling,
   lateFee,
+  calculateBookingProfit,
   REFERENCE_CASE,
   REFERENCE_CASE_ERROR,
 } from '../money'
@@ -127,6 +130,16 @@ describe('parseMoney', () => {
     expect(parseMoney('abc')).toBeNull()
     expect(parseMoney('1.2.3')).toBeNull()
     expect(parseMoney('Rs')).toBeNull()
+    expect(parseMoney('-')).toBeNull()
+    expect(parseMoney('.')).toBeNull()
+  })
+
+  it('eliminates IEEE 754 float drift on boundary numbers (e.g. 19.99)', () => {
+    expect(parseMoney('19.99')).toBe(1999)
+    expect(parseMoney('0.01')).toBe(1)
+    expect(parseMoney('-19.99')).toBe(-1999)
+    expect(parseMoney('1234.567')).toBe(123457)
+    expect(parseMoney('1234.562')).toBe(123456)
   })
 })
 
@@ -301,41 +314,47 @@ describe('the §2.8 reference case', () => {
   })
 })
 
-/* ── §2.5 · discount gate ───────────────────────────────────────────────── */
+/* ── discount gate — GONE. Law 10 as amended 31 Aug 2026 ────────────────── */
 
-describe('discountGate — Law 10 / §2.5', () => {
-  it('allows anything at or below the 10% approval threshold with no reason or approver', () => {
+describe('discountGate — ungated (D3, Babin 31 Aug: "don\'t put any gate on discount")', () => {
+  it('allows any percentage 0–100 with no reason, no approver, no cap, no role', () => {
+    for (const pct of [0, 10, 11, 25, 25.01, 40, 100]) {
+      expect(discountGate(pct, '', null).ok).toBe(true)
+    }
+    // The 100 here is the ARITHMETIC ceiling a percentage has, not a chosen cap.
+    expect(DISCOUNT_CAP).toBe(100)
+  })
+
+  /*
+   * R3-1, fixed 16 Aug 2026 and DELIBERATELY KEPT through the gate removal.
+   * `-5` once fell through and drew an approving green tick on Settings ▸
+   * Tools. A negative discount is a price increase; removing the gate does
+   * not reopen that hole.
+   */
+  it('still refuses a NEGATIVE percent — a price increase is not a discount', () => {
+    const neg = discountGate(-5, '', null)
+    expect(neg.ok).toBe(false)
+    expect(neg.ok === false && neg.why).toMatch(/negative|price increase/i)
+
+    expect(discountGate(-0.01, '', null).ok).toBe(false)
     expect(discountGate(0, '', null).ok).toBe(true)
-    expect(discountGate(10, '', null).ok).toBe(true)
-    expect(DISCOUNT_APPROVAL_THRESHOLD).toBe(10)
   })
 
-  it('refuses above the 25% hard cap', () => {
-    expect(DISCOUNT_CAP).toBe(25)
-    expect(discountGate(25, 'a long enough reason', 'user-1').ok).toBe(true)
-    const over = discountGate(25.01, 'a long enough reason', 'user-1')
+  it('agrees with the other implementations on the sign', () => {
+    // The point of R3-1 was disagreement between engines, not the rule itself.
+    expect(discountGate(-5, '', null).ok).toBe(false)
+    expect(canApproveDiscount('Owner', -5)).toBe(false)
+  })
+
+  it('refuses above 100% — a negative price, not a discount', () => {
+    const over = discountGate(100.01, '', null)
     expect(over.ok).toBe(false)
-    expect(over.ok === false && over.why).toContain('25%')
+    expect(over.ok === false && over.why).toMatch(/negative price/)
   })
 
-  it('above 10% needs a reason of at least 10 characters', () => {
-    const short = discountGate(11, 'too short', 'user-1')
-    expect(short.ok).toBe(false)
-    expect('nine char'.length).toBeLessThan(10)
-    expect(discountGate(11, '          ', 'user-1').ok).toBe(false) // whitespace is not a reason
-    expect(discountGate(11, 'exactly10c', 'user-1').ok).toBe(true)
-  })
-
-  it('above 10% needs a named approver', () => {
-    const noApprover = discountGate(11, 'a genuinely long reason', null)
-    expect(noApprover.ok).toBe(false)
-    expect(noApprover.ok === false && noApprover.why).toContain('Manager')
-    expect(discountGate(11, 'a genuinely long reason', 'user-1').ok).toBe(true)
-  })
-
-  it('takes no role argument, so no role — including Owner — can bypass the cap', () => {
-    expect(discountGate.length).toBe(3)
-    expect(discountGate(30, 'the owner said so, at length', 'the-owner').ok).toBe(false)
+  it('ignores reason and approver entirely — required never, harmless always', () => {
+    expect(discountGate(40, '', null).ok).toBe(true)
+    expect(discountGate(40, 'a reason nobody asked for', 'usr-owner').ok).toBe(true)
   })
 })
 
@@ -465,3 +484,43 @@ describe('lateFee — the three tier boundaries', () => {
     expect(r.feePaisa).toBe(0)
   })
 })
+
+/* ── calculateBookingProfit — AUD-019 Subrental & AUD-030 Integer Paisa ──── */
+
+describe('calculateBookingProfit — subrental cost integration (AUD-019)', () => {
+  it('includes external vendor subrental costs in booking profit and margin calculation', () => {
+    const revenue = rupees(50000)
+
+    // Base booking with equipment cost only
+    const base = calculateBookingProfit({
+      revenuePaisa: revenue,
+      equipmentCostPaisa: rupees(10000),
+    })
+    expect(base.totalCostPaisa).toBe(rupees(10000))
+    expect(base.grossProfitPaisa).toBe(rupees(40000))
+    expect(base.grossMarginPercent).toBe(80)
+
+    // Adding 10k subrental cost reduces gross profit by 10k and decreases gross margin
+    const withSubRental = calculateBookingProfit({
+      revenuePaisa: revenue,
+      equipmentCostPaisa: rupees(10000),
+      subRentalCostPaisa: rupees(10000),
+    })
+    expect(withSubRental.totalCostPaisa).toBe(rupees(20000))
+    expect(withSubRental.grossProfitPaisa).toBe(rupees(30000))
+    expect(withSubRental.grossMarginPercent).toBe(60)
+  })
+
+  it('standardizes on integer paisa with zero rounding discrepancy on odd rates (AUD-030)', () => {
+    const result = calculateBookingProfit({
+      revenuePaisa: rupees(33333),
+      subRentalCostPaisa: rupees(11111),
+      crewCostPaisa: rupees(7777),
+    })
+    expect(Number.isInteger(result.totalCostPaisa)).toBe(true)
+    expect(Number.isInteger(result.grossProfitPaisa)).toBe(true)
+    expect(result.totalCostPaisa).toBe(rupees(18888))
+    expect(result.grossProfitPaisa).toBe(rupees(14445))
+  })
+})
+

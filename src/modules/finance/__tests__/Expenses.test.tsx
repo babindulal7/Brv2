@@ -237,6 +237,17 @@ describe('Expenses — a money-visible session with no rows is EMPTY, never rest
     expect(c.textContent).not.toContain('Access restricted')
     expect(c.textContent).not.toContain(FINANCE_RESTRICTED_REASON)
   })
+
+  /* From main's Phase 9 work, ported 8 Oct 2026. */
+  it('offers Add Expense from the empty state itself, and it opens the entry sheet', async () => {
+    const c = await mount()
+    const fromEmpty = Array.from(c.querySelectorAll('button')).filter((b) => b.textContent?.trim() === 'Add Expense')
+    // The header's button and the empty state's — two ways in, the same sheet.
+    expect(fromEmpty.length).toBeGreaterThanOrEqual(2)
+    expect(document.body.textContent).not.toContain('Vendor')
+    await click(fromEmpty[fromEmpty.length - 1], 'the empty-state Add Expense')
+    expect(document.body.textContent).toContain('Vendor')
+  })
 })
 
 describe('Expenses — every figure is the query’s figure', () => {
@@ -350,10 +361,11 @@ describe('Expenses — every filter is a database predicate', () => {
 
   it('filters by category id, never by the category name', async () => {
     const c = await mount()
+    await click(c.querySelector('[aria-label="Show filters panel"]') ?? undefined, 'the Filters button')
     db.filters.length = 0
 
     const select = Array.from(c.querySelectorAll('select')).find(
-      (s) => s.getAttribute('aria-label') === 'Filter by category',
+      (s) => s.getAttribute('aria-label') === 'Filter expenses by category',
     )
     if (!select) throw new Error('the category filter was never rendered')
     await act(async () => {

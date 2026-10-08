@@ -47,12 +47,30 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 })
 
-/** The signed-in role, mutable between mounts — `useCanViewMoney` reads it. */
 const auth = vi.hoisted(() => ({ role: 'Owner' as string }))
+const mockExpenseSummary = vi.hoisted(() => ({ current: null as unknown }))
 
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'USR-TEST', name: 'Tester', role: auth.role, isSharedDevice: false } }),
 }))
+vi.mock('../../../lib/queries/expenseReports', async (orig) => {
+  const actual = await orig<typeof import('../../../lib/queries/expenseReports')>()
+  return {
+    ...actual,
+    getExpenseReportsSummary: vi.fn().mockImplementation(async () => {
+      if (mockExpenseSummary.current !== null) {
+        return mockExpenseSummary.current
+      }
+      return {
+        rows: actual.EXPENSES,
+        categories: actual.CATEGORIES,
+        branches: actual.BRANCHES,
+        totalSpent: 0,
+        pendingApproval: 0,
+      }
+    }),
+  }
+})
 
 const { default: ExpenseReports } = await import('../ExpenseReports')
 
@@ -76,12 +94,52 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   auth.role = 'Owner'
+  mockExpenseSummary.current = null
 })
 
 function need<T extends HTMLElement>(label: string): T {
   const el = container.querySelector<T>(`[aria-label="${label}"]`)
   if (!el) throw new Error(`No control labelled "${label}" is on screen`)
   return el
+}
+
+/**
+ * Set one of the Custom range's date inputs.
+ *
+ * The narrowing tests below used to reach for the `last7` preset, whose window
+ * ends on the operating day. That worked only while `lib/bs.ts` froze the
+ * operating day at 31 Jul 2026, inside the seeded expenses' own July dates:
+ * against the real clock `last7` is a window with no seeded row in it, and the
+ * suite went red for a product that was behaving correctly. The seed corpus is
+ * fixed in July, so the window that exercises the toolbar is stated outright.
+ */
+async function typeDate(el: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  if (!setter) throw new Error('no value setter')
+  await act(async () => {
+    setter.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  /*
+   * ...and then leave the field. These bounds stopped being
+   * `<input type="date">` on 4 Sep 2026 — they are `components/ui/DateField`
+   * now, which commits on blur rather than on every keystroke, because
+   * "2026-07-2" is a parseable-looking half-finished date. React's `onBlur`
+   * listens for `focusout`, so a `blur` event would not reach it.
+   */
+  await act(async () => {
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+  })
+}
+
+/** 25–31 Jul 2026 — the window `last7` covered on the day this suite was written. */
+const SEEDED_WEEK = { from: '2026-07-25', to: '2026-07-31' }
+
+async function pickSeededWeek() {
+  await change(need<HTMLSelectElement>('Date range'), 'custom')
+  await typeDate(need<HTMLInputElement>('From date'), SEEDED_WEEK.from)
+  await typeDate(need<HTMLInputElement>('To date'), SEEDED_WEEK.to)
 }
 
 async function change(el: HTMLSelectElement, value: string) {
@@ -112,8 +170,7 @@ describe('ExpenseReports · the shared toolbar drives the ledger', () => {
 
   it('narrows the rows when the date range narrows', async () => {
     await mount()
-    // Last 7 days ends on `bs.ts`'s TODAY (31 Jul 2026), so it selects 25–31 Jul.
-    await change(need<HTMLSelectElement>('Date range'), 'last7')
+    await pickSeededWeek()
     expect(rowCount()).toBe(10)
 
     // …and widening it again brings every row back, rather than latching.
@@ -137,7 +194,7 @@ describe('ExpenseReports · the shared toolbar drives the ledger', () => {
     // pass this suite's other tests and fail this one.
     await mount()
     await change(need<HTMLSelectElement>('Branch'), 'Thamel Branch')
-    await change(need<HTMLSelectElement>('Date range'), 'last7')
+    await pickSeededWeek()
     const both = rowCount()
     expect(both).toBeLessThanOrEqual(3)
 
@@ -157,5 +214,20 @@ describe('ExpenseReports · the shared toolbar drives the ledger', () => {
     expect(container.querySelector('[aria-label="Branch"]')).toBeNull()
     expect([...container.querySelectorAll('button')].some((b) => b.textContent?.includes('CSV'))).toBe(false)
     expect([...container.querySelectorAll('button')].some((b) => b.textContent?.includes('Print'))).toBe(false)
+  })
+
+  it('renders standard empty state when database returns no expenses', async () => {
+    mockExpenseSummary.current = {
+      rows: [],
+      categories: [],
+      branches: [],
+      totalSpent: 0,
+      pendingApproval: 0,
+    }
+    await mount()
+    const text = container.textContent ?? ''
+    expect(text).toContain('No expenses recorded')
+    expect(text).toContain('Nothing has been booked to this ledger yet')
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(0)
   })
 })

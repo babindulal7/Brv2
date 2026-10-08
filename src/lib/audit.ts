@@ -6,6 +6,7 @@
  */
 
 import { idempotentInsert } from './dataAccess'
+import { captureError } from './monitoring'
 import type {
   AuditEventClass,
   AuditCategory,
@@ -41,9 +42,32 @@ export interface LogAuditParams {
 }
 
 /**
- * Dispatches an append-only audit event.
+ * The outcome of an audit write, so the caller can *know*.
+ *
+ * ⛔ This used to be `Promise<void>` with the failure going to `console.error`
+ * and nowhere else, which is `BUG_SWEEP_ENGINES` `R3-5` / `PLAN.md` §4.36. The
+ * damage was invisible by construction: a **Warehouse** actor completing a
+ * return got `operation_sessions`, `return_lines` and the movements committed,
+ * a success screen — and **no audit row anywhere**, because `operation_sessions`
+ * is not one of the six trigger-covered tables. Nothing afterwards could
+ * reconstruct who did it.
+ *
+ * Returning the outcome is the half that needs no ruling. What the caller then
+ * DOES about a failure — proceed, fail the business verb with it, or queue the
+ * row and warn until it drains — is **§4.36, still open**. Do not decide it here
+ * and do not decide it at a call site; every current caller deliberately
+ * proceeds, exactly as before, so this change is observably behaviour-neutral
+ * until the ruling lands.
  */
-export async function logAuditEvent(params: LogAuditParams): Promise<void> {
+export type AuditWriteResult = { ok: true; error: null } | { ok: false; error: Error }
+
+/**
+ * Dispatches an append-only audit event.
+ *
+ * Never throws — an audit outage must not become an unhandled rejection inside
+ * a business verb. It reports instead, and the caller decides (see §4.36).
+ */
+export async function logAuditEvent(params: LogAuditParams): Promise<AuditWriteResult> {
   try {
     await idempotentInsert('audit_events', {
       event_class: params.eventClass || 'status change',
@@ -64,8 +88,19 @@ export async function logAuditEvent(params: LogAuditParams): Promise<void> {
       // Desktop | Mobile | Tablet), so every audit write Postgres ever saw would have
       // been rejected with an invalid-enum error and swallowed by the catch below.
       device_type: params.deviceType ?? 'Desktop',
-    })
+    },
+    /* An audit row is append-only and its id is never read by any caller, so
+       there is nothing to read back — and asking for it required a SELECT that
+       `audit_events` grants to Owner/Admin/Manager only, which is what made
+       every Warehouse audit write fail. See `InsertOptions.returnRow`. */
+    { returnRow: false })
+    return { ok: true, error: null }
   } catch (err) {
-    console.error('[AuditEngine] Failed to write audit event:', err)
+    const error = err instanceof Error ? err : new Error(String(err))
+    // Kept: the console line is still the fastest signal in a dev session. It
+    // is no longer the ONLY signal, which was the defect.
+    console.error('[AuditEngine] Failed to write audit event:', error)
+    captureError(error, { where: 'audit.write' })
+    return { ok: false, error }
   }
 }

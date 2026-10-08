@@ -229,6 +229,10 @@ describe('day filter → payment_date bounds', () => {
   it('leaves dateRange off entirely when no day is picked', () => {
     expect(paymentFilters('All', '', '').dateRange).toBeUndefined()
   })
+
+  it('binds page pagination onto filters', () => {
+    expect(paymentFilters('All', '', '', 3).page).toEqual({ index: 2, size: 25 })
+  })
 })
 
 describe('row → cell', () => {
@@ -248,7 +252,7 @@ describe('row → cell', () => {
   it('renders the instant in Kathmandu, not UTC', () => {
     // 09:30 UTC on 11 Aug is 15:15 the same day in Kathmandu.
     expect(formatPaymentAt(RECEIPT.paymentDateAd)).toContain('15:15')
-    expect(formatPaymentAt(RECEIPT.paymentDateAd)).toContain('11 Aug 2026')
+    expect(formatPaymentAt(RECEIPT.paymentDateAd)).toContain('11/8/2026')
   })
 
   it('refuses to print a date it cannot parse', () => {
@@ -256,10 +260,19 @@ describe('row → cell', () => {
     expect(paymentBsLabel('not-a-date')).toBeNull()
   })
 
-  /** `bs.ts` vouches for Shrawan 2083 only; outside it, no BS line is printed. */
-  it('omits the BS reading rather than inventing one outside the month bs.ts vouches for', () => {
-    expect(paymentBsLabel('2026-08-11T09:30:00.000Z')).toBe('27 Shrawan 2083 BS')
-    expect(paymentBsLabel('2027-01-01T00:00:00.000Z')).toBeNull()
+  /**
+   * `bs.ts` covers BS 2078–2095; outside that span no BS line is printed.
+   *
+   * Both figures moved on 5 Sep 2026 when the 2078–2095 table landed and the
+   * anchor was corrected by one day (1 Shrawan 2083 is 17 Jul 2026, not 16):
+   *   · 11 Aug 2026 is **26** Shrawan, not 27.
+   *   · 1 Jan 2027 now resolves (17 Poush 2083) — it used to be outside the
+   *     one-month window. The honest-null contract moved to the edge of the
+   *     TABLE, so this asserts a year the table genuinely cannot name.
+   */
+  it('omits the BS reading rather than inventing one outside the years bs.ts vouches for', () => {
+    expect(paymentBsLabel('2026-08-11T09:30:00.000Z')).toBe('26 Shrawan')
+    expect(paymentBsLabel('2040-01-01T00:00:00.000Z')).toBeNull()
   })
 
   it('reads the chip back out of the URL, defaulting to All', () => {
@@ -386,60 +399,67 @@ describe('Law 4 — the screen offers no edit', () => {
     expect(text()).not.toContain('Delete')
   })
 
-  it('disables Reverse on an advance, naming the reason rather than passing a payment id as an invoice id', async () => {
+  it('enables Reverse on both receipts and advances, naming the payment in aria-label', async () => {
     await mount(1280)
     const reverse = allButtons().filter((b) => b.textContent?.trim() === 'Reverse')
     expect(reverse).toHaveLength(2)
-    // PAY-0007 is invoice-linked; PAY-0008 is an advance.
+    // Both PAY-0007 (invoice-linked) and PAY-0008 (advance) can be reversed directly
     expect(reverse[0]?.disabled).toBe(false)
-    expect(reverse[1]?.disabled).toBe(true)
-    expect(reverse[1]?.getAttribute('aria-label')).toContain('advance')
+    expect(reverse[1]?.disabled).toBe(false)
+    expect(reverse[1]?.getAttribute('aria-label')).toContain('PAY-0008')
   })
 
-  /** The reversal is invoice-scoped today; the control must not imply otherwise. */
-  it('says on the control itself that the reversal lands on the invoice, not this payment', async () => {
+  /** The reversal corrects this receipt directly; the control names this. */
+  it('says on the control itself that the reversal corrects the receipt', async () => {
     await mount(1280)
     const reverse = allButtons().find((b) => b.textContent?.trim() === 'Reverse')
-    expect(reverse?.getAttribute('aria-label')).toContain('original_payment_id')
+    expect(reverse?.getAttribute('aria-label')).toContain('Corrects this receipt only')
   })
 
   it('states that no ↳ reversal row is drawn, so its absence is not read as "none exist"', async () => {
     await mount(1280)
-    expect(text()).toContain('payment_reversals')
-    expect(text()).toContain('not a claim that none exist')
+    expect(text()).toContain('Payment reversals are recorded separately and are not shown in this list.')
   })
 
   it('keeps that note visible on an empty ledger, where it is most easily misread', async () => {
     paymentRows = []
     await mount(1280)
-    expect(text()).toContain('payment_reversals')
+    expect(text()).toContain('Payment reversals are recorded separately and are not shown in this list.')
   })
 })
 
-describe('§9.3 filter row — every control is server-side or visibly disabled', () => {
-  it('draws the three answerable chips plus a disabled Reversed', async () => {
+describe('§9.3 filter row — only answerable controls appear', () => {
+  it('draws the three answerable status chips', async () => {
     await mount(1280)
     const chips = allButtons()
       .filter((b) => b.getAttribute('aria-pressed') !== null)
       .map((b) => b.textContent?.trim())
     expect(chips).toEqual(['All', 'Received', 'Refunded'])
 
-    const reversed = allButtons().find((b) => b.textContent?.trim().startsWith('Reversed'))
-    expect(reversed?.disabled).toBe(true)
-    expect(reversed?.getAttribute('aria-label')).toContain('payment_reversals')
+    expect(allButtons().some((b) => b.textContent?.trim().startsWith('Reversed'))).toBe(false)
   })
 
-  it('draws the method control disabled, naming what is missing', async () => {
+  it('omits the unavailable method filter', async () => {
     await mount(1280)
-    const method = container.querySelector('select')
-    expect(method?.disabled).toBe(true)
-    expect(method?.getAttribute('aria-label')).toContain('bank_accounts')
+    expect(container.querySelector('select[aria-label*="method"]')).toBeNull()
   })
 
   it('draws two live day inputs', async () => {
     await mount(1280)
-    const days = [...container.querySelectorAll('input[type="date"]')]
+    /*
+     * These were `input[type="date"]` until 4 Sep 2026. They are
+     * `components/ui/DateField` now — one calendar across the whole app, with
+     * the BS date on it, which a native date input cannot show (Law 9 §9.4).
+     * The control is still a text input, so it is found by its accessible name
+     * rather than by a type the field no longer has.
+     */
+    const days = [...container.querySelectorAll<HTMLInputElement>('input')].filter((i) =>
+      /Kathmandu day$/.test(i.getAttribute('aria-label') ?? ''),
+    )
     expect(days).toHaveLength(2)
+    // Each carries its own calendar trigger, so the range is pickable and not
+    // only typeable.
+    expect(container.querySelectorAll('button[aria-label^="Open calendar"]')).toHaveLength(2)
   })
 
   it('reads the active chip from the URL, so a filtered ledger is linkable', async () => {
@@ -463,8 +483,7 @@ describe('§9.3 — the deposits rail (Law 5)', () => {
     expect(text()).toContain('Held')
     expect(text()).toContain('Applied')
     expect(text()).toContain('Refunded')
-    expect(text()).toContain('security_deposits')
-    expect(text()).toContain('Not tracked yet')
+    expect(text()).toContain('Deposit totals are unavailable in this view.')
   })
 
   it('never invents a rupee figure for a deposit', async () => {
@@ -478,8 +497,8 @@ describe('§9.3 — the deposits rail (Law 5)', () => {
     expect(text()).toContain('Outstanding')
   })
 
-  /* Rulings §7 — "right rails collapse below 1180" means reflow, not hide. */
-  it('keeps the rail on the page below 1180', async () => {
+  /* Rulings §7 — "right rails collapse below 1280" means reflow, not hide. */
+  it('keeps the rail on the page below 1280', async () => {
     await mount(1000)
     expect(text()).toContain('Deposits (separate)')
     await mount(420)
@@ -488,7 +507,7 @@ describe('§9.3 — the deposits rail (Law 5)', () => {
 })
 
 describe('the three layouts, from one width reading (Law 14)', () => {
-  it('desktop ≥1180 — the table, with the wireframe columns', async () => {
+  it('desktop ≥1280 — the table, with the wireframe columns', async () => {
     await mount(1280)
     const headers = [...container.querySelectorAll('th')].map((h) => h.textContent?.trim())
     expect(headers).toContain('Payment')
@@ -512,7 +531,7 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     expect(text()).toContain('Advance Payment')
   })
 
-  it('tablet 768–1179 — still a table, scrolling horizontally', async () => {
+  it('tablet 768–1279 — still a table, scrolling horizontally', async () => {
     await mount(1000)
     expect(container.querySelector('table')).not.toBeNull()
     const scroller = container.querySelector('[data-table-scroll]') as HTMLElement | null
@@ -551,7 +570,7 @@ describe('the ledger rows', () => {
 })
 
 describe('nav — Payments is a Finance TAB, not a twelfth nav item', () => {
-  it('records where the tab goes without touching the fixed eleven', async () => {
+  it('records where the tab goes without touching primary nav', async () => {
     const { NAV, SPEC_TABS, FINANCE_TAB_ROUTES } = await import('../../../data/nav')
     expect(NAV).toHaveLength(11)
     expect(NAV.map((s) => s.to)).not.toContain('/finance/payments')

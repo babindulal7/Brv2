@@ -20,7 +20,16 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../../../components/ui/Toast'
-import { readSettings, resetSettings } from '../../../lib/settingsStore'
+import { readSettings, resetSettings, writeSettings } from '../../../lib/settingsStore'
+
+/* The save path goes to the database (0158, `set_setting`) — covered under PGlite by `npm run test:settings`.
+   Here the screen's contract is: it saves through `saveSettings` and re-reads the store. The seam writes the
+   same device store so the persistence assertions below still mean something. */
+vi.mock('../../../lib/settingsSync', () => ({
+  hydrateSharedSettings: () => Promise.resolve(),
+  saveSettings: async (p: Parameters<typeof writeSettings>[0]) => writeSettings(p),
+  resetSharedSettings: () => Promise.resolve(),
+}))
 
 const role = { current: 'Owner' as string }
 
@@ -30,6 +39,24 @@ vi.mock('../../../lib/auth', () => ({
     user: { id: 'u-1', name: 'Babin Shrestha', role: role.current, isSharedDevice: false },
     loading: false,
     isLocked: false,
+    /*
+     * The four PIN members, added 24 Aug 2026 with `Settings ▸ System ▸ Security
+     * ▸ Device PIN`.
+     *
+     * They are here because this mock replaces the whole module, so a member it
+     * omits is `undefined` at the call site rather than a type error — and
+     * `DevicePinControl` calls `staffPinStatus()` from a mount effect, which
+     * made the omission an unhandled rejection that Vitest reported while every
+     * assertion still passed. A partial context mock fails silently in exactly
+     * the direction that looks like success.
+     *
+     * `hasPin: false` is the right default: it renders the "Not set" branch,
+     * which is what a Settings test that is not about PINs should see.
+     */
+    staffPinStatus: () => Promise.resolve({ hasPin: false }),
+    setStaffPin: () => Promise.resolve({ error: null }),
+    revokeOwnStaffPin: () => Promise.resolve({ error: null }),
+    verifyStaffPin: () => Promise.resolve({ ok: false, reason: 'no_pin' }),
   }),
 }))
 

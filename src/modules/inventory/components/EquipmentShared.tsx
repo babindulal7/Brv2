@@ -1,13 +1,13 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { cloneElement, isValidElement, useId, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import Icon from '../../../components/ui/Icon';
 import type { IconName } from '../../../components/ui/Icon';
 import { cardStyle } from '../../../components/ui/Page';
-import { STATUS } from '../../../lib/status';
+import { Badge } from '../../../components/ui/Badge';
+import { InfoTooltip } from '../../../components/ui/InfoTooltip';
 import type { StatusKey } from '../../../lib/status';
-import { CONDITION_TONE } from '../../../data/inventory';
+import { CONDITION_TONE } from '../../../lib/queries/inventory';
 import { toBs, formatBs, formatAd } from '../../../lib/bs';
-import { NEXT_ASSET_CODE } from '../../../data/addEquipment';
-import type { IntakeCondition } from '../../../data/addEquipment';
+import { NEXT_ASSET_CODE, type IntakeCondition } from '../../../lib/queries/addEquipment';
 
 export const inputStyle = (hasError?: boolean): CSSProperties => ({
   width: '100%',
@@ -29,6 +29,7 @@ export const fieldRow: CSSProperties = {
 
 export function Field({
   label,
+  id: propId,
   required,
   error,
   hint,
@@ -36,12 +37,27 @@ export function Field({
   span,
 }: {
   label: string
+  id?: string | undefined
   required?: boolean
   error?: string | null | undefined
   hint?: string | undefined
   children: ReactNode
   span?: number | undefined
 }) {
+  const autoId = useId()
+  const fieldId = propId || autoId
+
+  let content = children
+  if (isValidElement(children)) {
+    const childProps = children.props as Record<string, unknown>
+    if (!childProps.id && !childProps['aria-label'] && !childProps.label) {
+      content = cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id: fieldId,
+        'aria-label': label,
+      })
+    }
+  }
+
   return (
     <div
       style={{
@@ -52,17 +68,18 @@ export function Field({
         ...(span ? { gridColumn: `span ${span}` } : {}),
       }}
     >
-      <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
-        {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
-      </label>
-      {children}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <label htmlFor={fieldId} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+          {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
+        </label>
+        {hint && <InfoTooltip content={hint} />}
+      </div>
+      {content}
       {error ? (
         <span style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
           <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 1 }} />
           {error}
         </span>
-      ) : hint ? (
-        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{hint}</span>
       ) : null}
     </div>
   )
@@ -102,9 +119,9 @@ export function SectionCard({
         >
           {n}
         </span>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
-          {note && <p style={{ margin: '2px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{note}</p>}
+          {note && <InfoTooltip content={note} />}
         </div>
         {action && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>{action}</div>}
       </div>
@@ -113,56 +130,52 @@ export function SectionCard({
   )
 }
 
-/** §5.4 — the intake condition, badged with the tone Inventory already uses. */
+/**
+ * §5.4 — the intake condition, badged with the tone Inventory already uses.
+ *
+ * Delegates to `<Badge>` — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one
+ * component rendering the §4 map from lib/status; every screen inherits. No
+ * screen colours a status itself."
+ *
+ * This was the third hand-rolled copy of the same chip (the other two are in
+ * `Inventory.tsx`), and like them it reached for `--r-badge` — the 999 pill
+ * §3.3 reserves for numeric COUNT badges — at weight 600 in sentence case.
+ * It also carried `border: 1px solid ${c.border ?? 'transparent'}`, a branch
+ * that exists so the ONE tone with a border (`ext`, the gold mark) can draw
+ * it; no condition maps to `ext`, so the branch could only ever emit
+ * `transparent`. `<Badge>` owns that decision now.
+ *
+ * The wrapper is kept because the two files disagree on their input type —
+ * this one takes `IntakeCondition` (Add Equipment's intake vocabulary) where
+ * Inventory's takes `Condition | null` — and that is exactly the kind of local
+ * fact a shared component should not have to know.
+ */
 export function ConditionBadge({ condition }: { condition: IntakeCondition }) {
-  const c = STATUS[CONDITION_TONE[condition] as StatusKey]
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        height: 19,
-        padding: '0 7px',
-        borderRadius: 'var(--r-badge)',
-        background: c.bg,
-        color: c.fg,
-        border: `1px solid ${c.border ?? 'transparent'}`,
-        fontSize: 'var(--t-th)',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {condition}
-    </span>
-  )
+  return <Badge tone={CONDITION_TONE[condition] as StatusKey} label={condition} size="sm" />
 }
 
 /**
  * §5.3 — status renders as a badge, never a control, and while the record is a
  * Draft the units have no status at all. So the cell states that instead of
  * inventing `Available` the way the render does.
+ *
+ * Gray is the right hue for it under §4 and `lib/status` both: `neutral` means
+ * "not started yet", which is precisely a Draft's units. Same delegation as
+ * above; what stays here is the sentence — the label and the tooltip that
+ * explains WHY there is no status, which is the only reason this component
+ * exists rather than a `<Badge tone="neutral">` at each call site.
+ *
+ * The `title` needs an element of its own because `<Badge>` takes no `title`:
+ * a status block renders its word and nothing else, and a tooltip is not part
+ * of §4's block anatomy. Wrapping is the honest way to add one.
  */
 export function DraftStatusBadge() {
-  const s = STATUS.neutral
   return (
     <span
       title="Status is engine-owned. Units take In Stock at creation; a Draft's units have no status."
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 'var(--sp-xs)',
-        height: 19,
-        padding: '0 7px',
-        borderRadius: 'var(--r-badge)',
-        background: s.bg,
-        color: s.fg,
-        fontSize: 'var(--t-th)',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
+      style={{ display: 'inline-flex' }}
     >
-      <Icon name="dot" size={9} />
-      No status · Draft
+      <Badge tone="neutral" label="No status · Draft" icon={<Icon name="dot" size={9} />} size="sm" />
     </span>
   )
 }
@@ -221,7 +234,21 @@ export const th: CSSProperties = {
   borderBottom: '1px solid var(--border)',
 }
 
-export const td: CSSProperties = { padding: '7px 8px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this hands every table built
+ * on these cells §7.3's row floor ("rows >= 56px") from the token instead of
+ * from padding arithmetic. Horizontal padding is unchanged.
+ *
+ * Its one consumer today is the Stock Units grid in `SectionStockUnits`, which
+ * is exactly where the floor earns itself: each row holds a 44px serial input,
+ * a 44px condition select and a "Remove unit" button, and at 7 + content + 7
+ * those targets overhang the row. They then overlap the neighbouring row, where
+ * the later row in the DOM wins the tap — so a tap near a boundary can remove
+ * the unit BELOW the one aimed at, or send a scanned serial into another unit's
+ * field. Both are data errors that leave no trace on screen. Rows already
+ * taller than the floor are unaffected.
+ */
+export const td: CSSProperties = { height: 'var(--row-min-h)', padding: '7px 8px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' }
 
 export interface UnitDraft {
   id: string

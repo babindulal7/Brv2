@@ -38,6 +38,7 @@ export function SectionMaintenance() {
               <Field label="Inspection interval (days)">
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   value={inspectionIntervalDays}
                   onChange={(e) => setInspectionIntervalDays(e.target.value)}
@@ -49,6 +50,7 @@ export function SectionMaintenance() {
               <Field label="Maintenance cycle (rentals)">
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   value={maintenanceCycleRentals}
                   onChange={(e) => setMaintenanceCycleRentals(e.target.value)}
@@ -82,6 +84,7 @@ export function SectionMaintenance() {
                 <input
                   ref={docInput}
                   type="file"
+                  aria-label="Attach maintenance documents"
                   multiple
                   accept=".pdf,.jpg,.jpeg,.png"
                   onChange={(e) => {

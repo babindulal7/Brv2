@@ -1,0 +1,255 @@
+/* ============================================================================
+   DELIVERY & LOGISTICS WORKSPACE — CSS
+   Babin Rentals OS v2.0
+   ========================================================================== */
+
+.delivery-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.delivery-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-md);
+}
+
+.delivery-kpi-card {
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  justifyContent: space-between;
+  min-height: 92px;
+  position: relative;
+  overflow: hidden;
+  transition: transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.delivery-kpi-card:hover {
+  border-color: var(--border2);
+  transform: translateY(-1px);
+}
+
+.delivery-kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.delivery-kpi-card--transit::before { background: var(--gold); }
+.delivery-kpi-card--ready::before { background: var(--info); }
+.delivery-kpi-card--scheduled::before { background: var(--text3); }
+.delivery-kpi-card--delivered::before { background: var(--green); }
+.delivery-kpi-card--revenue::before { background: var(--st-in-fg, #2ecc71); }
+
+.delivery-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.delivery-kpi-label {
+  font-size: var(--t-caption, 11px);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text3);
+}
+
+.delivery-kpi-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  background: var(--surface2);
+  color: var(--text2);
+}
+
+.delivery-kpi-val {
+  font-size: 26px;
+  font-weight: 800;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  margin-top: 6px;
+}
+
+.delivery-kpi-sub {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 3px;
+}
+
+/* Toolbar & Filters */
+.delivery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-md);
+}
+
+.delivery-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.delivery-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Table styling */
+.delivery-table-wrapper {
+  background: var(--card);
+  border-radius: var(--r-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.delivery-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.delivery-table th {
+  padding: 12px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text3);
+  background: var(--card2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.delivery-table td {
+  padding: 12px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.delivery-row {
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.delivery-row:hover {
+  background: var(--hover-card, rgba(255, 255, 255, 0.03));
+}
+
+.delivery-row:last-child td {
+  border-bottom: none;
+}
+
+/* Kanban Board View */
+.delivery-kanban-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(260px, 1fr));
+  gap: var(--sp-md);
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: var(--sp-md);
+}
+
+.delivery-kanban-col {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  display: flex;
+  flex-direction: column;
+  min-height: 480px;
+  overflow: hidden;
+}
+
+.delivery-kanban-header {
+  padding: 12px 14px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.delivery-kanban-col-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.delivery-kanban-col-badge {
+  padding: 2px 7px;
+  border-radius: var(--r-badge);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+
+.delivery-kanban-list {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.delivery-card-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.delivery-card-item:hover {
+  border-color: var(--border2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Print Gate Pass sheet layout */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .gatepass-print-area, .gatepass-print-area * {
+    visibility: visible;
+  }
+  .gatepass-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 20px;
+    background: #fff !important;
+    color: #000 !important;
+  }
+}

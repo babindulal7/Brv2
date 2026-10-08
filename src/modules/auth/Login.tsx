@@ -1,228 +1,256 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { Card, Button, Input } from '../../components/ui'
-import { Unavailable } from '../../components/ui/Unavailable'
+import { Button, Input } from '../../components/ui'
+import Icon from '../../components/ui/Icon'
+import { AuthCard } from './AuthCard'
+import { PasswordInput } from './PasswordInput'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
 import { IS_MOCK } from '../../lib/supabase'
-import { MOCK_LOGINS } from '../../lib/mock/client'
+import { MOCK_LOGINS } from '../../lib/devQuickLogins'
+import './auth.css'
+
+const REMEMBER_EMAIL_KEY = 'babin.auth.remember_email'
 
 /**
  * **Staff sign-in.**
  *
- * Rewritten 11 Aug 2026. The previous build was a numeric PIN pad whose submit
- * handler was `navigate('/today')` under a `// Mock login success` comment —
- * any six digits, or none, signed anyone in as Owner. That is the whole reason
- * `Shell`'s `if (!user)` guard never fired.
- *
- * This form authenticates against Supabase Auth for real. The role that governs
- * every capability check is then read from `users.primary_role` by
- * `AuthProvider` — the same row migration 0041's request hook feeds to every RLS
- * policy, so the UI and the database agree by construction.
- *
- * **TODO(decision): PIN and OTP sign-in are not built.** Both appear in the
- * render this screen was ported from, and PIN specifically is the warehouse
- * tablet flow. Neither is implementable without rulings this project has not
- * made: where a PIN is stored and how it maps to a Supabase identity (Supabase
- * has no native PIN factor), which SMS gateway carries the OTP, and whether a
- * shared floor tablet signs in as the device or as the person. Inventing any of
- * that would bake an unmade security decision into a login screen, so both are
- * surfaced as unavailable-with-reason rather than faked. See PLAN.md §4.
+ * Authenticates against Supabase Auth. The role that governs capability checks
+ * is read from `users.primary_role` by `AuthProvider`.
  */
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberEmail, setRememberEmail] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lockoutSeconds, setLockoutSeconds] = useState(0)
   const [busy, setBusy] = useState(false)
   const { signIn } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const lockoutTimerRef = useRef<number | null>(null)
+
+  // Load remembered work email on mount
+  useEffect(() => {
+    try {
+      const savedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY)
+      if (savedEmail) {
+        setEmail(savedEmail)
+        setRememberEmail(true)
+      }
+    } catch {
+      /* ignore storage access error */
+    }
+  }, [])
+
+  // Lockout countdown timer ticker
+  useEffect(() => {
+    if (lockoutSeconds > 0) {
+      lockoutTimerRef.current = window.setTimeout(() => {
+        setLockoutSeconds((prev) => prev - 1)
+      }, 1000)
+    } else if (lockoutSeconds === 0 && lockoutTimerRef.current) {
+      clearTimeout(lockoutTimerRef.current)
+      lockoutTimerRef.current = null
+    }
+
+    return () => {
+      if (lockoutTimerRef.current) {
+        clearTimeout(lockoutTimerRef.current)
+      }
+    }
+  }, [lockoutSeconds])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (busy) return
+    if (busy || lockoutSeconds > 0) return
     setError(null)
 
-    if (!email.trim() || !password) {
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail || !password) {
       setError('Enter your work email and password.')
       return
     }
 
     setBusy(true)
-    const { error: signInError } = await signIn(email.trim(), password)
+    const { error: signInError } = await signIn(trimmedEmail, password)
     setBusy(false)
 
     if (signInError) {
-      // §12 — errors are inline and persistent. Never a toast.
+      // Parse rate limit or lockout cooldowns if returned by Supabase
+      const matchSeconds = signInError.match(/after (\d+) seconds/i)
+      if (matchSeconds && matchSeconds[1]) {
+        const sec = parseInt(matchSeconds[1], 10)
+        if (!isNaN(sec) && sec > 0) {
+          setLockoutSeconds(sec)
+        }
+      }
+
       setError(signInError)
       return
     }
 
-    // Return the user to wherever the guard intercepted them, not always /today.
+    // Persist or clear remembered email on successful authentication
+    try {
+      if (rememberEmail) {
+        localStorage.setItem(REMEMBER_EMAIL_KEY, trimmedEmail)
+      } else {
+        localStorage.removeItem(REMEMBER_EMAIL_KEY)
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // Return the user to wherever the guard intercepted them, not always /dashboard.
     const from = (location.state as { from?: string } | null)?.from
-    navigate(from && from !== '/login' ? from : '/today', { replace: true })
+    navigate(from && from !== '/login' ? from : '/dashboard', { replace: true })
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--app)',
-        padding: 20,
-      }}
+    <AuthCard
+      title="Welcome to Babin Rentals"
+      subtitle="Sign in with your work email to continue."
+      footer={<LoginFooter />}
     >
-      <Card
-        style={{
-          width: '100%',
-          maxWidth: 420,
-          padding: '40px 32px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 28,
-        }}
+      <form onSubmit={handleLogin} noValidate className="auth-form">
+        <div className="auth-field">
+          <label htmlFor="login-email" className="auth-label">
+            Work Email
+          </label>
+          <Input
+            id="login-email"
+            type="email"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="name@babinrentals.com"
+            autoFocus
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
+          />
+        </div>
+
+        <div className="auth-field">
+          <label htmlFor="login-password" className="auth-label">
+            Password
+          </label>
+          <PasswordInput
+            id="login-password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
+          />
+        {/* Law 12 — inline persistent error, never a toast */}
+        {error && (
+          <div id="login-error">
+            <ErrorBanner title="Could not sign in" message={error} />
+          </div>
+        )}
+
+        </div>
+
+        {/* Remember email checkbox */}
+        <label className="auth-remember-row">
+          <input
+            type="checkbox"
+            checked={rememberEmail}
+            onChange={(e) => setRememberEmail(e.target.checked)}
+            className="auth-remember-checkbox"
+          />
+          <span className="auth-remember-label">Remember work email on this device</span>
+        </label>
+
+        {/* Live lockout countdown feedback */}
+        {lockoutSeconds > 0 && (
+          <div className="auth-lockout-banner" role="alert" aria-live="assertive">
+            <Icon name="alert_circle" size={16} />
+            <span>
+              Too many sign-in attempts. Please wait{' '}
+              <span className="auth-lockout-timer">{lockoutSeconds}s</span> before retrying.
+            </span>
+          </div>
+        )}
+
+        {/* Mock mode: Quick 1-click role logins (Strictly zero emojis) */}
+        {IS_MOCK && (
+          <div role="status" className="auth-mock-box">
+            <div className="auth-mock-title">Quick Sign-In (Demo / Offline Mode):</div>
+            <div className="auth-mock-buttons">
+              {MOCK_LOGINS.map((l) => (
+                <button
+                  key={l.email}
+                  type="button"
+                  className="auth-mock-btn"
+                  onClick={async () => {
+                    setEmail(l.email)
+                    setPassword('demo1234')
+                    setBusy(true)
+                    const { error: err } = await signIn(l.email, 'demo1234')
+                    setBusy(false)
+                    if (err) {
+                      setError(err)
+                    } else {
+                      if (rememberEmail) {
+                        try {
+                          localStorage.setItem(REMEMBER_EMAIL_KEY, l.email)
+                        } catch {
+                          /* ignore */
+                        }
+                      }
+                      const from = (location.state as { from?: string } | null)?.from
+                      navigate(from && from !== '/login' ? from : '/dashboard', { replace: true })
+                    }
+                  }}
+                  title={`Sign in as ${l.role}`}
+                >
+                  <Icon
+                    name={
+                      l.role === 'Owner'
+                        ? 'crew'
+                        : l.role === 'Warehouse'
+                          ? 'package'
+                          : 'card'
+                    }
+                    size={14}
+                  />
+                  <span>{l.role}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={busy || lockoutSeconds > 0}
+          style={{ minHeight: 44, fontSize: 16 }}
+        >
+          {busy ? 'Signing in…' : lockoutSeconds > 0 ? `Wait (${lockoutSeconds}s)` : 'Sign In'}
+        </Button>
+      </form>
+    </AuthCard>
+  )
+}
+
+/**
+ * The secondary routes under the divider.
+ */
+function LoginFooter() {
+  return (
+    <>
+      <Link
+        to="/forgot-password"
+        className="auth-footer-link"
       >
-        <div style={{ textAlign: 'center' }}>
-          <h1 style={{ fontSize: 'clamp(20px, 2vw, 24px)', fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 8px', color: 'var(--text)' }}>
-            Welcome to Babin Rentals
-          </h1>
-          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
-            Sign in with your work email to continue.
-          </p>
-        </div>
-
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-          <div style={{ textAlign: 'left' }}>
-            <label
-              htmlFor="login-email"
-              style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}
-            >
-              Work Email
-            </label>
-            <Input
-              id="login-email"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@babinrentals.com"
-              autoFocus
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? 'login-error' : undefined}
-            />
-          </div>
-
-          <div style={{ textAlign: 'left' }}>
-            <label
-              htmlFor="login-password"
-              style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}
-            >
-              Password
-            </label>
-            <Input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? 'login-error' : undefined}
-            />
-          </div>
-
-          {/* §12 — inline, persistent, never a toast; icon + text, never colour
-              alone. Reuses the shared banner rather than a local copy. */}
-          {error && (
-            <div id="login-error">
-              <ErrorBanner title="Could not sign in" message={error} />
-            </div>
-          )}
-
-          {/* Mock mode only. This screen is mounted OUTSIDE Shell (App.tsx), so
-              the global MockBanner does not reach it — and without the account
-              list there is no way to discover a working sign-in. */}
-          {IS_MOCK && (
-            <div
-              role="status"
-              style={{
-                textAlign: 'left',
-                background: 'var(--st-progress-bg)',
-                color: 'var(--st-progress-fg)',
-                padding: '9px 12px',
-                borderRadius: 'var(--r-btn)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-              }}
-            >
-              <span>Mock data — local corpus, no Supabase project.</span>
-              <span style={{ fontWeight: 500 }}>
-                Sign in as {MOCK_LOGINS.map((l) => l.email).join(' · ')} with any password.
-              </span>
-            </div>
-          )}
-
-          <Button type="submit" variant="primary" disabled={busy} style={{ height: 44, fontSize: 16 }}>
-            {busy ? 'Signing in…' : 'Sign In'}
-          </Button>
-        </form>
-
-        {/* The two flows the render shows but this build cannot honestly provide. */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-lg)' }}>
-          <Unavailable reason="PIN sign-in is not built: where a PIN is stored and how it maps to a staff identity has not been decided (PLAN.md §4).">
-            <button
-              type="button"
-              disabled
-              style={{
-                width: '100%',
-                minHeight: 44,
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--muted)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                fontFamily: 'inherit',
-                cursor: 'not-allowed',
-              }}
-            >
-              Sign in with PIN
-            </button>
-          </Unavailable>
-
-          {/*
-            Was a disabled button reading "Forgot password? Send OTP", because
-            the render draws an SMS code and SMS is undecided. Built 15 Aug 2026
-            as an EMAIL reset instead — see `ForgotPassword.tsx`. The OTP half is
-            still unbuilt and still says so, one screen further in; what changed
-            is that being locked out is no longer a dead end.
-          */}
-          <Link
-            to="/forgot-password"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              minHeight: 44,
-              borderRadius: 'var(--r-btn)',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--primary-text)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            Forgot password?
-          </Link>
-        </div>
-      </Card>
-    </div>
+        Forgot password?
+      </Link>
+    </>
   )
 }

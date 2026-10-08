@@ -1,4 +1,6 @@
-import { PageHeader, Card, ReflowRail, SideRail, cardStyle, useBandColumns } from '../../components/ui/Page'
+import { useEffect, useState } from 'react'
+import { PageHeader, ReflowRail, KpiStrip, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -6,18 +8,18 @@ import { Donut, Legend } from '../../components/ui/Charts'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { METRICS, RETURN_ON_PROMOTION, IMPACT, COUPON_DONUT, CLIENT_USAGE, TOP_COUPONS, BUNDLE_ANALYSIS, DISCOUNT_TYPES } from '../../data/promotionsReports'
-
-function PromoKpiCard({ label, value, accent, note }: any) {
-  // Mock KpiCard implementation to match ExpenseReports
-  return (
-    <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', background: `var(--${accent}-bg, var(--card))` }}>
-      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: '24px', fontWeight: 700, color: `var(--${accent})` }}>{value}</div>
-      <div style={{ fontSize: 'var(--t-meta)', color: `var(--${note.tone})` }}>{note.text}</div>
-    </Card>
-  )
-}
+import {
+  METRICS,
+  RETURN_ON_PROMOTION,
+  IMPACT,
+  COUPON_DONUT,
+  CLIENT_USAGE,
+  TOP_COUPONS,
+  BUNDLE_ANALYSIS,
+  DISCOUNT_TYPES,
+  getPromotionsReportsSummary,
+  type PromotionsReportsSummary,
+} from '../../lib/queries/promotionsReports'
 
 /** The export body — the headline block, both tables and the two rail lists. */
 function promotionsCsv(totalIssued: number): ReportCsvRow[] {
@@ -54,10 +56,21 @@ function promotionsCsv(totalIssued: number): ReportCsvRow[] {
 }
 
 export default function PromotionsReports() {
-  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     four or six cards side by side is unreadable below 1180. */
-  const bandCols = useBandColumns()
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there. */
+  const railGridColumns = useRailGridColumns()
   const money = useCanViewMoney()
+  const [, setSummary] = useState<PromotionsReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getPromotionsReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Law 6 — promotion revenue, discounts given and net impact are all rupees.
   if (!money) {
@@ -92,42 +105,57 @@ export default function PromotionsReports() {
       */}
       <ReportToolbar title="Promotions & Discounts" csv={{ filename: 'promotions', build: () => promotionsCsv(totalIssued) }} />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
-        <PromoKpiCard
-          label="Promotion Revenue"
-          value={formatMoney(METRICS.promotionRevenue as Paisa)}
-          icon="tag"
-          accent="primary"
-          note={{ text: `Generated from ${totalIssued} issued coupons`, tone: 'neutral' }}
-        />
-        <PromoKpiCard
-          label="Discounts Given"
-          value={formatMoney(METRICS.discountsGiven as Paisa)}
-          icon="dollar"
-          accent="warning"
-          note={{ text: `${RETURN_ON_PROMOTION}x Return on Promotion (ROP)`, tone: 'success' }}
-        />
-        <PromoKpiCard
-          label="Net Impact"
-          value={formatMoney(IMPACT.net as Paisa)}
-          icon="chart"
-          accent="success"
-          note={{ text: `From ${formatMoney(IMPACT.gained as Paisa)} gained`, tone: 'success' }}
-        />
-        <PromoKpiCard
-          label="Redemption Rate"
-          value={`${METRICS.redemptionRate}%`}
-          icon="refresh"
-          accent="progress"
-          note={{ text: 'Of total issued', tone: 'neutral' }}
-        />
-      </section>
+      {/* The shared strip — typed items, icon tile drawn, viewport clamp built
+          in. The old hand-rolled `PromoKpiCard` was `any`-typed and silently
+          dropped its `icon` prop ("tag" was not even a registry name — never
+          caught, because nothing rendered it). */}
+      <KpiStrip
+        columns={4}
+        items={[
+          {
+            label: 'Promotion Revenue',
+            value: formatMoney(METRICS.promotionRevenue as Paisa),
+            icon: 'dollar',
+            accent: 'primary',
+            note: `Generated from ${totalIssued} issued coupons`,
+          },
+          {
+            label: 'Discounts Given',
+            value: formatMoney(METRICS.discountsGiven as Paisa),
+            icon: 'receipt',
+            accent: 'progress',
+            note: `${RETURN_ON_PROMOTION}x Return on Promotion (ROP)`,
+          },
+          {
+            label: 'Net Impact',
+            value: formatMoney(IMPACT.net as Paisa),
+            icon: 'chart',
+            accent: 'success',
+            note: `From ${formatMoney(IMPACT.gained as Paisa)} gained`,
+          },
+          {
+            label: 'Redemption Rate',
+            value: `${METRICS.redemptionRate}%`,
+            icon: 'refresh',
+            accent: 'progress',
+            note: 'Of total issued',
+          },
+        ]}
+      />
 
-      <ReflowRail>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {/*
+        Rulings §7 — `content | rail`, the documented shape (`ExpenseReports`,
+        `CashFlowReport`, `ClientReports`). This page used to pass its WHOLE
+        body — tables and a nested left `SideRail` — into `ReflowRail`, which
+        at desktop is a 288px sticky collapsible box, so the entire report
+        rendered inside one self-scrolling rail. The tables are the content
+        column now, and the three summary cards are the rail.
+      */}
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <section aria-label="Discount Impact" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Discount Impact Must Net Out</div>
-            <div style={{ display: 'flex', flexDirection: 'row', gap: 'var(--sp-xl)', padding: 'var(--sp-md)' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 'var(--sp-lg)', padding: 'var(--sp-md)' }}>
               <div>
                 <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Discounts Given</div>
                 <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--danger)' }}>{formatMoney(IMPACT.given as Paisa)}</div>
@@ -145,61 +173,65 @@ export default function PromotionsReports() {
 
           <section aria-label="Most Used Coupons" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Most Used Coupons</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Code</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Issued</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Redeemed</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Expiry</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TOP_COUPONS.map((c) => (
-                  <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{c.id}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.code}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.issued}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.redeemed}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.expiry}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{c.rop}x</td>
+            <DataTableShell ariaLabel="Most used coupons" data-table-scroll style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
+                <thead>
+                  <tr style={{ color: 'var(--text2)' }}>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Code</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Issued</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Redeemed</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Expiry</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {TOP_COUPONS.map((c) => (
+                    <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{c.id}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.code}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.issued}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.redeemed}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.expiry}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{c.rop}x</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </DataTableShell>
           </section>
 
           <section aria-label="Bundle Discount Analysis" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Bundle Discount Analysis</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bookings Generated</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle Revenue</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Discount</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BUNDLE_ANALYSIS.map((b) => (
-                  <tr key={b.name} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{b.name}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{b.bookings}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(b.revenue as Paisa)}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--danger)' }}>-{formatMoney(b.discount as Paisa)}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{b.rop}x</td>
+            <DataTableShell ariaLabel="Bundle discount analysis" data-table-scroll style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
+                <thead>
+                  <tr style={{ color: 'var(--text2)' }}>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bookings Generated</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle Revenue</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Discount</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {BUNDLE_ANALYSIS.map((b) => (
+                    <tr key={b.name} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{b.name}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{b.bookings}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(b.revenue as Paisa)}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--danger)' }}>-{formatMoney(b.discount as Paisa)}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{b.rop}x</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </DataTableShell>
           </section>
 
         </div>
 
-        <SideRail>
+        <ReflowRail>
           <section aria-label="Coupon Donut" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Coupon Status</div>
             <div style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', alignItems: 'center' }}>
@@ -233,8 +265,8 @@ export default function PromotionsReports() {
               ))}
             </div>
           </section>
-        </SideRail>
-      </ReflowRail>
+        </ReflowRail>
+      </div>
     </div>
   )
 }

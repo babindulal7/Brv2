@@ -167,16 +167,7 @@ export function clientGlance(client: ClientRecord, gctx: GateContext): IntelGlan
     ...(client.tags ?? []).slice(0, 2).map((t) => ({ label: t, ...(isRiskTag(t) ? { tone: 'danger' as StatusKey } : {}) })),
   ]
 
-  const lines: string[] = [
-    `${client.currentRentalsCount} active rental${client.currentRentalsCount === 1 ? '' : 's'} · ${client.totalRentalsCount} lifetime`,
-  ]
-  if (canViewMoneyField(gctx, 'client-balance')) {
-    lines.push(
-      client.outstandingPaisa > 0
-        ? `Owes ${formatMoney(client.outstandingPaisa)} · deposit ${formatMoney(client.depositHeldPaisa)} held`
-        : `No balance due · deposit ${formatMoney(client.depositHeldPaisa)} held`,
-    )
-  }
+  const lines: string[] = []
   if (stop.blocked) {
     lines.push('Blocked — no new bookings')
   }
@@ -188,6 +179,14 @@ export function clientGlance(client: ClientRecord, gctx: GateContext): IntelGlan
     /* Law 12 and the §11.2 rule that an unevaluable limb is not a passing one:
        say the check did not run. Rendering nothing here reads as "clear". */
     lines.push('Credit check did not run on this record')
+  }
+  lines.push(`${client.currentRentalsCount} active rental${client.currentRentalsCount === 1 ? '' : 's'} · ${client.totalRentalsCount} lifetime`)
+  if (canViewMoneyField(gctx, 'client-balance')) {
+    lines.push(
+      client.outstandingPaisa > 0
+        ? `Owes ${formatMoney(client.outstandingPaisa)} · deposit ${formatMoney(client.depositHeldPaisa)} held`
+        : `No balance due · deposit ${formatMoney(client.depositHeldPaisa)} held`,
+    )
   }
 
   return {
@@ -222,7 +221,7 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
       { label: 'Client type', value: client.clientType },
       { label: 'Tags', value: client.tags?.length ? client.tags.join(', ') : '—' },
       { label: 'Client since', value: client.clientSinceAd ?? '—' },
-      { label: 'PAN / VAT no.', value: client.pan ?? 'Not on file' },
+      ...(canViewPII(gctx) ? [{ label: 'PAN / VAT no.', value: client.pan ?? 'Not on file' }] : []),
     ],
   })
 
@@ -272,8 +271,7 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
   }
   if (moneyScope(gctx) === 'full') {
     moneyFields.push(
-      { label: 'Pay-later used / limit', value: `${formatMoney(client.creditUsedPaisa)} / ${formatMoney(client.creditLimitPaisa)}` },
-      { label: 'Lifetime value', value: formatMoney(client.totalSpentPaisa) },
+      { label: 'Payments received', value: formatMoney(client.totalSpentPaisa) },
     )
   }
   if (moneyFields.length > 0) groups.push({ title: 'Money', fields: moneyFields })
@@ -287,7 +285,7 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
    * state, nobody sets it, and asking "set by whom" of a computed value is how
    * the old stored flag got here. Its explanation is the limb that fired.
    */
-  groups.push({
+  groups.unshift({
     title: 'Credit control',
     fields: [
       { label: 'Blocked', value: stop.blocked ? 'Blocked from new bookings' : 'No' },
@@ -315,8 +313,8 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
   groups.push({
     title: 'Activity',
     fields: [
-      ...client.activeBookings.map((b): IntelField => ({ label: b, value: 'Currently booked', trigger: { label: 'Open', to: `/rentals/${b}` } })),
-      { label: 'Last rental', value: client.lastRentalBs === '—' ? 'No rental yet' : `${client.lastRentalBs} BS · ${client.lastRentalAd}` },
+      ...(client.activeBookings ?? []).map((b): IntelField => ({ label: b, value: 'Currently booked', trigger: { label: 'Open', to: `/rentals/${b}` } })),
+      { label: 'Last rental', value: (client.lastRentalBs ?? '—') === '—' ? 'No rental yet' : `${client.lastRentalBs} BS · ${client.lastRentalAd ?? '—'}` },
     ],
   })
 

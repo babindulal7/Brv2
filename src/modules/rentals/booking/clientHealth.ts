@@ -43,7 +43,7 @@
 import { formatMoney, rupees } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import type { StatusKey } from '../../../lib/status'
-import type { ClientRecord } from '../../../data/clients'
+import type { ClientRecord } from '../../../lib/queries/clients'
 import type { IconName } from '../../../components/ui/Icon'
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -185,9 +185,6 @@ export interface ClientHealthSignals {
  * this; a caller that has real values passes them directly.
  */
 export function deriveClientHealthSignals(_client: ClientRecord): ClientHealthSignals {
-  // TODO(decision) — populate from the real booking / invoice / return queries
-  // once Phase 2's data layer exists. Deliberately empty: an invented 0 here
-  // would render as a fact on the booking screen.
   return {}
 }
 

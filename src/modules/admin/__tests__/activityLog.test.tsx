@@ -32,6 +32,13 @@ vi.mock('../../../lib/device', async (orig) => ({
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'USR-TEST', name: 'Tester', role: 'Owner', isSharedDevice: false } }),
 }))
+vi.mock('../../../lib/queries/activity', async (orig) => {
+  const real = await orig<typeof import('../../../lib/queries/activity')>()
+  return {
+    ...real,
+    listActivityEvents: async () => ({ rows: real.ACTIVITY_ROWS, total: real.ACTIVITY_ROWS.length }),
+  }
+})
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 

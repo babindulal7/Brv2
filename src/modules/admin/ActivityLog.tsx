@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { formatAd } from '../../lib/bs'
+import { useMemo, useState, useEffect } from 'react'
 import type { CSSProperties } from 'react'
 import Icon from '../../components/ui/Icon'
 import { PageHeader, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -7,15 +8,12 @@ import { EmptyState } from '../../components/ui/StateViews'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import {
-  ACTIVITY_METRICS,
-  ACTIVITY_TIMELINE,
-  ACTIVITY_USERS,
-  ACTIVITY_MODULES_PRESENT,
-  ACTIVITY_DAYS,
+  listActivityEvents,
+  ACTIVITY_MODULES,
   RETENTION_NOTE,
   targetLabel,
-} from '../../data/activityLog'
-import type { ActivityRow } from '../../data/activityLog'
+  type ActivityRow,
+} from '../../lib/queries/activity'
 
 /**
  * **Activity Log — `10_TOOLS.md` §10.5.**
@@ -56,6 +54,19 @@ export default function ActivityLog() {
   const viewport = useViewport()
   const { user } = useAuth()
   const showNetwork = user?.role === 'Owner' || user?.role === 'Manager' || user?.role === 'Admin'
+  const [timeline, setTimeline] = useState<readonly ActivityRow[]>([])
+
+  useEffect(() => {
+    let active = true
+    listActivityEvents().then((res) => {
+      if (active) {
+        setTimeline(res.rows)
+      }
+    }).catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
 
   const [who, setWho] = useState<string>(ALL)
   const [mod, setMod] = useState<string>(ALL)
@@ -63,10 +74,10 @@ export default function ActivityLog() {
 
   const rows = useMemo(
     () =>
-      ACTIVITY_TIMELINE.filter((r) => who === ALL || r.user === who)
+      timeline.filter((r) => who === ALL || r.user === who)
         .filter((r) => mod === ALL || r.module === mod)
         .filter((r) => day === ALL || r.timestamp.slice(0, 10) === day),
-    [who, mod, day],
+    [timeline, who, mod, day],
   )
 
   /** Newest first, grouped by day so the spine carries a date header. */
@@ -81,11 +92,22 @@ export default function ActivityLog() {
     return [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]))
   }, [rows])
 
+  const metrics = useMemo(() => ({
+    totalActivities: timeline.length,
+    failed: timeline.filter((r) => r.status === 'Failed').length,
+    uniqueUsers: new Set(timeline.map((r) => r.user)).size,
+    modulesTouched: new Set(timeline.map((r) => r.module)).size,
+  }), [timeline])
+
+  const userOptions = useMemo(() => [...new Set(timeline.map((r) => r.user))].sort((a, b) => a.localeCompare(b)), [timeline])
+  const moduleOptions = useMemo(() => ACTIVITY_MODULES.filter((m) => timeline.some((r) => r.module === m)), [timeline])
+  const dayOptions = useMemo(() => [...new Set(timeline.map((r) => r.timestamp.slice(0, 10)))].sort((a, b) => b.localeCompare(a)), [timeline])
+
   const kpis: Kpi[] = [
-    { label: 'Entries', value: String(ACTIVITY_METRICS.totalActivities), icon: 'activity', accent: 'primary', note: 'In this log' },
-    { label: 'Failed', value: String(ACTIVITY_METRICS.failed), icon: 'error', accent: 'danger', note: 'Errors or refusals' },
-    { label: 'People', value: String(ACTIVITY_METRICS.uniqueUsers), icon: 'users', accent: 'success', note: 'Distinct actors' },
-    { label: 'Modules', value: String(ACTIVITY_METRICS.modulesTouched), icon: 'queues', accent: 'progress', note: 'Touched' },
+    { label: 'Entries', value: String(metrics.totalActivities), icon: 'activity', accent: 'primary', note: 'In this log' },
+    { label: 'Failed', value: String(metrics.failed), icon: 'error', accent: 'danger', note: 'Errors or refusals' },
+    { label: 'People', value: String(metrics.uniqueUsers), icon: 'users', accent: 'success', note: 'Distinct actors' },
+    { label: 'Modules', value: String(metrics.modulesTouched), icon: 'queues', accent: 'progress', note: 'Touched' },
   ]
 
   const filtered = who !== ALL || mod !== ALL || day !== ALL
@@ -109,9 +131,9 @@ export default function ActivityLog() {
           gap: 'var(--sp-sm)',
         }}
       >
-        <Filter label="User" value={who} onChange={setWho} options={ACTIVITY_USERS} />
-        <Filter label="Module" value={mod} onChange={setMod} options={ACTIVITY_MODULES_PRESENT} />
-        <Filter label="Date" value={day} onChange={setDay} options={ACTIVITY_DAYS} />
+        <Filter label="User" value={who} onChange={setWho} options={userOptions} />
+        <Filter label="Module" value={mod} onChange={setMod} options={moduleOptions} />
+        <Filter label="Date" value={day} onChange={setDay} options={dayOptions} />
       </div>
 
       {groups.length === 0 ? (
@@ -133,7 +155,7 @@ export default function ActivityLog() {
       ) : (
         <div style={{ ...cardStyle, padding: viewport === 'phone' ? '4px 14px 14px' : '4px 18px 18px' }}>
           {groups.map(([date, entries]) => (
-            <section key={date} aria-label={`Activity on ${date}`}>
+            <section key={date} aria-label={`Activity on ${formatAd(new Date(date))}`}>
               <h2
                 style={{
                   margin: '14px 0 4px',
@@ -144,7 +166,7 @@ export default function ActivityLog() {
                   color: 'var(--muted)',
                 }}
               >
-                <span className="figure">{date}</span>
+                <span className="figure">{formatAd(new Date(date))}</span>
               </h2>
               <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
                 {entries.map((r, i) => (
@@ -279,7 +301,7 @@ function Filter({
         <option value={ALL}>All {label.toLowerCase()}s</option>
         {options.map((o) => (
           <option key={o} value={o}>
-            {o}
+            {label === 'Date' ? formatAd(new Date(o)) : o}
           </option>
         ))}
       </select>

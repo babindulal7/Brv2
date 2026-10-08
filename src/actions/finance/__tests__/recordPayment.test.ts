@@ -169,9 +169,25 @@ describe('recordPayment — the row it writes', () => {
     // Law 7 — the DB default is `now()` in UTC and cannot be skewed by the
     // operator's device clock.
     expect(payload).not.toHaveProperty('payment_date')
-    // No mapping from the modal's six method labels to a real bank_accounts
-    // row exists; guessing one credits an account nobody chose. See METHOD.
+    // No account chosen means NO bank_account_id at all — never one inferred
+    // from the method label, which would credit an account nobody chose. See
+    // METHOD: the label→account mapping remains forbidden.
     expect(payload).not.toHaveProperty('bank_account_id')
+  })
+
+  it('writes the CHOSEN account id to bank_account_id — the structured half of "how was this paid"', async () => {
+    const accountId = '77777777-7777-4777-8777-777777777777'
+    await recordPayment({ ...INPUT, bankAccountId: accountId }, CTX)
+    const payload = access.inserts[0]!.payload
+    expect(payload['bank_account_id']).toBe(accountId)
+    // The method label still lands in notes either way — the account id is in
+    // addition to the operator's word, not a replacement for it.
+    expect(payload['notes']).toBe('Method: eSewa\nAdvance for the Pokhara shoot')
+  })
+
+  it('refuses a bank account that is not a row id — a label where a uuid belongs', async () => {
+    await expect(recordPayment({ ...INPUT, bankAccountId: 'eSewa' }, CTX)).rejects.toThrow(/account list/)
+    expect(access.inserts).toHaveLength(0)
   })
 
   it('puts the reference in transaction_ref and keeps the method visible in notes', async () => {

@@ -7,10 +7,9 @@ import { useViewport } from '../../lib/device'
 
 /**
  * A page-side panel that remembers its own open/closed state per route
- * (localStorage, keyed by `id` or the current pathname). `Rail` (right) and
- * `SideRail` (left) in `Page.tsx` are the two callers — this is where the
- * collapse mechanics live once, so both sides behave identically everywhere
- * they appear.
+ * (localStorage, keyed by `id` or the current pathname). `SideRail` in
+ * `Page.tsx` uses this for left filters. Right summaries no longer use
+ * collapse controls under the user's 7 Oct 2026 ruling.
  */
 export function CollapsibleAside({
   children,
@@ -30,7 +29,7 @@ export function CollapsibleAside({
   const key = `${side}:${id ?? location.pathname}`
   // Phone *and* tablet width have no room for a 210–300px rail sitting beside
   // `minmax(0,1fr)` content — it squeezes the content column to nothing. This
-  // product's actual target device is the 768–1179px warehouse tablet (see
+  // product's actual target device is the 768–1279px warehouse tablet (see
   // device.ts's docstring), so the collapse-by-default has to cover that band
   // too, not just phone. Default collapsed on both; `useCollapsed` still lets
   // an explicit user toggle override it.
@@ -45,7 +44,9 @@ export function CollapsibleAside({
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'center',
-          width: 44,
+          // The collapsed rail is exactly one tap wide — it holds nothing but the
+          // handle. `var(--tap)`, never a literal, per §3.3.
+          width: 'var(--tap)',
           // Sticky for the same reason the expanded panel is (see below): the
           // handle that reopens the rail has to still be on screen when someone
           // has scrolled down far enough to want it back.
@@ -68,8 +69,8 @@ export function CollapsibleAside({
           aria-label={`Expand ${label}`}
           title={`Expand ${label}`}
           style={{
-            minWidth: 44,
-            minHeight: 44,
+            minWidth: 'var(--tap)',
+            minHeight: 'var(--tap)',
             padding: 0,
             border: 'none',
             background: 'transparent',
@@ -107,8 +108,8 @@ export function CollapsibleAside({
   const handleStyle: CSSProperties = {
     position: 'absolute',
     top: -10,
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: 'var(--tap)',
+    minHeight: 'var(--tap)',
     padding: 0,
     border: 'none',
     background: 'transparent',
@@ -120,6 +121,17 @@ export function CollapsibleAside({
     ...(side === 'right' ? { left: -22 } : { right: -22 }),
   }
 
+  /*
+   * Law 14 is already satisfied for this one and it is worth saying why, because
+   * a 24px circle looks like a violation at a glance and is not.
+   *
+   * This is an `aria-hidden` `<span>` — pure paint. The *control* is
+   * `handleStyle`'s `<button>` wrapping it, which carries the full `--tap` box.
+   * That is the hit-area-not-paint rule taken the direct way: rather than
+   * pinning an invisible pseudo-element onto a small button, the button IS the
+   * 44 and the circle is drawn inside it. Nothing to add here; do not shrink the
+   * button to fit the circle.
+   */
   const handleDotStyle: CSSProperties = {
     width: 24,
     height: 24,
@@ -173,7 +185,7 @@ export function CollapsibleAside({
           flexDirection: 'column',
           gap: 'var(--sp-md)',
           minWidth: 0,
-          maxHeight: 'calc(100vh - var(--header-h) - var(--sp-md) * 2)',
+          maxHeight: 'calc(100dvh - var(--header-h) - var(--sp-md) * 2)',
           overflowY: 'auto',
           overscrollBehavior: 'contain',
         }}

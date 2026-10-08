@@ -4,6 +4,7 @@ import { STATUS } from '../../lib/status'
 import type { AlertRow } from '../../types/today'
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { Unavailable } from '../../components/ui/Unavailable'
 
 /**
  * Dashboard.md §8 — priority-sorted.
@@ -44,8 +45,8 @@ import { PageBody } from '../../components/ui/PageBody'
  * `quoteLapsedAlert` in `data/today.ts`, off two named filter sets that already
  * existed in `queries/bookings.ts`:
  *
- *   Critical  ← `overdue(NOW_AD)`         — On Rent, due back before now, never returned
- *   High      ← `quotesExpiring(NOW_AD)`  — still a Quote, stated date passed
+ *   Critical  ← `overdue(businessNowAd())`        — On Rent, due back before now, never returned
+ *   High      ← `quotesExpiring(businessNowAd())` — still a Quote, stated date passed
  *
  * **`useCanViewMoney` is gone from this file.** Neither alert carries a rupee
  * figure or a money action, so there is nothing for Law 6 to remove. The five
@@ -125,12 +126,13 @@ export default function AlertsPanel({
             </span>
           )}
         </span>
-        <Link
-          to="/notifications"
-          style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
-        >
-          View all
-        </Link>
+        <Unavailable reason="Notification Center is not built yet — all active operational alerts are displayed in this panel.">
+          <span
+            style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}
+          >
+            View all
+          </span>
+        </Unavailable>
       </div>
 
       {/*
@@ -190,6 +192,7 @@ export default function AlertsPanel({
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                     <span
+                      title={a.title}
                       style={{
                         fontSize: 'var(--t-ui)',
                         fontWeight: 700,
@@ -210,13 +213,20 @@ export default function AlertsPanel({
                         fontWeight: 700,
                         letterSpacing: '0.05em',
                         textTransform: 'uppercase',
-                        color: a.priority === 'Critical' ? 'var(--st-danger-fg)' : 'var(--muted)',
+                        /* --danger-text, not --st-danger-fg. This word sits
+                           bare on the row — its sibling branch is --muted, not
+                           a fill — and --st-danger-fg is --on-danger = #ffffff
+                           in both themes. The CRITICAL label was white on the
+                           card, so Law 11's required WORD was missing exactly
+                           on the rows that most need it. */
+                        color: a.priority === 'Critical' ? 'var(--danger-text)' : 'var(--muted)',
                       }}
                     >
                       {a.priority}
                     </span>
                   </div>
                   <div
+                    title={a.detail}
                     style={{
                       marginTop: 2,
                       fontSize: 'var(--t-meta)',

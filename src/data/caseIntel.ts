@@ -12,10 +12,11 @@
  * Damage-specific) plus a plain "close paths" list, so no case type can
  * reach this card and crash it.
  *
- * ⚠ This is the ONLY Cases screen this pass targets — `CasesWorkspace.tsx`
- * (routed at `/operations/cases` and inside Inventory's "Cases" tab) is a
- * separate, already-known stale duplicate with its own inline dataset and is
- * deliberately untouched here.
+ * `CasesWorkspace.tsx` is the page these cards decorate — routed at
+ * `/inventory/cases` and `/inventory/cases/:id` since 30 Aug (crumbs
+ * Inventory ▸ Cases; `/operations/cases` survives as a replace-redirect that
+ * carries the `:id`). It reads the SAME `data/cases.ts` seed this file reads,
+ * so card and page cannot disagree; its old inline dataset is gone.
  */
 
 import type { Case, CaseType } from './cases'

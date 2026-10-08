@@ -1,0 +1,136 @@
+{
+  "unit_storage": "GB",
+  "unit_bitrate": "Mbps",
+  "media_profiles": [
+    {
+      "camera": "Sony FX3 / A7S III",
+      "mode": "4K 23.98p / 24p",
+      "codec": "XAVC S-I (All-Intra 4:2:2 10-bit)",
+      "bitrate_mbps": 240,
+      "bitrate_mbyte_sec": 30.0,
+      "required_media_class": "CFexpress Type A (VPG200) or SDXC V90",
+      "minutes_per_80gb": 44,
+      "minutes_per_160gb": 88,
+      "minutes_per_320gb": 177,
+      "minutes_per_1tb": 555,
+      "confidence": "B",
+      "source": "Sony ILME-FX3 Help Guide"
+    },
+    {
+      "camera": "Sony FX3 / A7S III",
+      "mode": "4K 59.94p / 60p",
+      "codec": "XAVC S-I (All-Intra 4:2:2 10-bit)",
+      "bitrate_mbps": 600,
+      "bitrate_mbyte_sec": 75.0,
+      "required_media_class": "CFexpress Type A (VPG200) or SDXC V90",
+      "minutes_per_80gb": 17,
+      "minutes_per_160gb": 35,
+      "minutes_per_320gb": 71,
+      "minutes_per_1tb": 222,
+      "confidence": "B",
+      "source": "Sony ILME-FX3 Help Guide"
+    },
+    {
+      "camera": "Sony FX3 / A7S III",
+      "mode": "4K 119.88p / 120p High Frame Rate",
+      "codec": "XAVC S-I (All-Intra 4:2:2 10-bit S&Q)",
+      "bitrate_mbps": 1200,
+      "bitrate_mbyte_sec": 150.0,
+      "required_media_class": "CFexpress Type A (VPG200 REQUIRED - V90 will drop frames)",
+      "minutes_per_80gb": 8,
+      "minutes_per_160gb": 17,
+      "minutes_per_320gb": 35,
+      "minutes_per_1tb": 111,
+      "confidence": "B",
+      "source": "Sony Technical Bulletin"
+    },
+    {
+      "camera": "Sony FX3 / A7S III",
+      "mode": "4K 23.98p Long-GOP",
+      "codec": "XAVC HS (H.265 4:2:2 10-bit)",
+      "bitrate_mbps": 100,
+      "bitrate_mbyte_sec": 12.5,
+      "required_media_class": "SDXC V60 or V90 or CFexpress Type A",
+      "minutes_per_80gb": 106,
+      "minutes_per_160gb": 213,
+      "minutes_per_320gb": 426,
+      "minutes_per_1tb": 1333,
+      "confidence": "B",
+      "source": "Sony Help Guide"
+    },
+    {
+      "camera": "RED Komodo 6K",
+      "mode": "6K 17:9 23.98p HQ",
+      "codec": "REDCODE RAW HQ",
+      "bitrate_mbps": 1344,
+      "bitrate_mbyte_sec": 168.0,
+      "required_media_class": "CFast 2.0 (RED-Verified Only)",
+      "minutes_per_512gb": 50,
+      "confidence": "B",
+      "source": "RED Komodo Operations Manual"
+    },
+    {
+      "camera": "RED Komodo 6K",
+      "mode": "6K 17:9 23.98p MQ",
+      "codec": "REDCODE RAW MQ",
+      "bitrate_mbps": 896,
+      "bitrate_mbyte_sec": 112.0,
+      "required_media_class": "CFast 2.0 (RED-Verified Only)",
+      "minutes_per_512gb": 76,
+      "confidence": "B",
+      "source": "RED Komodo Operations Manual"
+    },
+    {
+      "camera": "RED Komodo 6K",
+      "mode": "6K 17:9 23.98p LQ",
+      "codec": "REDCODE RAW LQ",
+      "bitrate_mbps": 480,
+      "bitrate_mbyte_sec": 60.0,
+      "required_media_class": "CFast 2.0 (RED-Verified Only)",
+      "minutes_per_512gb": 142,
+      "confidence": "B",
+      "source": "RED Komodo Operations Manual"
+    },
+    {
+      "camera": "RED Komodo-X 6K",
+      "mode": "6K 17:9 80p HQ",
+      "codec": "REDCODE RAW HQ",
+      "bitrate_mbps": 4480,
+      "bitrate_mbyte_sec": 560.0,
+      "required_media_class": "CFexpress Type B (RED PRO Only)",
+      "minutes_per_1tb": 30,
+      "minutes_per_2tb": 60,
+      "confidence": "B",
+      "source": "RED DSMC3 Technical Specs"
+    },
+    {
+      "camera": "RED Komodo-X 6K",
+      "mode": "6K 17:9 23.98p MQ",
+      "codec": "REDCODE RAW MQ",
+      "bitrate_mbps": 960,
+      "bitrate_mbyte_sec": 120.0,
+      "required_media_class": "CFexpress Type B (RED PRO Only)",
+      "minutes_per_1tb": 138,
+      "minutes_per_2tb": 277,
+      "confidence": "B",
+      "source": "RED DSMC3 Technical Specs"
+    },
+    {
+      "camera": "DJI Ronin 4D 6K",
+      "mode": "6K 17:9 60p ProRes RAW HQ",
+      "codec": "Apple ProRes RAW HQ",
+      "bitrate_mbps": 3400,
+      "bitrate_mbyte_sec": 425.0,
+      "required_media_class": "DJI PROSSD 1TB or high-tier CFexpress Type B",
+      "minutes_per_1tb": 39,
+      "confidence": "B",
+      "source": "DJI Ronin 4D User Manual"
+    }
+  ],
+  "media_safety_rules": [
+    "RED cameras REJECT third-party unapproved CFast or CFexpress media during high-bitrate recording (buffer underrun risk).",
+    "Sony FX3 S&Q 120p All-Intra REQUIRES CFexpress Type A cards with VPG200 certification. V90 SD cards can cause random write aborts.",
+    "Always provide a matching high-speed USB-C 3.2 Gen 2 card reader with every card rental.",
+    "Mandatory redundancy rule: Always provide at least 2 cards for documentary, remote, or out-of-valley productions."
+  ]
+}

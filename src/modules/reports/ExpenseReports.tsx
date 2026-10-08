@@ -1,11 +1,15 @@
-import { useMemo, useState } from 'react'
+import { Pagination } from '../../components/ui/Pagination'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, ReflowRail, FooterNote, cardStyle, useRailGridColumns, useBandColumns } from '../../components/ui/Page'
+import { SearchInput } from '../../components/ui/SearchInput'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { ReportToolbar, reportDateRange, withinReportRange } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow, ReportFilters } from '../../components/ui/ReportToolbar'
 import { BRAND, BRAND_ON, STATUS } from '../../lib/status'
@@ -14,8 +18,8 @@ import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
-  EXPENSES,
   CATEGORIES,
   EXPENSE_STATUSES,
   PAYMENT_METHODS,
@@ -30,8 +34,9 @@ import {
   budgetOf,
   byCategory,
   toSlices,
-} from '../../data/expenseReports'
-import type { ExpenseRow } from '../../data/expenseReports'
+  getExpenseReportsSummary,
+} from '../../lib/queries/expenseReports'
+import type { ExpenseRow } from '../../lib/queries/expenseReports'
 
 /**
  * **Finance ▸ Expenses** — built against `03 Core Modules/Expenses.PNG` and its
@@ -67,7 +72,19 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding and the top alignment are untouched — a row
+ * that grows to the floor should still hang its text from the top.
+ *
+ * Each expense row ends in a link back to the booking, case or asset the money
+ * was spent against, and a link is a tap target. Under 56px a 44px target
+ * overhangs the rows either side, and the later row in the DOM wins the tap in
+ * the overlap band, which opens the wrong booking. What the floor buys is the
+ * tap landing on the row it was aimed at, not a roomier-looking table.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 /** Every glyph here is a real key in `components/ui/Icon`'s registry. */
 const CATEGORY_ICON: Record<string, IconName> = {
@@ -175,12 +192,14 @@ function KpiCard({
 
 export default function ExpenseReports() {
   /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     four or six cards side by side is unreadable below 1180. */
+     four or six cards side by side is unreadable below 1280. */
   const bandCols = useBandColumns()
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const money = useCanViewMoney()
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
 
   const [category, setCategory] = useState<string>('All')
   const [status, setStatus] = useState<string>('All')
@@ -188,7 +207,7 @@ export default function ExpenseReports() {
   const [vendor, setVendor] = useState<string>('All')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState<number>(10)
+  const [perPage, setPerPage] = useState<number>(25)
 
   /*
    * The shared toolbar's half of the filter set — `ListFilters`-shaped, so when
@@ -205,7 +224,21 @@ export default function ExpenseReports() {
   const [report, setReport] = useState<ReportFilters>({ dateRange: SEEDED_RANGE })
   const branch = report.chips?.branch?.[0] ?? ''
 
-  const vendors = useMemo(() => [...new Set(EXPENSES.map((r) => r.vendor))].sort(), [])
+  const [expenseList, setExpenseList] = useState<ExpenseRow[]>([])
+
+  useEffect(() => {
+    let active = true
+    getExpenseReportsSummary().then((summary) => {
+      if (active && summary.rows) {
+        setExpenseList(summary.rows)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const vendors = useMemo(() => [...new Set(expenseList.map((r) => r.vendor))].sort(), [expenseList])
 
   /*
    * Every predicate EXCEPT the category chips.
@@ -222,7 +255,7 @@ export default function ExpenseReports() {
    */
   const scoped = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return EXPENSES.filter((r) => {
+    return expenseList.filter((r) => {
       if (status !== 'All' && r.status !== status) return false
       if (method !== 'All' && r.method !== method) return false
       if (vendor !== 'All' && r.vendor !== vendor) return false
@@ -237,7 +270,7 @@ export default function ExpenseReports() {
         (r.billNo ?? '').toLowerCase().includes(q)
       )
     })
-  }, [status, method, vendor, branch, query, report.dateRange])
+  }, [expenseList, status, method, vendor, branch, query, report.dateRange])
 
   const rows = useMemo(
     () => (category === 'All' ? scoped : scoped.filter((r) => r.category === category)),
@@ -306,11 +339,33 @@ export default function ExpenseReports() {
           <>
             {/* The Export button that used to sit here had no handler. The
                 toolbar below owns CSV now, and it exports the rows currently
-                on screen rather than a fixed dump. */}
-            <Button icon="upload">Import</Button>
-            <Button icon="plus" variant="primary">
-              New Expense
-            </Button>
+                on screen rather than a fixed dump.
+
+                BUG-006 — and directly beneath that note, `Import` and `New
+                Expense` were still dead: enabled, one of them styled `primary`,
+                neither carrying an `onClick`. The comment recorded the lesson
+                and the two buttons under it went on telling the same lie.
+
+                Both are unbuilt one layer deeper than the handler. This screen
+                renders `data/expenseReports.ts` — a seed fixture — and
+                `src/actions/finance/` holds exactly two actions (`recordPayment`,
+                `approveDailyClosing`). **Nothing in the codebase writes an
+                expense row.** `lib/queries/finance.ts` reads `expenses` in four
+                places and never inserts. So there is no write path for either
+                button to call, and inventing one — deciding an expense's
+                required fields, its approval path, its import file format —
+                is a product decision, not a missing wire.
+
+                Disabled with the reason rather than removed: expenses are the
+                screen's subject and this is where creating one will live. */}
+            <Unavailable reason={EXPENSE_UNAVAILABLE.Import}>
+              <Button icon="upload" disabled>Import</Button>
+            </Unavailable>
+            <Unavailable reason={EXPENSE_UNAVAILABLE['New Expense']}>
+              <Button icon="plus" variant="primary" disabled>
+                New Expense
+              </Button>
+            </Unavailable>
           </>
         }
       />
@@ -376,7 +431,16 @@ export default function ExpenseReports() {
       {/* Category chips. Each carries its own count, derived from the same
           array the table reads — every other filter applied, this one not — so
           a chip can never advertise rows that are not there. */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div
+        className="rsp-chip-scroll"
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: phone ? 'nowrap' : 'wrap',
+          overflowX: phone ? 'auto' : 'visible',
+          paddingBottom: phone ? 4 : 0,
+        }}
+      >
         {['All', ...CATEGORIES].map((c) => {
           const on = category === c
           const count = c === 'All' ? scoped.length : scoped.filter((r) => r.category === c).length
@@ -393,22 +457,46 @@ export default function ExpenseReports() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                height: 30,
-                padding: '0 11px',
-                borderRadius: 'var(--r-badge)',
-                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: on ? 'var(--st-progress-bg)' : 'var(--card)',
-                color: on ? 'var(--st-progress-fg)' : 'var(--text2)',
+                minHeight: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--r-btn)',
+                /*
+                 * Selected = the PRIMARY, not a status hue.
+                 *
+                 * This painted its selected state `--st-progress-*` — solid
+                 * YELLOW — which breaks two v4.1 laws at once. §2/§5: "orange
+                 * and yellow never appear on a button", because the moment a
+                 * control wears a status hue the eye reads it as a status.
+                 * And §2's entity/state split: this filters by expense
+                 * CATEGORY, which is an entity, so it has no business wearing
+                 * the status vocabulary at all.
+                 *
+                 * §6's carve-out ("status FILTER chips … on = the solid block
+                 * itself") is narrow and deliberate: it covers filters whose
+                 * options ARE statuses. A category filter is not one.
+                 *
+                 * The primary treatment is what the sibling filters on the
+                 * Dashboard (`modules/today`) already use, so this now
+                 * matches them.
+                 * Radius moves off `--r-badge` too — §3.3 reserves 999 for
+                 * numeric count badges, and this is a control.
+                 */
+                border: `1px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
+                background: on ? 'var(--primary)' : 'var(--card)',
+                color: on ? 'var(--on-primary)' : 'var(--text2)',
                 fontSize: 'var(--t-meta)',
                 fontWeight: 600,
                 fontFamily: 'inherit',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {c !== 'All' && <Icon name={CATEGORY_ICON[c] ?? 'dot'} size={13} />}
               {c}
-              <span className="figure" style={{ color: 'var(--muted)', fontWeight: 700 }}>
+              {/* Inside a selected (primary-filled) chip --muted is unreadable;
+                  inherit the button's own ink instead. */}
+              <span className="figure" style={{ color: on ? 'inherit' : 'var(--muted)', fontWeight: 700, opacity: on ? 0.85 : 1 }}>
                 {count}
               </span>
             </button>
@@ -440,27 +528,21 @@ export default function ExpenseReports() {
             <Sel value={method} onChange={setMethod} all="All Payment Method" options={PAYMENT_METHODS as readonly string[]} onPick={() => setPage(1)} />
             <Sel value={vendor} onChange={setVendor} all="All Vendors" options={vendors} onPick={() => setPage(1)} />
 
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Search expense, vendor, bill no…"
-              aria-label="Search expenses"
-              style={{
-                flex: 1,
-                minWidth: 170,
-                height: 32,
-                padding: '0 10px',
-                borderRadius: 'var(--r-input)',
-                border: '1px solid var(--border)',
-                background: 'var(--card2)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontFamily: 'inherit',
-              }}
-            />
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <SearchInput
+                value={query}
+                onChange={(val) => {
+                  setQuery(val)
+                  setPage(1)
+                }}
+                onClear={() => {
+                  setQuery('')
+                  setPage(1)
+                }}
+                placeholder="Search expense, vendor, bill no…"
+                aria-label="Search expenses"
+              />
+            </div>
 
             {filtered && <Button onClick={clearAll}>Clear</Button>}
           </ReportToolbar>
@@ -477,7 +559,7 @@ export default function ExpenseReports() {
               emptyTitle={filtered ? 'No expenses match these filters' : 'No expenses recorded'}
               emptyMessage={filtered ? 'Clear a filter or widen the range to see records again.' : 'Nothing has been booked to this ledger yet.'}
             >
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Expenses report">
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -494,40 +576,12 @@ export default function ExpenseReports() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             </PageBody>
 
             {rows.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  Showing {(current - 1) * perPage + 1} to {Math.min(current * perPage, rows.length)} of {rows.length}
-                </span>
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Button onClick={() => setPage(Math.max(1, current - 1))} disabled={current === 1}>
-                    Previous
-                  </Button>
-                  <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', padding: '0 4px' }}>
-                    {current} / {pageCount}
-                  </span>
-                  <Button onClick={() => setPage(Math.min(pageCount, current + 1))} disabled={current === pageCount}>
-                    Next
-                  </Button>
-                  <select
-                    value={perPage}
-                    onChange={(e) => {
-                      setPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    aria-label="Rows per page"
-                    style={selStyle}
-                  >
-                    {ROWS_PER_PAGE.map((n) => (
-                      <option key={n} value={n}>
-                        {n} / page
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Pagination page={current} total={rows.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={ROWS_PER_PAGE} onPageSizeChange={(size) => { setPerPage(size); setPage(1) }} />
               </div>
             )}
           </Card>
@@ -576,9 +630,11 @@ export default function ExpenseReports() {
           <Card
             title="Upcoming Payments"
             action={
-              <Link to="/automation" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}>
-                View All
-              </Link>
+              <Unavailable reason="Recurring expenses and automation center are not built yet.">
+                <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}>
+                  View All
+                </span>
+              </Unavailable>
             }
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -605,23 +661,50 @@ export default function ExpenseReports() {
 
           <Card title="Quick Actions">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
+              {/*
+                These two tiles are the SAME two actions as the page header's
+                `Import` / `New Expense`, and they were dead in the same way —
+                found by probing the rendered page rather than reading it, which
+                is why the audit's file-level pass caught the header pair and
+                missed this one. Fixing only the header would have left the
+                screen contradicting itself: one copy of "New Expense" greyed
+                with a reason, an identical one two rails over still inviting a
+                press.
+
+                Same reasons, from the same constant, for exactly that: the two
+                sites cannot drift into two different explanations of one gap.
+              */}
               {QUICK_ACTIONS.map((a) => (
-                <button key={a.label} type="button" className="lift" style={quickStyle}>
-                  <Icon name={a.icon as IconName} size={17} />
-                  {a.label}
-                </button>
+                <Unavailable key={a.label} reason={EXPENSE_UNAVAILABLE[a.label]} style={{ display: 'block' }}>
+                  <button
+                    type="button"
+                    disabled
+                    style={{ ...quickStyle, width: '100%', cursor: 'not-allowed', opacity: 0.6 }}
+                  >
+                    <Icon name={a.icon as IconName} size={17} />
+                    {a.label}
+                  </button>
+                </Unavailable>
               ))}
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-              {QUICK_ACTIONS_MORE.map((label) => (
-                <Link
-                  key={label}
-                  to={label === 'Recurring Expenses' ? '/automation' : '/documents'}
-                  style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
-                >
-                  {label} →
-                </Link>
-              ))}
+              {QUICK_ACTIONS_MORE.map((label) =>
+                label === 'Recurring Expenses' ? (
+                  <Unavailable key={label} reason="Recurring expenses scheduler is not built yet.">
+                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}>
+                      {label} →
+                    </span>
+                  </Unavailable>
+                ) : (
+                  <Link
+                    key={label}
+                    to="/documents"
+                    style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
+                  >
+                    {label} →
+                  </Link>
+                ),
+              )}
             </div>
           </Card>
         </ReflowRail>
@@ -632,8 +715,10 @@ export default function ExpenseReports() {
   )
 }
 
+/* Law 15 — the hit area is the law and `--tap` is the token for it. Two
+   consumers, both period/branch Selects in the report toolbar. */
 const selStyle = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -836,6 +921,22 @@ function expensesCsv(rows: ExpenseRow[]): ReportCsvRow[] {
       ]
     }),
   ]
+}
+
+/**
+ * BUG-006 — why `Import` and `New Expense` cannot act, stated once and read by
+ * both places they render (the page header and the Quick Actions rail).
+ *
+ * Keyed by the label so `QUICK_ACTIONS.map` can look its own reason up: adding
+ * a third quick action without a reason for it is then a compile error, not a
+ * third dead button. That is the same trick the `STATUS_ICON` retype used for
+ * BUG-001 — make the honesty the type's job rather than a reviewer's.
+ */
+const EXPENSE_UNAVAILABLE: Record<(typeof QUICK_ACTIONS)[number]['label'], string> = {
+  Import:
+    'Importing expenses is not built yet — no file format is settled, and nothing in the app writes an expense row for an import to land in.',
+  'New Expense':
+    'Recording an expense is not built yet — this screen reads a seed fixture, and no action writes to the expenses table. Record expenses in your books until it ships.',
 }
 
 const quickStyle = {

@@ -1,51 +1,89 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { csvCell } from '../../lib/csv'
+import { recordExport } from '../../lib/exportAudit'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
-import type { Kpi } from '../../components/ui/Page'
+import { FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
+import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
+import { Button } from '../../components/ui/Button'
 import { PageBody } from '../../components/ui/PageBody'
-import { ActiveFilterChips, FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
-import { Unavailable } from '../../components/ui/Unavailable'
-import { STATUS, STATUS_ICON, BRAND } from '../../lib/status'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
+import { ContextDrawer } from '../../components/ui/ContextDrawer'
+import { DataTableShell } from '../../components/ui/DataTable'
+import { ActiveFilterChips, FilterButton } from '../../components/ui/FilterDrawer'
+import { SavedViewsMenu, type SavedListView } from '../../components/ui/SavedViewsMenu'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { FilterBar } from '../../components/ui/FilterBar'
+import { Pagination } from '../../components/ui/Pagination'
+import { BsAdDate } from '../../components/ui/BsAdDate'
+import { Badge } from '../../components/ui/Badge'
+import { STATUS, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
 import type { StatusKey, BrandKey } from '../../lib/status'
-import { formatMoney } from '../../lib/money'
-import { formatAd, TODAY } from '../../lib/bs'
+import { formatMoney, toRupees, type Paisa } from '../../lib/money'
+import { listInvoices, payableInvoices } from '../../lib/queries/finance'
+import { businessNowAd } from '../../lib/queries/today'
+import { formatAd, getBusinessToday } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { isStaff, type Role as SystemRole } from '../../lib/rbac'
-import { STATUS_ORDER, statusToken } from '../../lib/workflow'
+import {
+  canWriteBookingDesk,
+  canPerformOperations,
+  canRecordPayment,
+  canCloseRental,
+  canPublishTeamViews,
+  type Role as SystemRole,
+} from '../../lib/rbac'
+import { STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { useAuth } from '../../lib/auth'
+import { supabase } from '../../lib/supabase'
 import { useViewport } from '../../lib/device'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { OPERATIONS } from '../../data/booking'
-import { listBookings, type BookingListRow } from '../../lib/queries/bookings'
-import { useList, type ListQueryResult } from '../../lib/queries/useList'
-import { useFilters } from '../../lib/queries/useFilters'
-import type { ListFilters } from '../../lib/queries/listQuery'
-import { NOW_AD } from '../../data/today'
+import { ClientIntelFromId } from '../../components/intel/ClientIntelFromId'
 import {
-  VIEWS,
+  listBookings,
+  OPERATIONS,
   ROWS_PER_PAGE,
   OPTIONAL_COLUMNS,
   CHIP_MEANS,
   RENTAL_DEPOSIT_NOTE,
-  RENTAL_KPI_FILTERS,
   SUB_RENTAL_NOTE,
-  SUB_RENTAL_PENDING,
   SUB_RENTAL_UNANSWERED,
-  chipsFor,
-  filterGroupsFor,
   rentalGlance,
   rentalDetailGroups,
   rentalsQuery,
   subRentalBookingIds,
   toRentalListRow,
   withSubRental,
-} from '../../data/rentals'
-import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
-
+  type ChipKey,
+  type OptionalColumn,
+  type RentalListRow,
+} from '../../lib/queries/bookings'
+import { useList, type ListQueryResult } from '../../lib/queries/useList'
+import { useFilters } from '../../lib/queries/useFilters'
+import type { ListFilters } from '../../lib/queries/listQuery'
+import { RENTAL_VIEWS, listRentalViewCounts } from '../../lib/queries/rentalViews'
+import { formatBookingNo } from '../../lib/format'
+import { PROJECT_TYPES, displayProjectType } from '../../lib/projectTypes'
+import { LoadingSkeleton } from '../../components/ui/StateViews'
+import { listActiveDrafts, type RentalDraftRecord } from '../../actions/rentals/saveDraft'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
+const NewRental = lazy(() => import('./NewRental'))
+import { CancelRentalModal } from './modals/CancelRentalModal'
+import { FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
+import { BooqableRentalFilterDrawer } from '../../components/ui/BooqableRentalFilterDrawer'
+import { FastReturnModal } from './modals/FastReturnModal'
+import { BarcodeLookupModal } from './modals/BarcodeLookupModal'
+import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
+import { captureError } from '../../lib/monitoring'
+import { TouchTarget } from '../../components/ui/TouchTarget'
+import BookingOperationsMenu from './BookingOperationsMenu'
+import './rentals.css'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 /**
  * ## No tabs, and no Productions — `04_RENTALS.md` line 3
  *
@@ -71,35 +109,34 @@ import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
  *    lines, never stored. The chip narrows on that derivation, server-side —
  *    see `data/rentals.ts`'s `subRentalBookingIds`.
  *
- * **Kept**, because no prose removes them (rulings §1): the KPI strip, the
- * pagination footer, the Filters rail (ten of eleven groups inert) and the
- * disabled Timeline toggle. The last two are the register's own named deletion
- * candidates; they are flagged there, not deleted here.
+ * The legacy KPI strip is intentionally absent from the V2 list shell: the
+ * operational table is the primary surface. Pagination, filter state and the
+ * disabled Timeline affordance remain wired to their existing behaviour.
  */
 
-/** Law 11 — colour + icon + label. The glyph comes from the token (`lib/status.ts:52`), so no call site can ship a bare colour chip. */
+/**
+ * Law 11 — colour + icon + label — now satisfied by delegating to <Badge>.
+ * DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component rendering the §4 map
+ * from lib/status; every screen inherits. No screen colours a status itself."
+ *
+ * The hand-rolled version read `STATUS[status]` straight and then invented its
+ * own anatomy on top: radius 5 (§3.3 says `--r-chip`, 6), weight 700 (§4 says
+ * 800) and sentence case (§4 says uppercase, 0.04em). None of that was wrong
+ * on purpose — it predates there being one component to inherit from, which is
+ * exactly how the product accumulated fifteen almost-identical chips.
+ *
+ * It also indexed `STATUS_ICON`, whose `Record<StatusKey, string>` typing the
+ * `ExternalGearMark` header below warns about: two of its seven values name
+ * glyphs the `Icon` REGISTRY does not have, so `as IconName` compiles and then
+ * renders `undefined`. <Badge> resolves its own glyph and never touches that
+ * map, so the cast — and the hazard — leave with it, and the `STATUS_ICON`
+ * import is gone from this file.
+ *
+ * The wrapper is KEPT: `Tag` is what the rows call for Overdue and Cancelled,
+ * and those call sites do not change. It loses the paint, not its place.
+ */
 function Tag({ text, status }: { text: string; status: StatusKey }) {
-  const c = STATUS[status]
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 3,
-        height: 18,
-        padding: '0 6px',
-        borderRadius: 5,
-        background: c.bg,
-        color: c.fg,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 700,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <Icon name={STATUS_ICON[status] as IconName} size={10} />
-      {text}
-    </span>
-  )
+  return <Badge tone={status} label={text} size="sm" />
 }
 
 /**
@@ -133,39 +170,88 @@ function Tag({ text, status }: { text: string; status: StatusKey }) {
 const EXTERNAL_LABEL = 'Sub-rented — external gear'
 const EXTERNAL_ICON: IconName = 'external_link'
 
-/** Stage chip icons, typed against the REGISTRY — see `ExternalGearMark` above. */
-const STAGE_ICON: Record<BookingStatus, IconName> = {
-  Quote: 'file',
-  Booked: 'check',
-  Packed: 'box',
-  'On Rent': 'truck',
-  Returned: 'return_arrow',
-  Closed: 'lock',
+function calculateDraftTotal(data: RentalDraftRecord['data']): Paisa {
+  let linesTotal = 0
+  for (const l of data.lines || []) {
+    const base = (l.ratePaisa || 0) * (l.qty || 1) * (l.days || 1)
+    const discount = Math.round((base * (l.discountPct || 0)) / 100)
+    linesTotal += base - discount
+  }
+  let crewTotal = 0
+  for (const c of data.crew || []) {
+    crewTotal += (c.dayRatePaisa || 0) + (c.overtimePaisa || 0) + (c.accommodationPaisa || 0) + (c.mealsPaisa || 0)
+  }
+  const delivery = (data.deliveryChargePaisa || 0) + (data.fuelChargePaisa || 0) + (data.returnPickupChargePaisa || 0)
+  const subtotal = linesTotal + crewTotal + delivery
+  const totalDiscount = Math.round((subtotal * (data.discountPct || 0)) / 100)
+  const taxable = subtotal - totalDiscount
+  const vat = data.vatOn ? Math.round((taxable * (data.vatRatePercent ?? 13)) / 100) : 0
+  return (taxable + vat) as Paisa
 }
 
+function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
+  const data = d.data
+  const bookingNoDisplay = data.bookingNo ? `Draft #${data.bookingNo}` : `Draft ${d.id.slice(0, 8)}`
+  const clientName = data.clientName || 'Client not selected'
+  const pickupDate = data.pickup ? formatAd(new Date(data.pickup)) : ''
+  const pickupTime = data.pickupTime || ''
+  const returnDate = data.returnDate ? formatAd(new Date(data.returnDate)) : ''
+  const returnTime = data.returnTime || ''
+  const hasSubRental = Boolean(data.lines?.some((l) => l.lineType === 'Sub-rental'))
+
+  return {
+    id: d.id,
+    bookingNo: bookingNoDisplay,
+    clientId: data.clientDbId ?? data.selectedClientId ?? '',
+    client: clientName,
+    monogram: clientName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'D',
+    avatarTone: 'neutral',
+    project: data.project || 'Untitled Draft',
+    /* Drafts carry the type as `kind` (+`kindOther`); same display rule. */
+    projectTypeDisplay: displayProjectType(data.kind || null, data.kindOther ?? ''),
+    projectTypeValue: data.kind || null,
+    pickupLocation: data.pickupLocation || null,
+    returnLocation: data.returnLocation || null,
+    itemCount: data.lines?.reduce((sum, l) => sum + (l.qty || 1), 0) ?? 0,
+    createdOn: formatAd(new Date(d.updatedAt)),
+    status: 'Draft' as unknown as BookingStatus,
+    statusKey: 'neutral',
+    flags: [],
+    ...(data.pickup && data.pickup < getBusinessToday().toISOString().slice(0, 10) ? { statusNote: 'Pickup date passed' } : {}),
+    isCancelled: false,
+    isClosed: false,
+    isOverdue: false,
+    progress: 0,
+    progressTone: 'neutral',
+    pickup: { date: pickupDate, time: pickupTime, ...(data.pickup ? { ad: data.pickup } : {}) },
+    ret: { date: returnDate, time: returnTime, ...(data.returnDate ? { ad: data.returnDate } : {}) },
+    deliveryType: data.deliveryType === 'Babin Delivery' ? 'Babin Delivery' : 'Client Pickup',
+    quoteExpires: null,
+    deposit: null,
+    totalAmount: calculateDraftTotal(data),
+    isExternal: hasSubRental,
+  }
+}
+
+/**
+ * The gold mark, from `EXT_MARK` via `<Badge tone="ext">` — the same renderer
+ * `BookingDetail.tsx` and `SubRental.tsx` now use. All three hand-rolled it and
+ * all three drifted; this copy sat at radius 5 and weight 700 against §4's
+ * radius 6 and weight 600. The weight is not cosmetic: §4 gives the gold mark
+ * weight 600 and no uppercase precisely so it can never be read as a yellow
+ * status at a glance, and 700 eats into that margin. One renderer, one
+ * anatomy, three screens.
+ *
+ * The outer span stays because <Badge> takes no `aria-label` or `title`, and
+ * both are load-bearing here: `EXTERNAL_LABEL` is the sentence a screen reader
+ * gets, and `rentalsList.render.test.tsx` asserts on it by name. Wrapping keeps
+ * the accessible name exactly where it was rather than teaching <Badge> a prop
+ * for one caller.
+ */
 function ExternalGearMark() {
   return (
-    <span
-      aria-label={EXTERNAL_LABEL}
-      title={EXTERNAL_LABEL}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        height: 18,
-        padding: '0 6px',
-        borderRadius: 5,
-        // §4.2 — gold is an outline, never a fill.
-        background: STATUS.ext.bg,
-        color: STATUS.ext.fg,
-        border: `1px solid ${STATUS.ext.border ?? 'var(--border)'}`,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 700,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <Icon name={EXTERNAL_ICON} size={11} />
-      Sub-rented
+    <span aria-label={EXTERNAL_LABEL} title={EXTERNAL_LABEL} style={{ display: 'inline-flex', flexShrink: 0 }}>
+      <Badge tone="ext" label="Sub-rented" icon={<Icon name={EXTERNAL_ICON} size={11} />} size="sm" />
     </span>
   )
 }
@@ -185,12 +271,13 @@ function externalRowStyle(isExternal: boolean | null) {
  */
 function stageChipStyle(on: boolean) {
   return {
+    position: 'relative' as const,
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
-    gap: 5,
+    gap: 6,
     height: 32,
     padding: '0 12px',
-    borderRadius: 'var(--r-sm)',
+    borderRadius: 'var(--r-btn, 8px)',
     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -200,6 +287,8 @@ function stageChipStyle(on: boolean) {
     fontFamily: 'inherit',
     whiteSpace: 'nowrap' as const,
     flexShrink: 0,
+    transition: 'border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
+    boxShadow: on ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
   }
 }
 
@@ -243,7 +332,7 @@ function Track({ step, tone }: { step: number; tone: BrandKey }) {
  * `clients.id` (`avatarToneFor`), so one client wears one tone on every screen.
  */
 function Avatar({ row }: { row: RentalListRow }) {
-  const c = STATUS[row.avatarTone]
+  const c = STATUS.neutral
   return (
     <span
       aria-hidden
@@ -264,18 +353,21 @@ function Avatar({ row }: { row: RentalListRow }) {
       }}
     >
       {/* One token — 12px is the §4.3.6 floor and two lines overflow the circle. */}
-      <span>{row.monogram}</span>
+      <span>{row.client.trim().split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase()}</span>
     </span>
   )
 }
 
-/** Closes a popover on outside click and on Escape. */
-function useDismiss(open: boolean, close: () => void) {
+/** Closes a popover on outside click and on Escape. `extra` covers a portaled
+ * menu panel, which lives outside `ref` in the DOM but is logically inside. */
+function useDismiss(open: boolean, close: () => void, extra?: React.RefObject<HTMLElement>) {
   const ref = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close()
+      const t = e.target as Node
+      if (extra?.current?.contains(t)) return
+      if (ref.current && !ref.current.contains(t)) close()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close()
@@ -286,7 +378,7 @@ function useDismiss(open: boolean, close: () => void) {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open, close])
+  }, [open, close, extra])
   return ref
 }
 
@@ -303,12 +395,29 @@ const menuStyle = {
   zIndex: 30,
 }
 
+/*
+ * Law 14 / §7.3 — 44px floor, taken on the PAINT rather than on an invisible
+ * target, because a stacked menu is the one shape where the two are the same
+ * thing. Rows here are contiguous; a 44px target on a 34px row overlaps the row
+ * above and below by 5px each, and the later one in the DOM wins. This style
+ * dresses the Operations menu (Pickup · Packing · Handover · Return …) and the
+ * column chooser's `<label>` rows, so a stolen tap is a wrong operation opened
+ * against a real booking.
+ *
+ * Nothing constrains the growth: `menuStyle` is absolutely positioned with no
+ * max-height, and `OPS_MENU_H` — which only *predicts* the height so the menu
+ * knows whether to flip up — moves with it.
+ *
+ * The column chooser's rows are `<label>`s wrapping a checkbox, so growing the
+ * label grows the checkbox's hit area with it (Law 14 is satisfied by the label
+ * forwarding the click; the same trick the floor workspaces use).
+ */
 const menuItemStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: 9,
   width: '100%',
-  height: 34,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-sm)',
   border: 'none',
@@ -317,6 +426,69 @@ const menuItemStyle = {
   fontFamily: 'inherit',
   textAlign: 'left' as const,
   textDecoration: 'none',
+}
+
+/**
+ * Table menus render inside `DataTableShell`, whose horizontal scroll wrapper
+ * clips overflow on the other axis too — an inline `position: absolute` menu is
+ * cut off on bottom rows and paints under sticky headers. Portaling to
+ * `document.body` with `position: fixed` escapes both: the menu is no longer a
+ * descendant of any clipping ancestor, and `--z-dropdown` puts it above the
+ * table. Position tracks the trigger (re-measured on scroll/resize so it never
+ * detaches), right-aligned to the trigger's right edge.
+ */
+function MenuPortal({
+  anchorRef,
+  menuRef,
+  up,
+  minWidth,
+  children,
+}: {
+  anchorRef: React.RefObject<HTMLElement>
+  menuRef: React.RefObject<HTMLDivElement>
+  up: boolean
+  minWidth: number
+  children: React.ReactNode
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  useEffect(() => {
+    const measure = () => {
+      const el = anchorRef.current
+      if (el) setRect(el.getBoundingClientRect())
+    }
+    measure()
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [anchorRef])
+  if (!rect) return null
+  const style: React.CSSProperties = up
+    ? {
+        ...menuStyle,
+        position: 'fixed',
+        top: 'auto',
+        bottom: Math.max(8, window.innerHeight - rect.top + 6),
+        right: Math.max(8, window.innerWidth - rect.right),
+        minWidth,
+        zIndex: 'var(--z-dropdown)',
+      }
+    : {
+        ...menuStyle,
+        position: 'fixed',
+        top: rect.bottom + 6,
+        right: Math.max(8, window.innerWidth - rect.right),
+        minWidth,
+        zIndex: 'var(--z-dropdown)',
+      }
+  return createPortal(
+    <div ref={menuRef} role="menu" style={style}>
+      {children}
+    </div>,
+    document.body,
+  )
 }
 
 /**
@@ -337,18 +509,130 @@ const menuItemStyle = {
  *     reason on hover and focus** (§4.2), never hidden.
  */
 /** Tallest the menu gets — Open Booking, the rule, and the four operations. */
-const OPS_MENU_H = 200
+/** Predicted menu height for the flip decision. Rose from 200 when the rows
+ *  took the 44px `--tap` floor: Open Booking + 4 `OPERATIONS` = 5 × 44, plus 13 divider and 12 padding. */
+const OPS_MENU_H = 245
 
-function RowOperations({ row }: { row: RentalListRow }) {
+interface PrimaryActionConfig {
+  label: string
+  icon: IconName
+  variant: 'primary' | 'secondary' | 'outline'
+  onClick: (e: React.MouseEvent) => void
+  disabled?: boolean
+  tooltip?: string
+}
+
+function getPrimaryAction(
+  row: RentalListRow,
+  openOperations: (bookingNo: string, status: BookingStatus, job: 'Pack' | 'Handover' | 'Return' | 'Reset') => void,
+  navigate: (path: string) => void,
+  canClose: boolean = false,
+): PrimaryActionConfig | null {
+  if (row.isCancelled) {
+    return null
+  }
+
+  const statusStr = String(row.status)
+
+  if (statusStr === 'Draft') {
+    return {
+      label: 'Edit Draft',
+      icon: 'edit',
+      variant: 'outline',
+      onClick: () => navigate(`/rentals?action=new&draft=${row.id}`),
+    }
+  }
+
+  if (statusStr === 'Quote') {
+    return {
+      label: 'Open Quote',
+      icon: 'file',
+      variant: 'outline',
+      onClick: () => navigate(`/rentals/${row.bookingNo}`),
+    }
+  }
+
+  if (statusStr === 'Booked') {
+    return {
+      label: 'Pack Kit',
+      icon: 'box',
+      variant: 'primary',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Pack'),
+    }
+  }
+
+  if (statusStr === 'Packed') {
+    return {
+      label: 'Handover',
+      icon: 'truck',
+      variant: 'primary',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Handover'),
+    }
+  }
+
+  if (statusStr === 'On Rent') {
+    return {
+      label: 'Check-In',
+      icon: 'return_arrow',
+      variant: 'primary',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Return'),
+    }
+  }
+
+  if (statusStr === 'Returned') {
+    if (canClose) {
+      return {
+        label: 'Close Rental',
+        icon: 'check',
+        variant: 'primary',
+        onClick: () => navigate(`/rentals/${row.bookingNo}`),
+      }
+    }
+    return {
+      label: 'Reset & QC',
+      icon: 'refresh',
+      variant: 'primary',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Reset'),
+    }
+  }
+
+  if (statusStr === 'Closed') {
+    return {
+      label: 'Dossier',
+      icon: 'external_link',
+      variant: 'outline',
+      onClick: () => navigate(`/rentals/${row.bookingNo}`),
+    }
+  }
+
+  return null
+}
+
+function RowOperations({
+  row,
+  onCancel,
+  onInspect,
+}: {
+  row: RentalListRow
+  onCancel?: ((row: RentalListRow) => void) | undefined
+  onInspect?: ((row: RentalListRow) => void) | undefined
+}) {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const { openOperations } = useOperationsWorkspace()
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
-  const ref = useDismiss(open, () => setOpen(false))
+  const menuRef = useRef<HTMLDivElement>(null)
+  const ref = useDismiss(open, () => setOpen(false), menuRef)
+  const canClose = user ? canCloseRental(user.role) : false
+  const primary = getPrimaryAction(row, openOperations, navigate, canClose)
 
   /**
    * The table scrolls horizontally, and CSS resolves the *other* axis to `auto`
-   * alongside it — so that wrapper clips this menu vertically as well. On the
-   * bottom rows a downward menu opens straight into the clip and is cut off, so
-   * it flips upward when there is no room below and there is room above.
+   * alongside it — so that wrapper clips an inline menu vertically as well. The
+   * menu is portaled to `document.body` (`MenuPortal`), which escapes the clip
+   * entirely; the flip below only decides whether the floating panel hangs
+   * below the trigger or above it.
    */
   function toggle() {
     if (!open) {
@@ -360,82 +644,189 @@ function RowOperations({ row }: { row: RentalListRow }) {
   }
 
   return (
-    <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
-      <button
-        type="button"
-        aria-label={`Operations for ${row.bookingNo}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={toggle}
-        style={{
-          border: 'none',
-          background: open ? 'var(--hover-card)' : 'transparent',
-          color: 'var(--muted)',
-          cursor: 'pointer',
-          width: 26,
-          height: 26,
-          borderRadius: 'var(--r-xs)',
-          display: 'grid',
-          placeItems: 'center',
-        }}
-      >
-        <Icon name="more_vert" size={15} />
-      </button>
+    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+      {primary && (
+        <Button
+          type="button"
+          size="sm"
+          variant={primary.variant}
+          onClick={primary.onClick}
+          disabled={primary.disabled}
+          title={primary.tooltip || primary.label}
+          icon={primary.icon}
+          style={{
+            position: 'relative',
+            height: 28,
+            minHeight: 28,
+            padding: '3px 9px',
+            fontSize: 'var(--t-meta, 12px)',
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <TouchTarget />
+          <span>{primary.label}</span>
+        </Button>
+      )}
 
-      {open && (
-        <div role="menu" style={up ? { ...menuStyle, top: 'auto', bottom: 30 } : menuStyle}>
-          <Link
-            to={`/rentals/${row.bookingNo}`}
-            role="menuitem"
-            style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <Icon name="external_link" size={15} style={{ color: 'var(--text2)' }} />
-            <span style={{ flex: 1 }}>Open Booking</span>
-          </Link>
+      <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+        <button
+          type="button"
+          aria-label={`Operations for ${row.bookingNo}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={toggle}
+          className="press"
+          style={{
+            border: 'none',
+            background: open ? 'var(--hover-card)' : 'transparent',
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            position: 'relative',
+            width: 26,
+            height: 26,
+            borderRadius: 'var(--r-xs)',
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
+          <TouchTarget />
+          <Icon name="more_vert" size={15} />
+        </button>
 
-          <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
-
-          {OPERATIONS.map((o) => {
-            // Law 3 — cancellation is `cancelled_at`, and a cancelled booking
-            // runs no operation.
-            const enabled = !row.isCancelled && o.enabledAt.includes(row.status)
-            const why = row.isCancelled
-              ? `${row.bookingNo} is cancelled — no operation runs on it`
-              : `Available at ${o.enabledAt.join(' or ')} — this booking is ${row.status}`
-            const body = (
-              <>
-                <Icon name={o.icon} size={15} style={{ color: enabled ? 'var(--text2)' : 'var(--disabled)' }} />
-                <span style={{ flex: 1 }}>{o.label}</span>
-                {!enabled && <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />}
-              </>
-            )
-            const style = {
-              ...menuItemStyle,
-              color: enabled ? 'var(--text)' : 'var(--muted)',
-              cursor: enabled ? 'pointer' : 'not-allowed',
-            }
-            return enabled ? (
-              <Link
-                key={o.label}
-                to={`/rentals/${row.bookingNo}/${o.path}`}
+        {open && (
+          <MenuPortal anchorRef={ref} menuRef={menuRef} up={up} minWidth={226}>
+            {onInspect && (
+              <button
+                type="button"
                 role="menuitem"
-                style={style}
+                onClick={() => {
+                  setOpen(false)
+                  onInspect(row)
+                }}
+                style={{
+                  ...menuItemStyle,
+                  width: '100%',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  outline: 'none',
+                }}
+                onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                {body}
-              </Link>
-            ) : (
-              <span key={o.label} role="menuitem" aria-disabled title={why} tabIndex={0} style={style}>
-                {body}
-              </span>
-            )
-          })}
-        </div>
-      )}
-    </span>
+                <Icon name="eye" size={15} style={{ color: 'var(--text2)' }} />
+                <span style={{ flex: 1 }}>Quick view</span>
+              </button>
+            )}
+            <Link
+              to={(row.status as string) === 'Draft' ? `/rentals?action=new&draft=${row.id}` : `/rentals/${row.bookingNo}`}
+              role="menuitem"
+              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <Icon name={(row.status as string) === 'Draft' ? 'edit' : 'external_link'} size={15} style={{ color: 'var(--text2)' }} />
+              <span style={{ flex: 1 }}>{(row.status as string) === 'Draft' ? 'Edit Draft' : 'Open Booking'}</span>
+            </Link>
+
+            <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
+
+            {OPERATIONS.map((o) => {
+              // Law 3 — cancellation is `cancelled_at`, and a cancelled booking
+              // runs no operation.
+              const enabled = !row.isCancelled && o.enabledAt.includes(row.status)
+              const why = row.isCancelled
+                ? `${row.bookingNo} is cancelled — no operation runs on it`
+                : `Available at ${o.enabledAt.join(' or ')} — this booking is ${row.status}`
+              const body = (
+                <>
+                  <Icon name={o.icon} size={15} style={{ color: enabled ? 'var(--text2)' : 'var(--disabled)' }} />
+                  <span style={{ flex: 1 }}>{o.label}</span>
+                  {!enabled && <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />}
+                </>
+              )
+              const style = {
+                ...menuItemStyle,
+                color: enabled ? 'var(--text)' : 'var(--muted)',
+                cursor: enabled ? 'pointer' : 'not-allowed',
+                outline: 'none',
+              }
+              return enabled ? (
+                <Link
+                  key={o.label}
+                  to={`/rentals/${row.bookingNo}/${o.path}`}
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    setOpen(false)
+                    const job = o.path === 'packing' ? 'Pack' : o.path === 'handover' ? 'Handover' : o.path === 'return' ? 'Return' : 'Reset'
+                    openOperations(row.bookingNo, row.status, job)
+                  }}
+                  style={style}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  {body}
+                </Link>
+              ) : (
+                <span key={o.label} role="menuitem" aria-disabled title={why} tabIndex={0} style={style}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+                >
+                  {body}
+                </span>
+              )
+            })}
+
+            {!row.isCancelled && ['Quote', 'Booked', 'Packed'].includes(row.status) && onCancel && (
+              <>
+                <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false)
+                    onCancel(row)
+                  }}
+                  style={{
+                    ...menuItemStyle,
+                    width: '100%',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--danger)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    outline: 'none',
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Icon name="close" size={15} style={{ color: 'var(--danger)' }} />
+                  <span style={{ flex: 1 }}>Cancel Booking</span>
+                </button>
+              </>
+            )}
+          </MenuPortal>
+        )}
+      </span>
+    </div>
   )
 }
 
@@ -454,7 +845,8 @@ function ColumnMenu({
   toggle: (c: OptionalColumn) => void
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useDismiss(open, () => setOpen(false))
+  const menuRef = useRef<HTMLDivElement>(null)
+  const ref = useDismiss(open, () => setOpen(false), menuRef)
   return (
     <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
       <button
@@ -463,11 +855,13 @@ function ColumnMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
+        className="press"
         style={{
           border: 'none',
           background: open ? 'var(--hover-card)' : 'transparent',
           color: 'var(--muted)',
           cursor: 'pointer',
+          position: 'relative',
           width: 24,
           height: 24,
           borderRadius: 'var(--r-xs)',
@@ -475,25 +869,33 @@ function ColumnMenu({
           placeItems: 'center',
         }}
       >
+        <TouchTarget />
         <Icon name="settings" size={15} />
       </button>
       {open && (
-        <div role="menu" style={{ ...menuStyle, minWidth: 190 }}>
+        <MenuPortal anchorRef={ref} menuRef={menuRef} up={false} minWidth={190}>
           <div style={{ padding: '4px 9px 6px', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text2)' }}>
             Columns
           </div>
           {columns.map((c) => (
             <label
               key={c}
-              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer' }}
+              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              <input type="checkbox" checked={!hidden.has(c)} onChange={() => toggle(c)} />
+              <input
+                type="checkbox"
+                aria-label={`Show ${c} column`}
+                checked={!hidden.has(c)}
+                onChange={() => toggle(c)}
+              />
               <span style={{ flex: 1 }}>{c}</span>
             </label>
           ))}
-        </div>
+        </MenuPortal>
       )}
     </span>
   )
@@ -504,86 +906,23 @@ function ColumnMenu({
  * (Foundation's six stages, `lib/workflow.ts`), checkbox per stage. It is sent
  * to the server as one `chips: { stage: [...] }` group, INTERSECTED with the
  * quick-filter chip's own stage set (`rentalsQuery`), never replacing it.
- */
-function StatusFilterGroup({
-  icon,
-  selected,
-  toggle,
-}: {
-  icon: Parameters<typeof Icon>[0]['name']
-  selected: Set<BookingStatus>
-  toggle: (s: BookingStatus) => void
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-          width: '100%',
-          height: 34,
-          padding: '0 8px',
-          borderRadius: 'var(--r-sm)',
-          border: 'none',
-          background: open ? 'var(--hover-card)' : 'transparent',
-          color: 'var(--text)',
-          fontSize: 'var(--t-meta)',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}
-        onMouseEnter={(e) => {
-          if (!open) e.currentTarget.style.background = 'var(--hover-card)'
-        }}
-        onMouseLeave={(e) => {
-          if (!open) e.currentTarget.style.background = 'transparent'
-        }}
-      >
-        <Icon name={icon} size={15} style={{ color: selected.size > 0 ? 'var(--nav-active-accent)' : 'var(--text2)', flexShrink: 0 }} />
-        <span style={{ flex: 1, textAlign: 'left', fontWeight: selected.size > 0 ? 700 : 400 }}>
-          Status{selected.size > 0 ? ` (${selected.size})` : ''}
-        </span>
-        <Icon name={open ? 'chevron_up' : 'chevron_down'} size={13} style={{ color: 'var(--text2)' }} />
-      </button>
-      {open && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '2px 4px 6px 30px' }}>
-          {STATUS_ORDER.map((s) => (
-            <label
-              key={s}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-sm)',
-                height: 30,
-                fontSize: 'var(--t-meta)',
-                color: 'var(--text)',
-                cursor: 'pointer',
-              }}
-            >
-              <input type="checkbox" checked={selected.has(s)} onChange={() => toggle(s)} />
-              <span style={{ flex: 1 }}>{s}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * A figure, or an explicit non-value while it is unknown.
  *
- * A KPI reading `0` during the first load, or after the query failed, is a
- * WRONG figure rather than a missing one — and "0 overdue" is a sentence the
- * floor would act on. Same helper, same reasoning, as `Today.tsx`.
+ * ## §10 — the count beside each stage
+ *
+ * `useFacetCounts` runs one count per option, but this group cannot use its
+ * default base-stripping: `chips.stage` here is the chip's structural set
+ * INTERSECTED with the Status picks, and stripping it would count `Quote`
+ * under an `Active` chip as "all quotes" when ticking it actually renders the
+ * empty state. So the hook is given the probe under a column name the server
+ * never sees (`status`), and `countRows` — the page's injected counter, which
+ * is the module's own extension point — rebuilds the real query through
+ * `rentalsQuery` with the probe as the whole Status group. The chip's
+ * structural stages stay in the base `filters`, untouched by the strip,
+ * which is also what keys a re-count when the chip changes.
+ *
+ * `enabled: open` — six `count=exact` HEAD queries are only worth running
+ * while the accordion is showing them (the module header's own advice).
  */
-function countOf(list: { loading: boolean; error: string | null }, value: number | null): string {
-  return list.loading || list.error !== null || value === null ? '—' : String(value)
-}
 
 /**
  * The pager's visible page numbers.
@@ -594,12 +933,6 @@ function countOf(list: { loading: boolean; error: string | null }, value: number
  * render a wrapping wall of them. A fixed window keeps the control the same size
  * whatever the count is.
  */
-function pageWindow(current: number, pageCount: number, span = 5): number[] {
-  const start = Math.max(1, Math.min(current - Math.floor(span / 2), pageCount - span + 1))
-  const end = Math.min(pageCount, start + span - 1)
-  return Array.from({ length: end - start + 1 }, (_, i) => start + i)
-}
-
 /**
  * Rentals List — Page Type: List. Built from render `77B52333` / `Rentals.PNG`.
  *
@@ -623,21 +956,13 @@ function pageWindow(current: number, pageCount: number, span = 5): number[] {
  * money filter groups and the Payment Due chip are removed from their arrays
  * *before* render, so a money-blind session has no masked cell to un-hide.
  */
-export interface RentalsListProps {
-  loading?: boolean | undefined
-  error?: string | null | undefined
-  onRetry?: (() => void) | undefined
-}
-
-export default function RentalsList({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: RentalsListProps = {}) {
-  const navigate = useNavigate()
+export default function RentalsList() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const role: SystemRole = user ? user.role : 'Client'
-  const isStaffMember = user ? isStaff(user.role) : true
+  const canWriteDesk = canWriteBookingDesk(role)
+  const canOperate = canPerformOperations(role)
+  const canRecord = canRecordPayment(role)
   /** The single money gate. Mirrors `auth_can_view_money()` — see Law 6 above. */
   const money = useCanViewMoney()
   /**
@@ -647,8 +972,15 @@ export default function RentalsList({
    */
   const gctx = useMemo(() => gateContext(role), [role])
 
-  const [view, setView] = useState<(typeof VIEWS)[number]>('Table')
+  const [view, setView] = useState<'Table' | 'Cards'>('Table')
   const [hiddenCols, setHiddenCols] = useState<Set<OptionalColumn>>(new Set())
+  const [cancellingRental, setCancellingRental] = useState<RentalListRow | null>(null)
+  const [inspectingRental, setInspectingRental] = useState<RentalListRow | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [fastReturnOpen, setFastReturnOpen] = useState(false)
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const bulkProcessing = false
 
   /**
    * Rows-per-page rides the URL, but NOT through `useFilters`.
@@ -662,6 +994,7 @@ export default function RentalsList({
    * page can own this one directly and the two writers compose.
    */
   const [rawParams, setRawParams] = useSearchParams()
+  const isNew = rawParams.get('action') === 'new' || rawParams.get('tab') === 'new' || Boolean(rawParams.get('draft'))
   const perPage = useMemo(() => {
     const n = Number(rawParams.get('per'))
     return (ROWS_PER_PAGE as readonly number[]).includes(n) ? n : 20
@@ -681,14 +1014,17 @@ export default function RentalsList({
    */
   const urlSchema = useMemo(
     () => ({
-      chips: ['stage'],
+      chips: ['stage', 'project_type'],
       dateColumn: 'pickup_at',
+      /* Sort round-trips so a shared/bookmarked type-sorted view keeps its
+         order; the screen still defaults to pickup_at (see listFilters). */
+      sortColumns: ['pickup_at', 'project_type', 'clients(name)', 'stage'],
       /* `sub` is §11.1's chip. An extra rather than a chip group for the same
-         reason `quick` is one: there is no `sub_rental` column to put in an
-         `in ()`, because the fact is line-level and the booking-level answer is
-         derived (`data/rentals.ts`'s `subRentalBookingIds`). It rides the URL so
-         a refresh keeps it and "the sub-rented bookings out this week" is a
-         link (§18). */
+      reason `quick` is one: there is no `sub_rental` column to put in an
+      `in ()`, because the fact is line-level and the booking-level answer is
+      derived (`data/rentals.ts`'s `subRentalBookingIds`). It rides the URL so
+      a refresh keeps it and "the sub-rented bookings out this week" is a
+      link (§18). */
       extras: ['quick', 'sub'],
       pageSize: perPage,
       /* A query string is user input in the most literal sense — a bookmark
@@ -697,13 +1033,18 @@ export default function RentalsList({
          dropped at the parser, so the badge, the chip row and the query all
          agree it is not a filter. Validating it only on the way to
          `rentalsQuery` would leave the first two counting it. */
-      allow: { stage: STATUS_ORDER, quick: Object.keys(CHIP_MEANS), sub: ['on'] },
+      allow: {
+        stage: ['Draft', ...STATUS_ORDER],
+        project_type: [...PROJECT_TYPES],
+        quick: Object.keys(CHIP_MEANS),
+        sub: ['on'],
+      },
     }),
     [perPage],
   )
   const f = useFilters({
     url: urlSchema,
-    labels: { stage: 'Stage', quick: 'Quick filter', sub: 'Sub-Rental', pickup_at: 'Pickup' },
+    labels: { stage: 'Stage', project_type: 'Project Type', quick: 'Quick filter', sub: 'Sub-Rental', pickup_at: 'Pickup' },
   })
   const page = f.page
   const setPage = f.setPage
@@ -722,6 +1063,31 @@ export default function RentalsList({
         },
         { replace: true },
       )
+    },
+    [setRawParams],
+  )
+
+  const savedViewQuery = useMemo(() => rawParams.toString(), [rawParams])
+  const savedViewStorageKey = `babin-rentals:saved-views:${user?.id ?? 'anonymous'}`
+  const applySavedView = useCallback(
+    (saved: SavedListView | null) => {
+      setRawParams(
+        (current) => {
+          const next = new URLSearchParams(saved?.query ?? '')
+          const per = current.get('per')
+          if (per) next.set('per', per)
+          next.sort()
+          return next
+        },
+        { replace: false },
+      )
+      const columns = new Set(
+        (saved?.hiddenColumns ?? []).filter((column): column is OptionalColumn =>
+          (OPTIONAL_COLUMNS as readonly string[]).includes(column),
+        ),
+      )
+      setHiddenCols(columns)
+      setSelectedIds(new Set())
     },
     [setRawParams],
   )
@@ -761,39 +1127,67 @@ export default function RentalsList({
   const [subIds, setSubIds] = useState<readonly string[] | null>(null)
   const [subPending, setSubPending] = useState(true)
 
-  useEffect(() => {
-    let live = true
+  const refreshSubRentals = useCallback(async () => {
     setSubPending(true)
-    void subRentalBookingIds()
-      .then((ids) => {
-        if (!live) return
-        setSubIds(ids)
-      })
-      /* A rejected promise must not leave the chip spinning forever: `null` and
-         `pending: false` is the error state, and the chip says so (Law 12). */
-      .catch(() => {
-        if (live) setSubIds(null)
-      })
-      .finally(() => {
-        if (live) setSubPending(false)
-      })
-    return () => {
-      live = false
+    try {
+      const ids = await subRentalBookingIds()
+      setSubIds(ids)
+    } catch {
+      setSubIds(null)
+    } finally {
+      setSubPending(false)
     }
   }, [])
+
+  useEffect(() => {
+    void refreshSubRentals()
+  }, [refreshSubRentals])
 
   /** The same answer as a set, for the per-row marking. */
   const subIdSet = useMemo(() => (subIds === null ? null : new Set(subIds)), [subIds])
 
-  const statusKey = (f.filters.chips?.stage ?? []).join(' ')
-  const statuses = useMemo(
-    () => (statusKey ? statusKey.split(' ').filter((s): s is BookingStatus => (STATUS_ORDER as readonly string[]).includes(s)) : []),
+  /* Keyed on a character no stage name contains. This used to join and split
+     on a SPACE, so 'On Rent' became 'On' + 'Rent', both fell out of the
+     vocabulary filter below, and the one stage that matters most on this list
+     could never be filtered (BUG_AUDIT_LIFECYCLE X-04, driven 2 Sep 2026). */
+  const statusKey = (f.filters.chips?.stage ?? []).join('|')
+  const stageChips = useMemo(
+    () =>
+      statusKey
+        ? statusKey
+            .split('|')
+            .filter((s): s is BookingStatus | 'Draft' => (STATUS_ORDER as readonly string[]).includes(s) || s === 'Draft')
+        : [],
     [statusKey],
+  )
+  const statuses = useMemo(
+    () => stageChips.filter((s): s is BookingStatus => s !== 'Draft'),
+    [stageChips],
   )
   const statusFilter = useMemo(() => new Set(statuses), [statuses])
 
+  /* Project Type facet — a plain chip group on the real `project_type` column
+     (unlike `quick`/`sub`, which are derived and ride extras). Multi-select ORs
+     inside the group via the generic `.in()` in `applyListFilters`; the URL
+     carries repeated `?project_type=` keys (§34). Keyed on '|' like statusKey —
+     no project type contains it. */
+  const projectTypeKey = (f.filters.chips?.project_type ?? []).join('|')
+  const projectTypeFilter = useMemo(
+    () => new Set(projectTypeKey ? projectTypeKey.split('|') : []),
+    [projectTypeKey],
+  )
+  function toggleProjectType(t: string) {
+    f.toggleChip('project_type', t)
+  }
+
   const from = f.filters.dateRange?.fromAd ?? ''
   const to = f.filters.dateRange?.toAd ?? ''
+
+  // §Step 6 — Selection is strictly scoped to the current page/filter view.
+  // Changing page, rows per page, or any filter criteria invalidates and resets selection.
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [page, perPage, chip, subOn, statusKey, from, to])
   /**
    * The filter panel is now an overlay, not a column.
    *
@@ -809,8 +1203,8 @@ export default function RentalsList({
    * The three layouts §4.1 draws, from one width reading (Law 14 — width
    * decides, never orientation; Law 13 — capability, never a platform name).
    *
-   *  - **desktop ≥1180** — the full table beside the Filters rail.
-   *  - **tablet 768–1179** — fewer columns (`BR# │ client │ dates │ badge │
+   *  - **desktop ≥1280** — the full table beside the Filters rail.
+   *  - **tablet 768–1279** — fewer columns (`BR# │ client │ dates │ badge │
    *    [prim]⋮`), chips in one scrolling row, and the Filters rail REFLOWED
    *    below the list rather than hidden (rulings §7: "collapse" means reflow).
    *  - **phone <768** — card rows, one primary action each.
@@ -818,11 +1212,8 @@ export default function RentalsList({
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
 
-  const chips = useMemo(() => chipsFor(money), [money])
-  const filterGroups = useMemo(() => filterGroupsFor(money), [money])
-
-  /** §8.3 — Deposit is not offerable as a column when money is not visible. */
-  const optionalColumns = useMemo(() => OPTIONAL_COLUMNS.filter((c) => c !== 'Deposit' || money), [money])
+  /** §8.3 — Total Amount is not offerable as a column when money is not visible. */
+  const optionalColumns = useMemo(() => OPTIONAL_COLUMNS.filter((c) => c !== 'Total Amount' || money), [money])
 
   /*
    * The whole filter set: one chip plus the Status accordion, intersected.
@@ -832,15 +1223,43 @@ export default function RentalsList({
    * treats an empty chip array as "no constraint", so sending it would return
    * EVERY stage. The set is not sent at all; the empty state renders instead.
    */
+  /*
+   * The operating day, read on every render (X-05). It is a `useMemo`
+   * DEPENDENCY rather than a value passed anywhere: the chip filter sets below
+   * are built from the instant `businessNowAd()` returns when the memo runs, and
+   * naming the day here is what makes the memo re-run when the day turns over.
+   * Without it a tablet left open across midnight kept the previous day's
+   * Tomorrow / Next 7 Days bounds under chips still carrying those labels.
+   */
+  /*
+   * The instant every set below is anchored to, read on EVERY render — the same
+   * shape `Today.tsx` uses for its own Overdue count.
+   *
+   * ⛔ It was `useMemo(() => businessNowAd(), [dayAd])`. `dayAd` was
+   * `businessDayAd()`, which only changes at Kathmandu midnight, so the anchor
+   * was pinned to the FIRST render of the day: a booking falling due at 14:00
+   * did not reach the Overdue chip, the Overdue KPI or the table's `lateDays`
+   * for the rest of the shift. That is the exact defect X-06 was raised for —
+   * keying a clock read on the day cannot unfreeze the clock.
+   *
+   * Safe against a `useList` refetch loop, and not by luck: `useList` keys on
+   * `filterKey(filters)`, a VALUE key, and every set that reads this anchor
+   * floors it first — `overdue()` to the minute, the Tomorrow / Next 7 Days
+   * bounds to the day. Two renders inside the same minute therefore produce the
+   * same key. Anything added here that reads the anchor unfloored WILL loop.
+   */
+  const anchor = businessNowAd()
+
   const query = useMemo(
-    () => rentalsQuery(chip, { from, to }, statuses, NOW_AD, { on: subOn, bookingIds: subIds }),
-    [chip, from, to, statuses, subOn, subIds],
+    () => rentalsQuery(chip, { from, to }, statuses, anchor, { on: subOn, bookingIds: subIds }),
+    [chip, from, to, statuses, subOn, subIds, anchor],
   )
 
   /* §6 — groups, not values. Three stages ticked is ONE thing being filtered
      on. `useFilters` counts the quick-filter extra alongside them, because it
      narrows the list exactly as the others do. */
   const isFiltered = f.activeCount > 0
+  const viewCounts = useList(listRentalViewCounts, { ...f.filters, ...query.filters, chips: { ...f.filters.chips, ...query.filters.chips } })
 
   const clearFilters = f.clearAll
 
@@ -852,15 +1271,158 @@ export default function RentalsList({
   const fetchRentals = useCallback(
     async (filters: ListFilters): Promise<ListQueryResult<RentalListRow>> => {
       if (query.impossible) return { rows: [], total: 0 }
-      const res = await listBookings({ ...filters, withCount: true, ...(money ? { withDeposit: true } : {}) })
-      return { rows: res.rows.map((r) => toRentalListRow(r, NOW_AD)), total: res.total ?? null }
+
+      const rawStages = (filters.chips?.stage ?? []) as string[]
+      const includesDraft = rawStages.includes('Draft')
+      const dbStages = rawStages.filter((s) => s !== 'Draft')
+      const onlyDraft = includesDraft && dbStages.length === 0
+      const shouldFetchDrafts = includesDraft || rawStages.length === 0
+
+      const dbFilters: ListFilters = {
+        ...filters,
+        ...(filters.chips?.stage ? { chips: { ...filters.chips, stage: dbStages } } : {}),
+      }
+
+      const rawDrafts = shouldFetchDrafts ? await listActiveDrafts() : []
+
+      let filteredDrafts = rawDrafts
+
+      // 1. Search filter
+      if (filters.search) {
+        const q = filters.search.toLowerCase()
+        filteredDrafts = filteredDrafts.filter(
+          (d) =>
+            (d.data.bookingNo && d.data.bookingNo.toLowerCase().includes(q)) ||
+            (d.data.project && d.data.project.toLowerCase().includes(q)) ||
+            (d.data.kind && d.data.kind.toLowerCase().includes(q)) ||
+            (d.data.kindOther && d.data.kindOther.toLowerCase().includes(q)) ||
+            (d.data.clientName && d.data.clientName.toLowerCase().includes(q)) ||
+            (d.data.selectedClientId && d.data.selectedClientId.toLowerCase().includes(q)),
+        )
+      }
+
+      // 1b. Project Type facet — drafts carry the answer as `kind`, so they
+      // are narrowed client-side while bookings narrow server-side. A draft
+      // with no kind never matches a selected type.
+      const wantedTypes = filters.chips?.project_type ?? []
+      if (wantedTypes.length > 0) {
+        filteredDrafts = filteredDrafts.filter((d) => wantedTypes.includes(d.data.kind))
+      }
+
+      // 2. Date range filter (pickup date)
+      if (filters.dateRange) {
+        const { fromAd, toAd } = filters.dateRange
+        filteredDrafts = filteredDrafts.filter((d) => {
+          const pickup = d.data.pickup
+          if (!pickup) return true
+          if (fromAd && pickup < fromAd) return false
+          if (toAd && pickup > toAd) return false
+          return true
+        })
+      }
+
+      // 3. Sub-Rental filter
+      if (subOn) {
+        filteredDrafts = filteredDrafts.filter((d) =>
+          d.data.lines?.some((l) => l.lineType === 'Sub-rental'),
+        )
+      }
+
+      // 4. Client name resolution for drafts missing clientName
+      const missingClientIds = Array.from(
+        new Set(
+          filteredDrafts
+            .filter((d) => !d.data.clientName && (d.data.clientDbId || d.data.selectedClientId))
+            .map((d) => d.data.clientDbId || d.data.selectedClientId)
+            .filter(Boolean) as string[],
+        ),
+      )
+      if (missingClientIds.length > 0) {
+        try {
+          const { data: clientsData } = await supabase
+            .from('clients')
+            .select('id, name')
+            .in('id', missingClientIds)
+          if (clientsData) {
+            const nameMap = new Map(clientsData.map((c: { id: string; name: string }) => [c.id, c.name]))
+            for (const d of filteredDrafts) {
+              const cid = d.data.clientDbId || d.data.selectedClientId
+              const resolvedName = cid ? nameMap.get(cid) : undefined
+              if (resolvedName) {
+                d.data.clientName = resolvedName
+              }
+            }
+          }
+        } catch {
+          // Fallback to existing client info
+        }
+      }
+
+      const totalDrafts = filteredDrafts.length
+
+      // Pagination calculation
+      const pageIndex = filters.page?.index ?? 0
+      const pageSize = filters.page?.size ?? perPage
+      const windowStart = pageIndex * pageSize
+      const windowEnd = windowStart + pageSize
+
+      // Case A: Drafts fall within current page window
+      if (windowStart < totalDrafts) {
+        const pageDrafts = filteredDrafts.slice(windowStart, windowEnd)
+        const draftRows = pageDrafts.map(draftToRentalListRow)
+        const slotsRemaining = pageSize - draftRows.length
+
+        if (onlyDraft || slotsRemaining <= 0) {
+          return { rows: draftRows, total: totalDrafts }
+        }
+
+        const res = await listBookings({
+          ...dbFilters,
+          page: undefined,
+          range: { from: 0, to: slotsRemaining - 1 },
+          withCount: true,
+          ...(money ? { withDeposit: true, withTotalAmount: true } : {}),
+        })
+
+        const bookingRows = res.rows.map((r) => toRentalListRow(r, businessNowAd()))
+        const totalCount = totalDrafts + (res.total ?? bookingRows.length)
+
+        return { rows: [...draftRows, ...bookingRows], total: totalCount }
+      }
+
+      // Case B: Current page is beyond drafts
+      if (onlyDraft) {
+        return { rows: [], total: totalDrafts }
+      }
+
+      const bookingOffset = windowStart - totalDrafts
+      const res = await listBookings({
+        ...dbFilters,
+        page: undefined,
+        range: { from: bookingOffset, to: bookingOffset + pageSize - 1 },
+        withCount: true,
+        ...(money ? { withDeposit: true, withTotalAmount: true } : {}),
+      })
+
+      const bookingRows = res.rows.map((r) => toRentalListRow(r, businessNowAd()))
+      const totalCount = totalDrafts + (res.total ?? bookingRows.length)
+
+      return { rows: bookingRows, total: totalCount }
     },
-    [query.impossible, money],
+    [query.impossible, money, subOn, perPage],
   )
 
   /* Server-side paging. `withCount: true` is what makes "Showing X to Y of Z"
-     a count of the whole matching set rather than of the page in hand. */
-  const listFilters: ListFilters = { ...query.filters, page: { index: page - 1, size: perPage } }
+     a count of the whole matching set rather than of the page in hand. The
+     operator's sort (default pickup_at, set by the toolbar control) rides
+     along — `rentalsQuery` does not carry it, so it is merged here. */
+  const listFilters: ListFilters = {
+    ...f.filters,
+    ...query.filters,
+    chips: { ...f.filters.chips, ...query.filters.chips, ...(stageChips.includes('Draft') ? { stage: [...(query.filters.chips?.stage ?? []), 'Draft'] } : {}) },
+    ...(f.filters.sort ? { sort: f.filters.sort } : {}),
+    page: { index: page - 1, size: perPage },
+  }
   const list = useList<RentalListRow>(fetchRentals, listFilters, { isFilteredOverride: isFiltered })
 
   const total = list.total
@@ -892,41 +1454,42 @@ export default function RentalsList({
    *
    * NONE of them passes `withDeposit`.
    */
-  const countFetcher = useCallback((filters: ListFilters) => listBookings({ ...filters, withCount: true }), [])
-  const activeKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.active, { isFilteredOverride: false })
-  const pickupsKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.pickups, { isFilteredOverride: false })
-  const returnsKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.returns, { isFilteredOverride: false })
-  const overdueKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.overdue, { isFilteredOverride: false })
-
+  /*
+   * §10 facet counts for the Status accordion — see `StatusFilterGroup`'s
+   * header for why the probe travels under `status` rather than `stage`.
+   *
+   * The base is this page's query with NO Status picks: the strip that
+   * `countFacet` performs on a plain group is done here by construction,
+   * while the chip's structural `stage` set, the date range and the
+   * Sub-Rental `id` set all stay — both as constraints and as the change key
+   * that re-fires the counts when any of them moves.
+   *
+   * NEITHER call passes `withDeposit` (Law 6) — a count carries no money.
+   */
+  /* `useList` memoises `refetch`; naming it keeps refresh stable while the
+     table remains the only default data surface on this list. */
+  const { refetch: refetchList } = list
+  const { refetch: refreshViewCounts } = viewCounts
   const refreshAll = useCallback(() => {
-    list.refetch()
-    activeKpi.refetch()
-    pickupsKpi.refetch()
-    returnsKpi.refetch()
-    overdueKpi.refetch()
-  }, [list.refetch, activeKpi.refetch, pickupsKpi.refetch, returnsKpi.refetch, overdueKpi.refetch])
+    refetchList()
+    refreshViewCounts()
+    void refreshSubRentals()
+  }, [refetchList, refreshSubRentals, refreshViewCounts])
+
+  useDomainEvent(EVENT_TYPES.RENTAL_CREATED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_PACKED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_HANDED_OVER, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_RESET_COMPLETED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CLOSED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refreshAll)
+  useDomainEvent(EVENT_TYPES.DEPOSIT_SETTLED, refreshAll)
 
   const isLoading = propLoading !== undefined ? propLoading : (list.loading || (subOn && subPending))
   const isError = propError !== undefined ? propError : (subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error)
   const handleRetry = propOnRetry ?? refreshAll
-
-  /*
-   * ⛔ Six hardcoded cards became four counted ones.
-   *
-   * `Payment Due` (Rs 142,000) and `Utilization` (84%) are ABSENT rather than
-   * dashed: no query in `lib/queries/` produces either, and a card whose value
-   * can only ever be a dash is a promise the screen cannot keep. Both already
-   * live in Reports ▸ Pulse. The hand-typed sub-lines ("8 Pending • 6
-   * Completed", "4 Overdue • 7 Expected") and the "6 since yesterday" delta are
-   * gone for the same reason — each note now states the card's own predicate,
-   * which is a fact about the query rather than a second figure.
-   */
-  const kpis: Kpi[] = [
-    { label: 'Active Rentals', value: countOf(activeKpi, activeKpi.total), icon: 'briefcase', accent: 'primary', note: 'On Rent now' },
-    { label: 'Today Pickups', value: countOf(pickupsKpi, pickupsKpi.total), icon: 'truck', accent: 'primary', note: 'Booked and Packed' },
-    { label: 'Today Returns', value: countOf(returnsKpi, returnsKpi.total), icon: 'return_arrow', accent: 'progress', note: 'Due back today, still out' },
-    { label: 'Overdue', value: countOf(overdueKpi, overdueKpi.total), icon: 'alert_triangle', accent: 'danger', note: 'Past due, never returned' },
-  ]
 
   /*
    * §11.1 — the derived sub-rental answer is applied HERE rather than in
@@ -963,15 +1526,20 @@ export default function RentalsList({
    */
   const NARROW_COLUMNS = new Set<OptionalColumn>(['Items', 'Return'])
   const show = (c: OptionalColumn) =>
-    !hiddenCols.has(c) && (c !== 'Deposit' || money) && !(viewport === 'tablet' && NARROW_COLUMNS.has(c))
+    !hiddenCols.has(c) && (c !== 'Total Amount' || money) && !(viewport === 'tablet' && NARROW_COLUMNS.has(c))
   const headers: string[] = [
-    'Booking',
+    'Booking ID',
+    'Created Date',
     'Client / Project',
+    /* Project Type sits beside Client (§10: who + what-for read together).
+       Fixed, not optional (§13) — the table scrolls horizontally at narrow
+       widths rather than dropping a high-priority column. */
+    'Project Type',
     ...(show('Items') ? ['Items'] : []),
     ...(show('Pickup') ? ['Pickup'] : []),
     ...(show('Return') ? ['Return'] : []),
     'Status',
-    ...(show('Deposit') ? ['Deposit'] : []),
+    ...(show('Total Amount') ? ['Total Amount'] : []),
   ]
 
   /* `All` is the absence of a quick filter, not a value of one — it drops the
@@ -991,122 +1559,146 @@ export default function RentalsList({
     f.setDateRange('pickup_at', fromAd || undefined, toAd || undefined)
   }
 
-  const firstOnPage = (page - 1) * perPage + 1
-  const lastOnPage = firstOnPage + list.rows.length - 1
+  const allSelected = list.rows.length > 0 && list.rows.every((r) => selectedIds.has(r.id))
+  const someSelected = list.rows.some((r) => selectedIds.has(r.id))
+
+  const toggleSelectAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(list.rows.map((r) => r.id)))
+    }
+  }, [allSelected, list.rows])
+
+  const toggleSelectRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const handleBulkExport = useCallback(() => {
+    const rows = selectedIds.size > 0
+      ? list.rows.filter((r) => selectedIds.has(r.id))
+      : list.rows
+    if (rows.length === 0) return
+
+    /* G5 (RULING 2026-10-07): the file carries the columns the table shows — an optional column the
+       operator hid is not in the export, and Total Amount is absent for a money-blind role exactly as it is
+       on screen. Money is written once, as integer paisa. No deposit stands in for a missing total
+       (deposits never touch Rental Total). Every cell goes through the one quoter in lib/csv. */
+    const shown = (c: OptionalColumn) => !hiddenCols.has(c) && (c !== 'Total Amount' || money)
+    const columns: Array<{ head: string; cell: (r: (typeof rows)[number]) => string | number }> = [
+      { head: 'Booking No', cell: (r) => r.bookingNo },
+      { head: 'Created Date', cell: (r) => r.createdOn || '' },
+      { head: 'Client', cell: (r) => r.client || '' },
+      { head: 'Project', cell: (r) => r.project || '' },
+      { head: 'Project Type', cell: (r) => r.projectTypeDisplay || '' },
+      { head: 'Status', cell: (r) => r.status },
+      ...(shown('Pickup') ? [{ head: 'Pickup Date', cell: (r: (typeof rows)[number]) => r.pickup?.date || '' }] : []),
+      ...(shown('Return') ? [{ head: 'Return Date', cell: (r: (typeof rows)[number]) => r.ret?.date || '' }] : []),
+      ...(shown('Items') ? [{ head: 'Items', cell: (r: (typeof rows)[number]) => r.itemCount }] : []),
+      ...(shown('Total Amount')
+        ? [{ head: 'Total Amount (paisa)', cell: (r: (typeof rows)[number]) => (r.totalAmount != null ? Number(r.totalAmount) : '') }]
+        : []),
+    ]
+    recordExport({
+      list: 'rentals',
+      module: 'Rentals',
+      rowCount: rows.length,
+      columns: columns.map((c) => c.head),
+      filter: savedViewQuery,
+    })
+    const csv = [columns.map((c) => csvCell(c.head)).join(','), ...rows.map((r) => columns.map((c) => csvCell(c.cell(r))).join(','))].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `rentals_export_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [list.rows, selectedIds, money, hiddenCols, savedViewQuery])
+
+  // Bulk Pack & Bulk Handover removed per Steps 2 & 3: packing and handover are
+  // physical floor operations requiring equipment resolution and stage gates in
+  // PackingWorkspace / HandoverWorkspace, never blind row selection.
+
+  /*
+   * The invoice picker behind "Record Payment". Read through `listInvoices`
+   * with the `payableInvoices` filter set (Law 2) — Draft + unsettled,
+   * non-voided, most-urgent-due first — rather than a direct table read: the
+   * named set is the one definition of "what may money be taken against".
+   *
+   * The fetch's own error state is rendered INSIDE the modal
+   * (`invoicesError` + `onRetryInvoices`): before this, a failed read landed
+   * as an empty picker that looked like "nothing is owed" (UIUX sweep D6).
+   */
+  const [availableInvoices, setAvailableInvoices] = useState<
+    Array<{
+      id: string
+      invoiceNo: string | null
+      client: string
+      amount: string
+      status: string
+      booking?: string
+      outstandingRupees?: number
+    }>
+  >([])
+  const [availableInvoicesError, setAvailableInvoicesError] = useState<string | null>(null)
+  const fetchAvailableInvoices = useCallback(async () => {
+    try {
+      const { rows } = await listInvoices(payableInvoices())
+      setAvailableInvoicesError(null)
+      setAvailableInvoices(
+        rows.map((inv) => ({
+          id: inv.id,
+          invoiceNo: inv.invoiceNo,
+          client: inv.clientName,
+          amount: formatMoney(inv.totalAmount),
+          status: inv.status,
+          booking: inv.bookingNo,
+          // R-39 D1 — feeds the Amount prefill; undefined only if the column
+          // never comes back, in which case the field opens empty as before.
+          outstandingRupees: toRupees(inv.outstandingAmount),
+        })),
+      )
+    } catch (err: unknown) {
+      captureError(err, { where: 'RentalsList.fetchAvailableInvoices' })
+      setAvailableInvoices([])
+      setAvailableInvoicesError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!paymentModalOpen) return
+    void fetchAvailableInvoices()
+  }, [paymentModalOpen, fetchAvailableInvoices])
+
   const countedTitle = total === null ? 'Rentals' : `${total} ${total === 1 ? 'Rental' : 'Rentals'} found`
 
-  /**
-   * The Filters panel's card.
-   *
-   * ⚠ This block used to claim the card "can sit in the grid's left track on
-   * desktop and inline beneath the list below 1180". It cannot and does not:
-   * `filtersCard` has exactly one render site, inside `<FilterDrawer>` near
-   * the bottom of this file, which is `position: fixed` and opens from the
-   * Filters button at **every** width. The accurate account is the earlier
-   * comment on `filtersOpen` — "the filter panel is now an overlay, not a
-   * column… it costs zero layout at every width" — and that is the single
-   * account of this screen now.
-   *
-   * Why that does not breach Rulings §7: §7 governs the **right** rails whose
-   * tablet drawings put rail content *below the list, still visible*. This is
-   * a left filter panel, and spec 04's tablet drawing shows it as a `⌣`
-   * disclosure rather than an always-visible band — a drawer is that
-   * disclosure, reachable identically at all three widths. `CollapsibleAside`
-   * is not involved either way, and its defaults are untouched.
-   *
-   * ⚠ Rulings §1 names this rail (ten of eleven groups inert) and the disabled
-   * Timeline toggle as the strongest deletion candidates now that Status has
-   * moved into the chip row. It says **leave them; raise separately** — so
-   * they are both still here, flagged, not deleted. Its Status accordion reads
-   * and writes the same `statusFilter` set the chip row does, so the two
-   * surfaces are one filter with two doors, not two filters.
-   */
-  const filtersCard = (
-    <Card
-      title="Filters"
-      action={
-        isFiltered ? (
-          <button
-            type="button"
-            onClick={clearFilters}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              color: 'var(--link)',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            Clear all
-          </button>
-        ) : (
-          /* Muted, not link-blue: link-blue reads as clickable, and there
-             is nothing behind it until something is actually narrowing. */
-          <span
-            style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}
-            aria-disabled
-            title="Nothing to clear yet — pick a stage chip above, or one of the quick filters beside it."
-          >
-            Clear all
-          </span>
-        )
-      }
-      bodyStyle={{ padding: 'var(--sp-sm)' }}
-    >
-      {/* Status is the one real facet: `bookings.stage` is a real column
-          and the six values are Foundation's own, so the group goes to
-          the server. TODO(decision): every other group needs a column or
-          a join `listBookings` does not make — Rental Type and Tags have
-          no column at all, Equipment Category is
-          bookings → booking_lines → products.category_id, Client Type is
-          clients.type_parent, Staff has no assignment table reaching a
-          booking, and Location is free text rather than a facet. Each
-          needs an embed-scoped filter `applyListFilters` cannot build.
-          Until then they stay visibly unavailable rather than accordions
-          that open onto nothing. */}
-      {filterGroups.map((g) =>
-        g.label === 'Status' ? (
-          <StatusFilterGroup key={g.label} icon={g.icon} selected={statusFilter} toggle={toggleStatus} />
-        ) : (
-          <button
-            key={g.label}
-            type="button"
-            disabled
-            title={`The ${g.label} filter is not wired to the list yet — no column or join on the bookings list query carries it. Use the chips above.`}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              width: '100%',
-              height: 34,
-              padding: '0 8px',
-              borderRadius: 'var(--r-sm)',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--muted)',
-              fontSize: 'var(--t-meta)',
-              cursor: 'not-allowed',
-              fontFamily: 'inherit',
-            }}
-          >
-            <Icon name={g.icon} size={15} style={{ color: 'var(--disabled)', flexShrink: 0 }} />
-            <span style={{ flex: 1, textAlign: 'left' }}>{g.label}</span>
-            <Icon name="chevron_down" size={13} style={{ color: 'var(--disabled)' }} />
-          </button>
-        ),
-      )}
-      <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-        <Unavailable reason="Saved filters are not built yet — there is nowhere to store one and nothing settles who it is shared with.">
-          <Button icon="flag" disabled>
-            Save as new filter
-          </Button>
-        </Unavailable>
-      </div>
-    </Card>
-  )
+  if (isNew) {
+    return (
+      <Suspense fallback={<LoadingSkeleton type="card" label="Loading new rental…" />}>
+        <NewRental
+          embedded
+          onDone={() => {
+            setRawParams((prev) => {
+              const next = new URLSearchParams(prev)
+              next.delete('action')
+              next.delete('tab')
+              next.delete('draft')
+              return next
+            })
+            refreshAll()
+          }}
+        />
+        </Suspense>
+    )
+  }
 
   /* ── restricted state for non-staff ────────────────────────────────── */
   if (!isStaffMember) {
@@ -1123,138 +1715,239 @@ export default function RentalsList({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell className="rentals-v2">
       <PageHeader
+        leading={
+          <FilterButton
+            onClick={() => setFiltersOpen((open) => !open)}
+            activeCount={f.activeCount}
+            controls="rentals-filters"
+            expanded={filtersOpen}
+          />
+        }
         title="Rentals"
-        description="Manage all bookings and their current status"
+        description="Manage bookings, pickups, returns, and the next action."
         actions={
-          <>
-            <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
-              New Rental
-            </Button>
-            <Button icon="refresh" onClick={handleRetry}>
-              Refresh
-            </Button>
-            {/* ⛔ The Import button is GONE — §4.1 draws `[＋ New Rental]
-                [Export]` and no third control. Nothing is lost: it was disabled
-                with a reason and had no pipeline behind it.
-
-                Export stays, and stays honestly disabled. The spec draws the
-                button, not a built pipeline, and `CLAUDE.md`'s hard rule
-                forbids inventing the two product decisions it needs — the file
-                format, and which columns a role may export (a CSV of every
-                column walks straight around Law 6's money masking). Recorded
-                in `PLAN.md §4.22` rather than answered here. */}
-            <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
-              <Button icon="download" variant="secondary" disabled>
-                Export
-              </Button>
-            </Unavailable>
-          </>
+          <PageActions
+            secondary={[
+              canOperate && (
+                <Button
+                  key="fast-return"
+                  variant="secondary"
+                  icon="return_arrow"
+                  onClick={() => setFastReturnOpen(true)}
+                  title="Fast Return check-in"
+                >
+                  Fast Return
+                </Button>
+              ),
+              canRecord && (
+                <Button
+                  key="record-payment"
+                  variant="secondary"
+                  icon="invoice"
+                  onClick={() => setPaymentModalOpen(true)}
+                  title="Record payment against invoice"
+                >
+                  Record Payment
+                </Button>
+              ),
+            ].filter(Boolean)}
+            overflow={[
+              {
+                label: 'Productions Hub',
+                icon: 'video',
+                onClick: () => navigate('/rentals/productions'),
+              },
+              {
+                label: 'Scan Barcode',
+                icon: 'search',
+                onClick: () => setBarcodeModalOpen(true),
+              },
+              {
+                label: 'Refresh',
+                icon: 'refresh',
+                onClick: refreshAll,
+              },
+            ]}
+            /* PLAN.md Phase 9 — how old the list on screen is (from main's
+               Phase 9 work). The time of the last SUCCESSFUL read. */
+            extra={<DataAgeBadge loadedAt={list.lastFetchedAt} onRefresh={refreshAll} loading={list.loading} />}
+          />
         }
       />
+      <BooqableRentalFilterDrawer
+        id="rentals-filters"
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        resultCount={total}
+        activeCount={f.activeCount}
+        onClearAll={clearFilters}
+        statusFilter={statusFilter}
+        onToggleStatus={toggleStatus}
+        projectTypeFilter={projectTypeFilter}
+        onToggleProjectType={toggleProjectType}
+        quickFilter={chip}
+        onSelectQuickFilter={pickChip}
+        dateRange={{ from, to }}
+        onChangeDateRange={({ from: nextFrom, to: nextTo }: { from: string; to: string }) => setRange(nextFrom, nextTo)}
+        subOn={subOn}
+        onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
+        money={money}
+      />
 
-      {/* §4.1 — "one list, no tabs". The strip that used to sit here is gone
-          with Productions; see the file header. */}
-      <KpiStrip items={kpis} columns={kpis.length} />
-
-      {/*
-        ## The chip row — §4.1's two lines
-        ```
-        (All)(Quote)(Booked)(Packed)(On Rent)(Returned)(Closed)
-        (Sub-Rental)  ← filter chip, not a tab   [▤ Table][▦ Cards]
-        ```
-        Line 1 is the **Status facet, moved out of the Filters rail** — the
-        move rulings §1 anticipated. It is the same `statusFilter` state the
-        rail's accordion writes, not a second copy, so the two surfaces
-        cannot disagree; `rentalsQuery` still INTERSECTS it with the quick
-        filter's own stage set (never replaces it), and reports an empty
-        intersection as `impossible` rather than sending `[]`, which
-        `applyListFilters` reads as "no constraint".
-
-        Below 1180 the whole row scrolls horizontally instead of wrapping —
-        §4.1's tablet note is "filter chips in one scrolling row" and its
-        phone note is "chips scroll".
-      */}
-      <div
-        role="group"
-        aria-label="Filter by stage"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          ...(viewport === 'desktop'
-            ? { flexWrap: 'wrap' as const }
-            : { overflowX: 'auto' as const, paddingBottom: 2 }),
-        }}
+      {/* 5-view operational bar + Sub-Rental + active facet chip */}
+      <FilterBar
+        search={f.filters.search ?? ''}
+        onSearchChange={(val) => f.setSearch(val)}
+        searchPlaceholder="Search booking, project, or type"
+        searchAriaLabel="Search rentals"
+        activeCount={f.activeCount}
+        onClearAll={clearFilters}
+        filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}
+        groupAriaLabel="Filter by operational view"
+        rightSlot={
+          tabular && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              {/* Spec §19 — the list's only sort control. Pickup is the default;
+                  the type sorts are opt-in and round-trip in the URL (§34). */}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+                Sort
+                <select
+                  aria-label="Sort rentals"
+                  value={`${f.filters.sort?.column ?? 'pickup_at'}:${f.filters.sort?.ascending === false ? 'desc' : 'asc'}`}
+                  onChange={(e) => {
+                    const [column, dir] = e.target.value.split(':')
+                    if (column) f.setSort(column, dir !== 'desc')
+                  }}
+                  style={{
+                    minHeight: 36,
+                    padding: '0 8px',
+                    borderRadius: 'var(--r-btn)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card)',
+                    color: 'var(--text)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="pickup_at:asc">Pickup date</option><option value="clients(name):asc">Client</option><option value="stage:asc">Status</option>
+                  <option value="project_type:asc">Project Type A → Z</option>
+                  <option value="project_type:desc">Project Type Z → A</option>
+                </select>
+              </label>
+              <SegmentedControl
+                size="sm"
+                ariaLabel="List view"
+                options={[
+                  { id: 'Table', label: 'Table', icon: 'checklist' },
+                  { id: 'Cards', label: 'Cards', icon: 'queues' },
+                ]}
+                value={view === 'Cards' ? 'Cards' : 'Table'}
+                onChange={(next) => setView(next as 'Table' | 'Cards')}
+              />
+            </span>
+          )
+        }
       >
-        <button
-          type="button"
-          /* Empties the group rather than sending an empty `in()` — which
-             `applyListFilters` reads as "no constraint", not "match nothing". */
-          onClick={() => f.setChipGroup('stage', [])}
-          aria-pressed={statusFilter.size === 0}
-          style={stageChipStyle(statusFilter.size === 0)}
-        >
-          All
-        </button>
-        {STATUS_ORDER.map((s) => {
-          const on = statusFilter.has(s)
+        {RENTAL_VIEWS.map((viewItem) => {
+          const isAll = viewItem.id === 'All'
+          const isActive = isAll
+            ? stageChips.length === 0 && chip === 'All'
+            : viewItem.id === 'Upcoming'
+              ? statusFilter.size === 3 && statusFilter.has('Quote') && statusFilter.has('Booked') && statusFilter.has('Packed')
+              : viewItem.stages.length === 1 && viewItem.stages[0] !== undefined && stageChips.length === 1 && stageChips.includes(viewItem.stages[0])
+
           return (
             <button
-              key={s}
+              key={viewItem.id}
               type="button"
-              onClick={() => toggleStatus(s)}
-              aria-pressed={on}
-              style={stageChipStyle(on)}
+              onClick={() => {
+                if (isAll) {
+                  f.setChipGroup('stage', [])
+                  if (chip !== 'All') pickChip('All')
+                } else if (isActive) {
+                  f.setChipGroup('stage', [])
+                } else {
+                  f.setChipGroup('stage', [...viewItem.stages])
+                  if (chip !== 'All') pickChip('All')
+                }
+              }}
+              aria-pressed={isActive}
+              aria-label={viewItem.label}
+              style={stageChipStyle(isActive)}
             >
-              {/* Law 11 — the stage's own icon beside its own word. */}
+              <TouchTarget axis="y" />
               <Icon
-                name={STAGE_ICON[s]}
+                name={viewItem.icon}
                 size={13}
-                style={{ color: on ? 'var(--nav-active-accent)' : STATUS[statusToken(s)].fg }}
+                style={{ color: isActive ? 'var(--nav-active-accent)' : 'var(--text2)' }}
               />
-              {s}
+              <span data-view-label>{viewItem.label}</span>
+              <span className="figure" style={{ color: 'var(--muted)' }} aria-label={`${viewItem.label} count`}>
+                {viewCounts.loading || viewCounts.error ? '—' : viewCounts.rows.find((row) => row.id === viewItem.id)?.count ?? '—'}
+              </span>
             </button>
           )
         })}
-      </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          ...(viewport === 'desktop'
-            ? { flexWrap: 'wrap' as const }
-            : { overflowX: 'auto' as const, paddingBottom: 2 }),
-        }}
-      >
-        {/*
-          (Sub-Rental) — §4.1 line 40, "a filter chip, not a tab", and now a
-          LIVE one: rulings §11.1 ruled the question it was disabled waiting
-          on. It narrows on the derived set (`subIds`), AND-ed with whichever
-          stage and quick filters are on, because it sits on its own line in
-          §4.1's drawing rather than inside the twelve.
-
-          It refuses to select in exactly two states, and never selects and
-          quietly returns the unfiltered list: while the set is still in
-          flight, and if reading it failed. `null` is "not answered", never
-          "none" — see `subIds`.
-        */}
-        {subIds === null ? (
-          <Unavailable reason={subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}>
+        {chip !== 'All' && (
+          <button
+            type="button"
+            onClick={() => pickChip('All')}
+            aria-pressed={true}
+            style={stageChipStyle(true)}
+            title={`Quick filter: ${chip}`}
+          >
+            <TouchTarget axis="y" />
+            <Icon
+              name={chip === 'Overdue' ? 'alert_triangle' : 'queues'}
+              size={13}
+              style={{ color: 'var(--nav-active-accent)' }}
+            />
+            {chip}
+          </button>
+        )}
+        {subIds === null && !subPending ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <button
               type="button"
               disabled
-              aria-busy={subPending}
-              aria-label={`Sub-Rental — unavailable. ${subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}`}
-              style={{ ...stageChipStyle(false), color: 'var(--muted)', cursor: 'not-allowed', opacity: 0.65 }}
+              aria-label="Sub-Rental — unavailable"
+              title={SUB_RENTAL_UNANSWERED}
+              style={{ ...stageChipStyle(false), opacity: 0.5, cursor: 'not-allowed' }}
             >
-              <Icon name="external_link" size={13} style={{ color: 'var(--disabled)' }} />
+              <TouchTarget axis="y" />
+              <Icon
+                name="external_link"
+                size={13}
+                style={{ color: 'var(--muted)' }}
+              />
               Sub-Rental
             </button>
-          </Unavailable>
+            <button
+              type="button"
+              aria-label="Retry loading sub-rentals"
+              title="Retry loading sub-rentals"
+              onClick={() => void refreshSubRentals()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4px 6px',
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid var(--border)',
+                background: 'var(--card2)',
+                color: 'var(--text)',
+                cursor: 'pointer',
+                fontSize: 11,
+              }}
+            >
+              <Icon name="refresh" size={12} />
+            </button>
+          </span>
         ) : (
           <button
             type="button"
@@ -1263,8 +1956,7 @@ export default function RentalsList({
             title={SUB_RENTAL_NOTE}
             style={stageChipStyle(subOn)}
           >
-            {/* Law 11 — the gold outline is never the only carrier, so the chip
-                that turns it on carries the same icon and the same word. */}
+            <TouchTarget axis="y" />
             <Icon
               name="external_link"
               size={13}
@@ -1273,241 +1965,45 @@ export default function RentalsList({
             Sub-Rental
           </button>
         )}
+      </FilterBar>
 
-        <span aria-hidden style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px', flexShrink: 0 }} />
-
-        {chips.map((c) => {
-          const on = chip === c.label
-          const tint =
-            c.tone === 'danger' ? 'var(--danger-text)' : c.tone === 'progress' ? 'var(--progress-text)' : undefined
-          const style = {
-            display: 'inline-flex' as const,
-            alignItems: 'center' as const,
-            gap: 5,
-            height: 32,
-            padding: '0 12px',
-            borderRadius: 'var(--r-sm)',
-            border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-            background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-            color: c.unavailable ? 'var(--muted)' : on ? 'var(--nav-active-accent)' : (tint ?? 'var(--text2)'),
-            fontSize: 'var(--t-meta)',
-            fontWeight: on || (tint && !c.unavailable) ? 600 : 500,
-            cursor: c.unavailable ? ('not-allowed' as const) : ('pointer' as const),
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap' as const,
-            opacity: c.unavailable ? 0.65 : 1,
-            // The row scrolls rather than wraps below 1180 (§4.1 tablet and
-            // phone both say "chips scroll"), so a chip must not be squeezed.
-            flexShrink: 0,
+      {total !== null && (
+        <AppPageToolbar
+          rightSlot={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+                {countedTitle}
+              </span>
+              <SavedViewsMenu
+                listKey="rentals"
+                legacyStorageKey={savedViewStorageKey}
+                canPublish={canPublishTeamViews(user?.role ?? 'Client')}
+                userId={user?.id ?? null}
+                currentQuery={savedViewQuery}
+                currentHiddenColumns={[...hiddenCols]}
+                onApply={applySavedView}
+              />
+            </div>
           }
-
-          /* A chip with no query behind it is genuinely `disabled` and
-             carries the reason, rather than selecting and quietly returning
-             the unfiltered list. `Unavailable` puts the sentence on hover,
-             on focus and on long-press. */
-          if (c.unavailable) {
-            return (
-              <Unavailable key={c.label} reason={c.unavailable}>
-                <button type="button" disabled aria-label={`${c.label} — unavailable. ${c.unavailable}`} style={style}>
-                  {c.label}
-                </button>
-              </Unavailable>
-            )
+          pagination={
+            <Pagination
+              page={page}
+              total={total}
+              pageSize={perPage}
+              pageSizeOptions={ROWS_PER_PAGE}
+              onPageChange={setPage}
+              onPageSizeChange={setPerPage}
+            />
           }
-
-          return (
-            <button key={c.label} type="button" onClick={() => pickChip(c.label)} aria-pressed={on} style={style}>
-              {c.label === 'Custom' && <Icon name="calendar" size={14} />}
-              {c.label}
-            </button>
-          )
-        })}
-
-        <span
-          role="group"
-          aria-label="List view"
-          style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            gap: 'var(--sp-xs)',
-            padding: 3,
-            borderRadius: 10,
-            background: 'var(--card2)',
-            border: '1px solid var(--border)',
-            flexShrink: 0,
-          }}
-        >
-          {VIEWS.map((v) => {
-            const on = view === v
-            const unbuilt = v === 'Timeline'
-            const btnStyle = {
-              display: 'inline-flex' as const,
-              alignItems: 'center' as const,
-              gap: 5,
-              height: 28,
-              padding: '0 11px',
-              borderRadius: 7,
-              border: 'none',
-              background: on ? 'var(--card)' : 'transparent',
-              color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: on ? 600 : 500,
-              cursor: unbuilt ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              boxShadow: on ? 'var(--shadow-card)' : 'none',
-            }
-            if (unbuilt) {
-              return (
-                <Unavailable key={v} reason="Timeline view is not built yet — the render only specifies the Table view in detail.">
-                  <button type="button" disabled aria-pressed={on} style={btnStyle}>
-                    <Icon name="timer" size={14} />
-                    {v}
-                  </button>
-                </Unavailable>
-              )
-            }
-            return (
-              <button key={v} type="button" onClick={() => setView(v)} aria-pressed={on} style={btnStyle}>
-                <Icon name={v === 'Table' ? 'checklist' : 'queues'} size={14} />
-                {v}
-              </button>
-            )
-          })}
-        </span>
-      </div>
-
-      {/* The render draws `Custom` as a bare chip. A chip that selects a
-          range has to be able to state the range, so it opens inline. */}
-      {chip === 'Custom' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            flexWrap: 'wrap',
-            fontSize: 'var(--t-meta)',
-            color: 'var(--text2)',
-          }}
-        >
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            From
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setRange(e.target.value, to)}
-              style={dateInput}
-            />
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            To
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setRange(from, e.target.value)}
-              style={dateInput}
-            />
-          </label>
-          {(from || to) && (
-            <Button icon="close" onClick={() => setRange('', '')}>
-              Clear range
-            </Button>
-          )}
-          {/* ⛔ This used to read "pickup **or** return". It cannot: a
-              `ListFilters.dateRange` names one column, and `applyListFilters`
-              has no way to OR two ranges across two columns. The sentence
-              says what the query does. */}
-          <span style={{ color: 'var(--muted)' }}>
-            Matches a booking whose <strong style={{ color: 'var(--text2)' }}>pickup</strong> falls inside the range.
-            A return-date range needs a second dateRange the shared filter shape does not carry.
-          </span>
-        </div>
+        />
       )}
 
-      {/* Which filters are on, and a one-click way off each of them — straight
-          from the hook, so the row, the badge and the query cannot disagree.
-          Renders nothing when the list is unfiltered. */}
-      <ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />
-
-      <div
-        style={{
-          display: 'grid',
-          /* One track at every width now. The rail used to take a column here
-             — `auto minmax(0,1fr)` on desktop, reflowing under the list below
-             1180 — and the drawer replaced both: it is `position: fixed`, so
-             there is no track to give it and no reflow rule to write. */
-          gridTemplateColumns: 'minmax(0,1fr)',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
-        {view === 'Timeline' ? (
-          <div style={{ ...cardStyle, padding: 18, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            The <strong style={{ color: 'var(--text)' }}>{view}</strong> view is not built yet — the render only
-            specifies the Table view in detail.{' '}
-            <button
-              type="button"
-              onClick={() => setView('Table')}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--link)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                padding: 0,
-              }}
-            >
-              Back to Table
-            </button>
-          </div>
-        ) : (
-          <Card
-            title={countedTitle}
-            action={
-              <>
-                {/* Was a disabled "More Filters" whose reason read *"no filter
-                    drawer exists yet"*. One does now, and it holds the same
-                    facets the rail held — this is that button, enabled. */}
-                <FilterButton
-                  onClick={() => setFiltersOpen((o) => !o)}
-                  activeCount={f.activeCount}
-                  controls="rentals-filters"
-                  expanded={filtersOpen}
-                />
-                <Unavailable reason="Saved views are not built yet — nothing settles where a view is stored or who it is shared with.">
-                  <Button icon="flag" disabled>
-                    Save View
-                  </Button>
-                </Unavailable>
-              </>
-            }
-            bodyStyle={{ padding: 0 }}
-          >
-            {/*
-              Fixed ladder: restricted → error → loading → empty → children.
-
-              `hasRows` is what keeps a failed REFRESH from blanking a list
-              someone is reading: with rows on screen the banner renders
-              above them instead of replacing them, which is the shape
-              `PageBody` documents for exactly this case.
-
-              `empty` also covers `query.impossible` — the Status picks that
-              do not intersect the chip. Nothing was sent to Postgres, and
-              "no rentals match these filters" is the true answer.
-            */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, flex: 1 }}>
+        <div style={{ background: 'var(--card)', borderRadius: 'var(--r-card)', border: '1px solid var(--border)', overflow: 'hidden' }}>
             <PageBody
-              /* With `?sub=on` the screen is waiting on TWO requests, and the
-                 derived set is the one the chip cannot narrow without. Holding
-                 the skeleton up until it lands is what stops a "no rentals
-                 match these filters" flashing over a question still in flight —
-                 `query.impossible` is true for that whole window by design. */
-              loading={isLoading}
-              /* Law 12 — inline and persistent. A sub-rental read that failed
-                 is a real error on a screen filtering by it, not a silent
-                 empty list. */
-              error={isError}
-              onRetry={handleRetry}
+              loading={list.loading || (subOn && subPending)}
+              error={subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error}
+              onRetry={refreshAll}
               hasRows={list.rows.length > 0}
               dataTimestamp={list.lastFetchedAt}
               empty={list.isEmpty || query.impossible}
@@ -1517,63 +2013,90 @@ export default function RentalsList({
               skeleton="table"
               skeletonRows={6}
               emptyTitle={isFiltered ? 'No rentals match these filters' : 'No rentals yet'}
-              {...(!isFiltered
-                ? {
-                    emptyActionLabel: 'New Rental',
-                    onEmptyAction: () => navigate('/rentals/new'),
-                  }
+              /* From main's 32c4d29: the unfiltered empty list offers its one
+                 next step. Gated like `rental.create` so a role that cannot
+                 create is not offered a page that refuses it. */
+              {...(!isFiltered && canWriteDesk
+                ? { emptyActionLabel: 'New Rental', onEmptyAction: () => navigate('/rentals/new') }
                 : {})}
               emptyMessage={
-                /* Three different emptinesses, and saying which one it is
-                   matters: an empty derived set is a fact about the corpus, an
-                   empty stage intersection is a fact about the filters, and
-                   neither is "nothing exists". */
-                subOn && subIds !== null && subIds.length === 0
-                  ? 'No booking carries a sub-rented line. Sub-Rental is derived from booking_lines.line_type — a booking counts when any of its lines does — and no line in this corpus is one.'
-                  : query.impossible
-                    ? `The “${chip}” chip covers ${CHIP_MEANS[chip]}, and none of the stages you ticked is in it.`
-                    : isFiltered
-                      ? `“${chip}” covers ${CHIP_MEANS[chip]}${subOn ? ', narrowed to bookings carrying a sub-rented line' : ''}. Nothing matches right now.`
-                      : 'No booking has been created yet.'
+                isFiltered
+                  ? 'Try adjusting your search or active filters.'
+                  : 'Get started by creating your first rental.'
               }
             >
-              {(view === 'Cards' || !tabular) && (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {((view === 'Cards' && tabular) || !tabular) && (
+                <div
+                  style={
+                    view === 'Cards' && tabular
+                      ? {
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                          gap: 'var(--sp-md)',
+                          padding: 'var(--sp-md)',
+                        }
+                      : { display: 'flex', flexDirection: 'column' }
+                  }
+                >
                   {rowsWithIntel.map(({ row: r, glance, detail }) => (
                     <div
                       key={r.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 'var(--sp-sm)',
-                        padding: '13px 14px',
-                        borderBottom: '1px solid var(--border)',
-                        // §4.1 — "gold outline row = external gear". Fires
-                        // only on a real `true`; `null` is "not answered" and
-                        // leaves the row unmarked (§11.1, Law 11).
-                        ...externalRowStyle(r.isExternal),
-                      }}
+                      className={
+                        view === 'Cards' && tabular
+                          ? `rentals-card-item ${selectedIds.has(r.id) ? 'is-selected' : ''} ${r.isOverdue ? 'is-overdue' : ''}`
+                          : undefined
+                      }
+                      style={
+                        view === 'Cards' && tabular
+                          ? {
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: 'var(--sp-sm)',
+                              padding: 'var(--sp-md)',
+                              background: 'var(--card)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 'var(--r-card)',
+                              boxShadow: 'var(--shadow-card)',
+                              ...externalRowStyle(r.isExternal),
+                            }
+                          : {
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 'var(--sp-sm)',
+                              padding: '13px 14px',
+                              borderBottom: '1px solid var(--border)',
+                              // §4.1 — "gold outline row = external gear". Fires
+                              // only on a real `true`; `null` is "not answered" and
+                              // leaves the row unmarked (§11.1, Law 11).
+                              ...externalRowStyle(r.isExternal),
+                            }
+                      }
                     >
                       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                         <Avatar row={r} />
                         <span style={{ minWidth: 0, flex: 1 }}>
-                          <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-                            {r.client}
-                          </span>
+                          <ClientIntelFromId clientId={r.clientId} name={r.client} context="rental-list" gateContext={gctx} actionContext={user ? { userId: user.id, role: user.role } : null}>
+                            <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{r.client}</span>
+                          </ClientIntelFromId>
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 1 }}>
                             {r.project ?? '—'}
                           </span>
+                          {/* Spec §15 — type directly under client/project name. */}
+                          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>
+                            {r.projectTypeDisplay}
+                          </span>
                         </span>
-                        {/* §8.3 — omitted, never shown blank. `deposit` is
+                        {/* §8.3 — omitted, never shown blank. `totalAmount` is
                             null when the query did not ask, which is the
                             money-blind case. */}
-                        {show('Deposit') && (
+                        {show('Total Amount') && (
                           <span style={{ textAlign: 'right', flexShrink: 0 }}>
                             <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                              {r.deposit === null ? '—' : formatMoney(r.deposit)}
+                              {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : '—'}
                             </span>
                             <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                              Deposit
+                              Total Amount
                             </span>
                           </span>
                         )}
@@ -1585,39 +2108,39 @@ export default function RentalsList({
                           detail={detail}
                           detailTitle={r.bookingNo}
                           detailSubtitle={`${r.client} · ${r.status}`}
+                          entityType="rental"
+                          entityId={r.id}
+                          context="rental-list"
+                          gateContext={gctx}
+                          actionContext={user ? { userId: user.id, role: user.role } : null}
                         >
                           <Link
-                            to={`/rentals/${r.bookingNo}`}
+                            data-intel-identifier
+                            to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                             className="identifier"
                             style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
                           >
-                            {r.bookingNo}
+                            {(r.status as string) === 'Draft' ? r.bookingNo : formatBookingNo(r.bookingNo)}
                           </Link>
                         </IntelCard>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            height: 20,
-                            padding: '0 8px',
-                            borderRadius: 'var(--r-badge)',
-                            gap: 4,
-                            background: STATUS[r.statusKey].bg,
-                            color: STATUS[r.statusKey].fg,
-                            fontSize: 'var(--t-meta)',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {/* Law 11 — `STAGE_ICON` was declared for this and used
-                              only by the filter chips, so the row's own status
-                              was colour + word alone. */}
-                          <Icon name={STAGE_ICON[r.status]} size={11} />
-                          {r.status}
-                        </span>
+                        {/* §8 step 2 — the stage block belongs to <Badge>, not
+                            to this row. It was `--r-badge` (999, which §3.3
+                            reserves for numeric count badges) at weight 600,
+                            reading `STATUS[r.statusKey]` off the token wall
+                            directly. Handing <Badge> the `status` lets it
+                            resolve the §4 hue, the word and the glyph together,
+                            so Law 11 can no longer be half-satisfied by a call
+                            site forgetting one of the three. */}
+                        <Badge status={r.status} size="sm" />
                         {r.isOverdue && <Tag text="Overdue" status="danger" />}
                         {r.isCancelled && <Tag text="Cancelled" status="danger" />}
                         {/* Law 11 — the gold outline never travels alone. */}
                         {r.isExternal === true && <ExternalGearMark />}
+                      </span>
+
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                        <Icon name="file" size={12} style={{ color: 'var(--muted)' }} />
+                        Created <span className="figure">{r.createdOn}</span>
                       </span>
 
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -1627,34 +2150,43 @@ export default function RentalsList({
 
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
-                        Pickup <span className="figure">{r.pickup.date}</span> {r.pickup.time}
+                        Pickup <span className="figure" style={{ color: 'var(--booking-date-text)' }}>{r.pickup.date} {r.pickup.time}</span>
                       </span>
+
+                      {r.ret.date && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                          <Icon name="return_arrow" size={12} style={{ color: 'var(--muted)' }} />
+                          Return <span className="figure" style={{ color: 'var(--booking-date-text)' }}>{r.ret.date} {r.ret.time}</span>
+                        </span>
+                      )}
 
                       {/* §7: "one primary button each" on a phone card row. */}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 2 }}>
                         <Link
-                          to={`/rentals/${r.bookingNo}`}
+                          to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: 6,
-                            height: 40,
+                            minHeight: 44,
+                            height: 44,
                             flex: 1,
-                            borderRadius: 'var(--r-btn)',
+                            borderRadius: 'var(--r-btn, 8px)',
                             border: '1px solid var(--border)',
                             background: 'var(--card2)',
                             color: 'var(--text)',
                             fontSize: 'var(--t-ui)',
                             fontWeight: 600,
                             textDecoration: 'none',
+                            transition: 'all var(--dur-fast) var(--ease)',
                           }}
                         >
                           <Icon name="external_link" size={14} />
-                          Open Booking
+                          {(r.status as string) === 'Draft' ? 'Edit Draft' : 'Open Booking'}
                         </Link>
                         <span style={{ flexShrink: 0 }}>
-                          <RowOperations row={r} />
+                          <RowOperations row={r} onCancel={canWriteDesk ? setCancellingRental : undefined} onInspect={setInspectingRental} />
                         </span>
                       </span>
                     </div>
@@ -1683,16 +2215,38 @@ export default function RentalsList({
                   `minWidth` narrows at tablet because two columns are
                   dropped there (see `NARROW_COLUMNS`).
                 */
-                <div data-table-scroll style={{ overflowX: 'auto' }}>
+                <DataTableShell ariaLabel="Rentals" data-table-scroll style={{ overflowX: 'auto' }}>
                   <table
+                    className="data-table operations-table"
+                    aria-label="Rentals"
                     style={{
                       width: '100%',
+                      tableLayout: viewport === 'desktop' ? 'fixed' : 'auto',
                       borderCollapse: 'collapse',
-                      minWidth: viewport === 'tablet' ? 720 : 1040,
+                      minWidth: viewport === 'tablet' ? 720 : 0,
                     }}
                   >
+                    {viewport === 'desktop' && <colgroup>
+                      <col style={{ width: 44 }} />
+                      {headers.map((h) => <col key={h} style={{ width: `${83 * (RENTAL_COLUMN_SHARES[h] ?? 0.1)}%` }} />)}
+                      <col style={{ width: 146 }} />
+                    </colgroup>}
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
+                        <th style={{ ...th, width: 44, paddingLeft: 12 }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44, cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              ref={(el) => {
+                                if (el) el.indeterminate = !allSelected && someSelected
+                              }}
+                              onChange={toggleSelectAll}
+                              aria-label="Select all bookings on this page"
+                              style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                            />
+                          </label>
+                        </th>
                         {headers.map((h) => (
                           <th key={h} style={th}>
                             {h}
@@ -1721,18 +2275,39 @@ export default function RentalsList({
                       {rowsWithIntel.map(({ row: r, glance, detail }) => (
                         <tr
                           key={r.id}
-                          style={{ borderBottom: '1px solid var(--border)', ...externalRowStyle(r.isExternal) }}
+                          style={{
+                            borderBottom: '1px solid var(--border)',
+                            background: selectedIds.has(r.id) ? 'var(--hover-card)' : undefined,
+                            ...externalRowStyle(r.isExternal),
+                          }}
                         >
+                          <td style={{ ...td, width: 44, paddingLeft: 12 }}>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 44, cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(r.id)}
+                                onChange={() => toggleSelectRow(r.id)}
+                                aria-label={`Select booking ${r.bookingNo}`}
+                                style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                              />
+                            </label>
+                          </td>
                           <td style={td}>
                             <IntelCard
                               glance={glance}
                               detail={detail}
                               detailTitle={r.bookingNo}
                               detailSubtitle={`${r.client} · ${r.status}`}
+                              entityType="rental"
+                              entityId={r.id}
+                              context="rental-list"
+                              gateContext={gctx}
+                              actionContext={user ? { userId: user.id, role: user.role } : null}
                             >
                               {/* Booking Detail exists, so this is a real link. */}
                               <Link
-                                to={`/rentals/${r.bookingNo}`}
+                                data-intel-identifier
+                                to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                                 className="identifier"
                                 style={{
                                   fontSize: 'var(--t-meta)',
@@ -1741,16 +2316,8 @@ export default function RentalsList({
                                   textDecoration: 'none',
                                 }}
                               >
-                                {r.bookingNo}
+                                {(r.status as string) === 'Draft' ? r.bookingNo : formatBookingNo(r.bookingNo)}
                               </Link>
-                              {/* ⛔ "Booked 12 Jul" became "Created …".
-                                  `created_at` is the row's insert instant,
-                                  not the Booked-stage transition — a quote
-                                  confirmed a week later would carry the
-                                  quote's date. */}
-                              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
-                                Created <span className="figure">{r.createdOn}</span>
-                              </div>
                               {(r.isOverdue || r.isCancelled || r.isExternal === true) && (
                                 <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                   {r.isOverdue && <Tag text="Overdue" status="danger" />}
@@ -1764,9 +2331,23 @@ export default function RentalsList({
                           </td>
 
                           <td style={td}>
+                            <span
+                              className="figure"
+                              style={{
+                                fontSize: 'var(--t-meta)',
+                                color: 'var(--text)',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {r.createdOn}
+                            </span>
+                          </td>
+
+                          <td style={td}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                               <Avatar row={r} />
                               <span style={{ minWidth: 0 }}>
+                                <ClientIntelFromId clientId={r.clientId} name={r.client} context="rental-list" gateContext={gctx} actionContext={user ? { userId: user.id, role: user.role } : null}>
                                 <Link
                                   to={`/clients/${r.clientId}`}
                                   style={{
@@ -1779,11 +2360,12 @@ export default function RentalsList({
                                 >
                                   {r.client}
                                 </Link>
+                                </ClientIntelFromId>
                                 {/* `project` is nullable (0002:28). A null
                                     renders as an explicit non-value — never
                                     as a kit name, which is what this cell
                                     used to invent. */}
-                                <span
+                                {r.project && r.project !== '—' && <span
                                   style={{
                                     display: 'block',
                                     fontSize: 'var(--t-meta)',
@@ -1791,12 +2373,12 @@ export default function RentalsList({
                                     marginTop: 1,
                                   }}
                                 >
-                                  {r.project ?? '—'}
-                                </span>
+                                  {r.project}
+                                </span>}
                                 {/* `pickup_location` is free text and
                                     nullable. The crew label that used to sit
                                     beside it had no column at all. */}
-                                <span
+                                {r.pickupLocation && <span
                                   style={{
                                     display: 'block',
                                     fontSize: 'var(--t-meta)',
@@ -1804,9 +2386,31 @@ export default function RentalsList({
                                     marginTop: 1,
                                   }}
                                 >
-                                  {r.pickupLocation ?? '—'}
-                                </span>
+                                  {r.pickupLocation}
+                                </span>}
                               </span>
+                            </span>
+                          </td>
+
+                          <td style={td}>
+                            {/* Project Type — neutral muted text (§11), never
+                                stronger than a status pill (§3). Constrained
+                                width with ellipsis + native tooltip (§12). */}
+                            <span
+                              title={r.projectTypeDisplay}
+                              style={{
+                                display: 'block',
+                                fontSize: 'var(--t-meta)',
+                                fontWeight: 500,
+                                color: 'var(--text2)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                minWidth: 0,
+                                maxWidth: 220,
+                              }}
+                            >
+                              {r.projectTypeDisplay}
                             </span>
                           </td>
 
@@ -1834,23 +2438,50 @@ export default function RentalsList({
                             .map((c) => {
                               const m = c === 'Pickup' ? r.pickup : r.ret
                               const place = c === 'Pickup' ? r.pickupLocation : r.returnLocation
+                              const isOverdueReturn = c === 'Return' && r.isOverdue
                               return (
                                 <td key={c} style={td}>
-                                  <span
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 5,
-                                      fontSize: 'var(--t-meta)',
-                                      color: 'var(--text)',
-                                    }}
-                                  >
-                                    <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
-                                    {/* §3 / Law 7 — AD rendering belongs to
-                                        lib/bs.ts, in Kathmandu. */}
-                                    <span className="figure">{m.date}</span>
-                                  </span>
-                                  <span
+                                  {isOverdueReturn ? (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        padding: '2px 8px',
+                                        borderRadius: 'var(--r-badge)',
+                                        /* §21 — no literal palette: chip-amber is the canonical
+                                           soft caution pair, themed in both light and dark.
+                                           `--amber-text` was never defined, so the pill
+                                           silently fell back to light-mode #b45309. */
+                                        background: 'var(--chip-amber-bg)',
+                                        border: '1px solid color-mix(in srgb, var(--chip-amber-fg) 40%, transparent)',
+                                        color: 'var(--chip-amber-fg)',
+                                        fontWeight: 700,
+                                        fontSize: 'var(--t-meta)',
+                                      }}
+                                      title="Overdue return"
+                                      aria-label={`Overdue return: ${m.date}`}
+                                    >
+                                      <Icon name="timer" size={12} style={{ color: 'var(--chip-amber-fg)' }} />
+                                      <BsAdDate date={m.ad} tone="booking" />
+                                    </span>
+                                  ) : (
+                                    <span
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        fontSize: 'var(--t-meta)',
+                                        color: 'var(--text)',
+                                      }}
+                                    >
+                                      <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
+                                      {/* §3 / Law 7 — AD rendering belongs to
+                                          lib/bs.ts, in Kathmandu. */}
+                                      <BsAdDate date={m.ad} tone="booking" />
+                                    </span>
+                                  )}
+                                  {m.time && <span
                                     style={{
                                       display: 'flex',
                                       alignItems: 'center',
@@ -1861,12 +2492,12 @@ export default function RentalsList({
                                     }}
                                   >
                                     <Icon name="timer" size={12} style={{ color: 'var(--muted)' }} />
-                                    <span className="figure">{m.time}</span>
-                                  </span>
+                                    <span className="figure" style={{ color: 'var(--booking-date-text)' }}>{m.time}</span>
+                                  </span>}
                                   {/* The named handler this cell used to show
                                       ("Ramesh") had no column and no join.
                                       The location does. */}
-                                  <span
+                                  {place && <span
                                     style={{
                                       display: 'flex',
                                       alignItems: 'center',
@@ -1877,30 +2508,17 @@ export default function RentalsList({
                                     }}
                                   >
                                     <Icon name="home" size={12} style={{ color: 'var(--muted)' }} />
-                                    {place ?? '—'}
-                                  </span>
+                                    {place}
+                                  </span>}
                                 </td>
                               )
                             })}
 
-                          <td style={{ ...td, minWidth: 116 }}>
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                height: 22,
-                                padding: '0 9px',
-                                borderRadius: 'var(--r-badge)',
-                                gap: 4,
-                                background: STATUS[r.statusKey].bg,
-                                color: STATUS[r.statusKey].fg,
-                                fontSize: 'var(--t-meta)',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <Icon name={STAGE_ICON[r.status]} size={11} />
-                              {r.status}
-                            </span>
+                          <td style={td}>
+                            {/* The table's copy of the same block — see the card
+                                row above. Two hand-rolled chips in one file is
+                                how they came to differ by 2px and a radius. */}
+                            <Badge status={r.status} size="sm" />
                             {/* The stage is one of Foundation's six; the only
                                 note that survives is the one `overdue()`
                                 defines. "Preparing" / "Ready for pickup" /
@@ -1922,7 +2540,7 @@ export default function RentalsList({
                           </td>
 
                           {/* §8.3 — the cell is omitted, not emptied. */}
-                          {show('Deposit') && (
+                          {show('Total Amount') && (
                             <td style={td}>
                               <span
                                 className="figure"
@@ -1933,174 +2551,219 @@ export default function RentalsList({
                                   color: 'var(--text)',
                                 }}
                               >
-                                {r.deposit === null ? '—' : formatMoney(r.deposit)}
+                                {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : '—'}
                               </span>
                             </td>
                           )}
 
                           {/* §4.1 — stays visible while the table scrolls. */}
                           <td style={stickyTd}>
-                            <RowOperations row={r} />
+                            <RowOperations row={r} onCancel={canWriteDesk ? setCancellingRental : undefined} onInspect={setInspectingRental} />
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               )}
             </PageBody>
 
             {/* The pager reports the SERVER's count, not the array's length.
                 Rendered only once rows have arrived — "Showing 0 rentals"
                 over a skeleton is a claim, not a placeholder. */}
-            {list.rows.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--sp-md)',
-                  padding: '11px 14px',
-                  flexWrap: 'wrap',
-                  fontSize: 'var(--t-meta)',
-                  color: 'var(--text2)',
-                }}
-              >
-                <span>
-                  {total === null
-                    ? `Showing ${firstOnPage} to ${lastOnPage} rentals`
-                    : `Showing ${firstOnPage} to ${lastOnPage} of ${total} rentals`}
-                </span>
-
-                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <PageBtn label="‹" disabled={page === 1} onClick={() => setPage(page - 1)} />
-                  {pageWindow(page, pageCount).map((p) => (
-                    <PageBtn key={p} label={String(p)} active={p === page} onClick={() => setPage(p)} />
-                  ))}
-                  <PageBtn label="›" disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
-                </span>
-
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                  Rows per page
-                  <select
-                    value={perPage}
-                    /* `setPerPage` drops `?page=` itself — page 4 of 20 rows is
-                       not page 4 of 50, so resizing has to return to the top. */
-                    onChange={(e) => setPerPage(Number(e.target.value))}
-                    className="figure"
-                    style={{
-                      height: 28,
-                      padding: '0 6px',
-                      borderRadius: 7,
-                      border: '1px solid var(--border)',
-                      background: 'var(--input-bg)',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-meta)',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {ROWS_PER_PAGE.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+            {list.rows.length > 0 && total !== null && (
+              <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                <Pagination
+                  page={page}
+                  total={total}
+                  pageSize={perPage}
+                  pageSizeOptions={ROWS_PER_PAGE}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPerPage}
+                />
               </div>
             )}
-          </Card>
-        )}
-
+          </div>
       </div>
 
-      {/*
-        The same card the rail held, in an overlay that costs no layout.
-
-        `resultCount` is not decoration: on phone the panel covers the list, and
-        on desktop it covers the left third of it, so the header count is what
-        makes live filtering legible while you cannot see the rows move.
-
-        Rulings §7 — "rails collapse below 1180" means reflow, not hide — is
-        satisfied differently now and better: there is no rail to collapse, and
-        the panel is reachable at every width from the same button.
-      */}
-      <FilterDrawer
-        id="rentals-filters"
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        resultCount={list.loading ? null : total}
-        noun={total === 1 ? 'rental' : 'rentals'}
-        activeCount={f.activeCount}
-        onClearAll={clearFilters}
+      <ContextDrawer
+        id="rental-quick-view"
+        open={Boolean(inspectingRental)}
+        onClose={() => setInspectingRental(null)}
+        title={inspectingRental?.bookingNo ?? 'Rental'}
+        subtitle={inspectingRental ? `${inspectingRental.client}${inspectingRental.project ? ` · ${inspectingRental.project}` : ''}` : undefined}
+        status={inspectingRental ? <Badge status={inspectingRental.status} size="sm" /> : undefined}
+        actions={inspectingRental ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <BookingOperationsMenu bookingNo={inspectingRental.bookingNo} bookingStatus={inspectingRental.status} unavailable={inspectingRental.isCancelled ? 'Cancelled rentals cannot run operations.' : null} />
+            <Link to={`/rentals/${inspectingRental.bookingNo}`} className="ui-button ui-button--secondary" onClick={() => setInspectingRental(null)}>
+              Open rental
+            </Link>
+          </div>
+        ) : undefined}
       >
-        {filtersCard}
-      </FilterDrawer>
+        {inspectingRental && (
+          <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
+            <section aria-labelledby="rental-quick-view-schedule">
+              <h3 id="rental-quick-view-schedule" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Schedule</h3>
+              <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-2) var(--space-4)', margin: 'var(--space-3) 0 0' }}>
+                <dt style={{ color: 'var(--muted)' }}>Pickup</dt><dd className="figure" style={{ margin: 0 }}>{inspectingRental.pickup.date} · {inspectingRental.pickup.time}</dd>
+                <dt style={{ color: 'var(--muted)' }}>Return</dt><dd className="figure" style={{ margin: 0 }}>{inspectingRental.ret.date} · {inspectingRental.ret.time}</dd>
+                <dt style={{ color: 'var(--muted)' }}>Equipment</dt><dd style={{ margin: 0 }}>{inspectingRental.itemCount} item{inspectingRental.itemCount === 1 ? '' : 's'}</dd>
+              </dl>
+            </section>
+            <section aria-labelledby="rental-quick-view-client">
+              <h3 id="rental-quick-view-client" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Client</h3>
+              <p style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 600 }}>{inspectingRental.client}</p>
+              <p style={{ margin: 'var(--space-1) 0 0', color: 'var(--text2)' }}>{inspectingRental.pickupLocation ?? 'Pickup location not set'}</p>
+            </section>
+            {money && (
+              <section aria-labelledby="rental-quick-view-finance">
+                <h3 id="rental-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Total Amount</h3>
+                <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>
+                  {typeof inspectingRental.totalAmount === 'number' ? formatMoney(inspectingRental.totalAmount) : '—'}
+                </p>
+              </section>
+            )}
+          </div>
+        )}
+      </ContextDrawer>
+
+      {cancellingRental && (
+        <CancelRentalModal
+          isOpen={Boolean(cancellingRental)}
+          onClose={() => setCancellingRental(null)}
+          bookingId={cancellingRental.id}
+          bookingNo={cancellingRental.bookingNo}
+          stage={cancellingRental.status}
+          onSuccess={() => {
+            setCancellingRental(null)
+            void list.refetch()
+          }}
+        />
+      )}
+
+      <FloatingBulkActionBar
+        selectedCount={selectedIds.size}
+        totalCount={list.rows.length}
+        onClearSelection={() => setSelectedIds(new Set())}
+        noun="rentals"
+        actions={[
+          {
+            id: 'bulk-export',
+            label: 'Export CSV',
+            icon: 'download',
+            onClick: handleBulkExport,
+            disabled: bulkProcessing,
+          },
+          ...(canOperate
+            ? [
+                {
+                  id: 'bulk-return',
+                  label: 'Fast Return',
+                  icon: 'return_arrow' as const,
+                  onClick: () => setFastReturnOpen(true),
+                  disabled: bulkProcessing,
+                },
+              ]
+            : []),
+        ]}
+      />
+
+      <FastReturnModal
+        isOpen={fastReturnOpen}
+        onClose={() => setFastReturnOpen(false)}
+        onSuccess={() => {
+          refreshAll()
+        }}
+      />
+
+      <BarcodeLookupModal
+        isOpen={barcodeModalOpen}
+        onClose={() => setBarcodeModalOpen(false)}
+      />
+
+      {canRecord && (
+        <RecordPaymentModal
+          isOpen={paymentModalOpen}
+          onClose={() => setPaymentModalOpen(false)}
+          invoices={availableInvoices}
+          invoicesError={availableInvoicesError}
+          onRetryInvoices={() => void fetchAvailableInvoices()}
+          onSuccess={() => {
+            setPaymentModalOpen(false)
+            refreshAll()
+          }}
+        />
+      )}
 
       <FooterNote
         extra={[
           'Cancelled bookings are retained, never deleted',
-          `Quick filters are relative to ${formatAd(TODAY)}`,
-          'Date chips narrow by pickup date — a return-date range needs a second dateRange the shared filter shape does not carry',
+          /* Resolved as the note is BUILT, not when the module loaded. It was
+             `formatAd(TODAY)` off a module constant, so a tablet left open
+             across midnight printed yesterday's date beside chips whose bounds
+             had already moved on — the footnote contradicted the list it
+             annotated, and the footnote is the part an operator trusts. */
+          `Quick filters are relative to ${formatAd(getBusinessToday())}`,
+          'Date filters use pickup dates.',
           SUB_RENTAL_NOTE,
           ...(money ? [RENTAL_DEPOSIT_NOTE] : []),
         ]}
       />
-    </div>
+    </PageShell>
   )
 }
-
-
-function PageBtn({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string
-  active?: boolean
-  disabled?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        minWidth: 26,
-        height: 26,
-        borderRadius: 7,
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
-  )
+// RULINGS-2026-10-07: reserve action space so Amount remains visible with
+// expanded navigation; the client/type/date cells can wrap within their share.
+const RENTAL_COLUMN_SHARES: Record<string, number> = {
+  'Booking ID': 0.08, 'Created Date': 0.08, 'Client / Project': 0.15,
+  'Project Type': 0.09, Items: 0.06, Pickup: 0.12, Return: 0.12,
+  Status: 0.10, 'Total Amount': 0.10,
 }
 
 const th = {
   textAlign: 'left' as const,
-  padding: '9px 12px',
+  padding: '9px 8px',
   fontSize: 'var(--t-meta)',
   fontWeight: 600,
   color: 'var(--text2)',
-  whiteSpace: 'nowrap' as const,
+  whiteSpace: 'normal' as const,
   borderBottom: '1px solid var(--border)',
 }
 
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") stated with the token rather than reached by padding
+ * arithmetic; the 12px horizontal padding is untouched. `stickyTd` below
+ * spreads this object, so the pinned action column inherits the same floor —
+ * which is the column that matters, because it is the one holding the row
+ * action.
+ *
+ * That action is `RowOperations`, and its trigger is a bare 26px button with no
+ * inflated target — under Law 15's 44 today. Growing it is the obvious next
+ * change and it is deliberately not made here, because it is only safe once the
+ * row can hold it: a 44px target inside the old 11 + 17 + 11 = 39px row would
+ * have overhung ~2.5px at each edge, neighbouring rows would have overlapped by
+ * ~5px, and an absolutely positioned target wins the hit test with the LATER row
+ * in the DOM taking the tap. The menu behind that trigger routes into Packing,
+ * Handover, Return & Inspection and Reset, so a boundary tap would open the
+ * wrong booking's menu and walk the wrong booking onto the floor. The floor
+ * comes first; `components/ui/TouchTarget.tsx` records the same ordering on the
+ * floor workspaces.
+ *
+ * `th`/`stickyTh` keep their own height. The header row carries no row action
+ * and does not owe 56. Its sticky cell does hold a control — `ColumnMenu`'s
+ * 24px trigger — and that CONTROL owes its own 44px target; that is a debt on
+ * the button, not a reason to inflate the header.
+ */
 const td = {
-  padding: '11px 12px',
+  height: 'var(--row-min-h)',
+  padding: '11px 8px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',
   verticalAlign: 'top' as const,
-  whiteSpace: 'nowrap' as const,
+  whiteSpace: 'normal' as const,
 }
 
 /**
@@ -2116,6 +2779,8 @@ const td = {
  */
 const stickyTh = {
   ...th,
+  width: 146,
+  minWidth: 146,
   textAlign: 'right' as const,
   position: 'sticky' as const,
   right: 0,
@@ -2126,22 +2791,12 @@ const stickyTh = {
 
 const stickyTd = {
   ...td,
-  width: 34,
+  width: 146,
+  minWidth: 146,
   textAlign: 'right' as const,
   position: 'sticky' as const,
   right: 0,
   zIndex: 1,
   background: 'var(--card)',
   boxShadow: 'inset 1px 0 0 var(--border)',
-}
-
-const dateInput = {
-  height: 30,
-  padding: '0 8px',
-  borderRadius: 'var(--r-sm)',
-  border: '1px solid var(--input-border)',
-  background: 'var(--input-bg)',
-  color: 'var(--text)',
-  fontSize: 'var(--t-meta)',
-  fontFamily: 'inherit',
 }

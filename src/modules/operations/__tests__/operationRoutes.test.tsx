@@ -25,6 +25,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { Viewport } from '../../../lib/device'
+import { OperationsWorkspaceProvider } from '../OperationsWorkspaceContext'
 
 let viewport: Viewport = 'desktop'
 
@@ -70,6 +71,61 @@ window.matchMedia = ((query: string) =>
     removeListener: () => {},
     dispatchEvent: () => false,
   }) as unknown as MediaQueryList) as typeof window.matchMedia
+
+/*
+ * The four wired workspaces (21 Aug live conversion) read through
+ * `fetchFloorBooking` — the query seam is mocked here the same way
+ * `BookingDetail.edit.test.tsx` mocks it, so the assertions stay about the
+ * rendered arrangement and off the network. B-715 is the one known booking;
+ * every other number resolves to `null`, which is the honest "no such
+ * booking" answer the live query gives.
+ */
+const FLOOR_B715 = {
+  id: '11111111-1111-4111-8111-111111111111',
+  bookingNo: 'B-715',
+  stage: 'Booked',
+  clientName: 'Himalayan Films Pvt. Ltd.',
+  project: 'Documentary',
+  pickupAtAd: '2026-07-16T00:15:00.000Z',
+  returnAtAd: '2026-07-19T00:15:00.000Z',
+  actualReturnAtAd: null,
+  deliveryType: 'Client Pickup',
+  isCancelled: false,
+  isClosed: false,
+  linesPresence: 'present' as const,
+  lines: [
+    {
+      id: 'l-1',
+      qty: 1,
+      lineType: 'Equipment',
+      description: 'Sony FX3',
+      productId: 'p-1',
+      productName: 'Sony FX3',
+      trackingMode: 'Serialised',
+      parentLineId: null,
+      sortOrder: 1,
+      unitsPresence: 'present' as const,
+      units: [
+        {
+          id: 'u-1',
+          assetId: 'a-1',
+          serial: 'SN102',
+          assetTag: 'EQ000001-U01',
+          unitState: 'Ready',
+          isRequired: true,
+          packed: false,
+          damaged: false,
+          location: 'A2-01',
+        },
+      ],
+    },
+  ],
+}
+
+vi.mock('../../../lib/queries/bookings', async (orig) => ({
+  ...(await orig<typeof import('../../../lib/queries/bookings')>()),
+  fetchFloorBooking: async (ref: string) => (ref === 'B-715' ? FLOOR_B715 : null),
+}))
 
 /*
  * The Floor's list and its four chip counts all go through `useList`. Mocking
@@ -128,10 +184,17 @@ async function mount(ui: ReactNode, initial = '/') {
     root.render(
       <MemoryRouter initialEntries={[initial]}>
         <PathProbe />
-        {ui}
+        <OperationsWorkspaceProvider>{ui}</OperationsWorkspaceProvider>
       </MemoryRouter>,
     )
   })
+  /* The wired workspaces resolve `fetchFloorBooking` in an effect — the same
+     flush the BookingDetail suites use to let the mocked read land. */
+  for (let i = 0; i < 4; i++) {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
 }
 
 /** Mount a workspace behind its real parameterised route, so `useParams` is live. */
@@ -144,8 +207,8 @@ async function mountAt(path: string, element: ReactNode, pattern: string) {
   )
 }
 
-const buttons = () => [...container.querySelectorAll('button')]
-const text = () => container.textContent ?? ''
+const buttons = () => [...document.body.querySelectorAll('button')]
+const text = () => document.body.textContent ?? ''
 
 /**
  * The workspace primary is `--cat-1` filled (`BLUE_PRIMARY` in each file), and
@@ -153,7 +216,9 @@ const text = () => container.textContent ?? ''
  * `--cat-1` backgrounds is therefore counting primaries.
  */
 const filledPrimaries = () =>
-  buttons().filter((b) => (b.getAttribute('style') ?? '').includes('background: var(--cat-1)'))
+  // Was 'background: var(--cat-1)'. That was a CHART CATEGORY hue standing in
+  // for the primary; v4.1 §5 puts the primary action on --btn-primary-bg.
+  buttons().filter((b) => (b.getAttribute('style') ?? '').includes('background: var(--btn-primary-bg)'))
 
 beforeEach(() => {
   viewport = 'desktop'
@@ -163,6 +228,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
+  document.body.innerHTML = ''
 })
 
 describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
@@ -173,7 +239,7 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
   it('draws the four verb chips over the shared list', async () => {
     await mount(<OperationsQueues />, '/operations')
     const labels = buttons().map((b) => b.textContent ?? '')
-    for (const chip of ['Packing', 'Handover', 'Return & Inspection', 'Reset']) {
+    for (const chip of ['Pack', 'Handover', 'Return', 'Reset']) {
       expect(labels.some((l) => l.startsWith(chip))).toBe(true)
     }
     // §3.1's row: time │ BR# │ client │ items │ stage badge │ [verb] ⋮
@@ -199,54 +265,102 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
   it('leaves Cases its own route rather than a chip that swaps the list out', async () => {
     await mount(<OperationsQueues />, '/operations')
     const cases = [...container.querySelectorAll('a')].find((a) => (a.textContent ?? '').includes('Cases'))
-    expect(cases?.getAttribute('href')).toBe('/operations/cases')
+    expect(cases?.getAttribute('href')).toBe('/inventory/cases')
   })
 
   it('carries the day scope the §3.1 header draws', async () => {
     await mount(<OperationsQueues />, '/operations')
+    const filters = buttons().find((b) => b.getAttribute('aria-controls') === 'operations-filters')
+    await act(async () => {
+      filters?.click()
+    })
     const labels = buttons().map((b) => b.textContent ?? '')
     expect(labels.some((l) => l.startsWith('Today'))).toBe(true)
     expect(labels.some((l) => l.startsWith('Tomorrow'))).toBe(true)
     expect(labels.some((l) => l.startsWith('Custom'))).toBe(true)
   })
 
-  it('opens the row action on the parameterised workspace route', async () => {
+  it('opens the row action in the global workspace without changing route', async () => {
     await mount(<OperationsQueues />, '/operations')
     const pack = buttons().find((b) => b.textContent === 'Pack')
     await act(async () => {
       pack?.click()
     })
-    expect(path).toBe('/rentals/B-715/packing')
+    expect(path).toBe('/operations')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
   })
 
-  it('keeps the rail on screen at tablet rather than collapsing it', async () => {
+  it('opens the booking from a click on blank row space, but not from the row controls (8 Oct 2026)', async () => {
+    await mount(<OperationsQueues />, '/operations')
+    const row = container.querySelector<HTMLTableRowElement>('tr.operations-v2__row')!
+    const bookingNo = row.querySelector('a.identifier')?.textContent
+    // The action button keeps its own job and the route does not move.
+    await act(async () => {
+      row.querySelector<HTMLButtonElement>('button')!.click()
+    })
+    expect(path).toBe('/operations')
+    // A plain cell (the items count) opens the booking.
+    await act(async () => {
+      row.querySelector<HTMLTableCellElement>('td.figure')!.click()
+    })
+    expect(path).toBe(`/rentals/${bookingNo}`)
+  })
+
+  it('opens the filter rail from the title control at tablet width', async () => {
     viewport = 'tablet'
     await mount(<OperationsQueues />, '/operations')
-    expect(text()).toContain('no monetary values are shown')
-    expect(buttons().some((b) => (b.getAttribute('aria-label') ?? '').startsWith('Expand'))).toBe(false)
+    const filters = buttons().find((b) => b.getAttribute('aria-controls') === 'operations-filters')
+    await act(async () => {
+      filters?.click()
+    })
+    expect(filters?.getAttribute('aria-expanded')).toBe('true')
+    expect(document.querySelector('#operations-filters')).not.toBeNull()
+    const expandAlerts = buttons().find((b) => b.getAttribute('aria-label') === 'Expand Alerts')
+    await act(async () => {
+      expandAlerts?.click()
+    })
+    expect(text()).toContain('Return Overdue')
+  })
+
+  /* From main's d7ca3bc, ported 8 Oct 2026: a search that hides every row is
+     an empty state with Clear filters, not a bare table. */
+  it('says nothing matches, with Clear filters, when the search hides every row', async () => {
+    await mount(<OperationsQueues />, '/operations')
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search ID, client, project"]')
+    expect(search).not.toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, 'no-such-booking')
+      search?.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    expect(text()).toContain('No jobs match these filters')
+    const clear = buttons().find((b) => b.textContent?.trim() === 'Clear filters')
+    expect(clear).toBeDefined()
+    await act(async () => clear?.click())
+    expect(text()).toContain('B-715')
   })
 })
 
-describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () => {
-  it('renders four navigable steps and mounts no workspace', async () => {
+describe('OperationsShell is the unified modal host', () => {
+  it('renders four stages and mounts the real workspace', async () => {
     await mount(<OperationsShell bookingNo="B-715" bookingStatus="Booked" isOpen onClose={() => {}} />)
     const labels = buttons().map((b) => b.textContent ?? '')
     expect(labels.some((l) => l.includes('Packing'))).toBe(true)
     expect(labels.some((l) => l.includes('Handover'))).toBe(true)
     expect(labels.some((l) => l.includes('Return & Inspection'))).toBe(true)
     expect(labels.some((l) => l.includes('Reset'))).toBe(true)
-    // The workspaces each render their own <table>; a launcher renders none.
-    expect(container.querySelectorAll('table')).toHaveLength(0)
-    expect(text()).not.toContain('Packing Checklist')
+    expect(container.querySelectorAll('table').length).toBeGreaterThan(0)
+    expect(text()).toContain('Packing Checklist')
   })
 
-  it('navigates to the parameterised route instead of swapping a tab panel', async () => {
+  it('keeps the parent route while resolving another booking in-place', async () => {
     await mount(<OperationsShell bookingNo="B-9001" bookingStatus="Booked" isOpen onClose={() => {}} />)
     const pack = buttons().find((b) => (b.textContent ?? '').includes('Packing'))
     await act(async () => {
       pack?.click()
     })
-    expect(path).toBe('/rentals/B-9001/packing')
+    expect(path).toBe('/')
+    expect(text()).toContain('No booking matches B-9001')
   })
 
   it('keeps a step that is not open yet visible and unclickable, with its reason', async () => {
@@ -259,14 +373,65 @@ describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () =
     expect(text()).toContain('opens once this booking reaches Booked')
   })
 
-  it('offers Evidence as a viewer, never as a fifth step', async () => {
+  it('keeps Evidence out of the four-stage workflow', async () => {
     await mount(<OperationsShell bookingNo="B-715" bookingStatus="Booked" isOpen onClose={() => {}} />)
     const evidence = buttons().find((b) => (b.textContent ?? '').includes('Evidence'))
-    expect(evidence?.textContent).toContain('viewer, not a step')
-    await act(async () => {
-      evidence?.click()
-    })
-    expect(path).toBe('/rentals/B-715/evidence')
+    expect(evidence).toBeUndefined()
+  })
+})
+
+/**
+ * **PK-12 — the launcher may not report a count it never made.**
+ *
+ * `stepDotState`'s open answers (not-started / in-progress / done) are all
+ * counts. The launcher passed `{ done: 0, total: 1 }` into it, so the step the
+ * booking was actually AT read "Not started" unconditionally — including on a
+ * booking with a Packing session half-scanned. Law 12: never render a
+ * fabricated fact.
+ */
+describe('PK-12 — the entry step reports progress it was given, and nothing more', () => {
+  const packRow = () => buttons().find((b) => (b.textContent ?? '').includes('Packing'))
+
+  it('says the step is Open, not Not started, when no progress was supplied', async () => {
+    await mount(<OperationsShell bookingNo="B-715" bookingStatus="Booked" isOpen onClose={() => {}} />)
+    expect(packRow()?.textContent).toContain('Open')
+    expect(packRow()?.textContent).not.toContain('Not started')
+  })
+
+  it('reports In progress once the caller supplies a real part-done count', async () => {
+    await mount(
+      <OperationsShell
+        bookingNo="B-715"
+        bookingStatus="Booked"
+        isOpen
+        onClose={() => {}}
+        progress={{ Pack: { done: 3, total: 8 } }}
+      />,
+    )
+    expect(packRow()?.textContent).toContain('In progress')
+  })
+
+  it('reports Not started only when the caller counted zero of something', async () => {
+    await mount(
+      <OperationsShell
+        bookingNo="B-715"
+        bookingStatus="Booked"
+        isOpen
+        onClose={() => {}}
+        progress={{ Pack: { done: 0, total: 8 } }}
+      />,
+    )
+    expect(packRow()?.textContent).toContain('Not started')
+  })
+
+  it('leaves the blocked and already-past rows alone — neither answer reads a count', async () => {
+    // At Packed: Pack is behind the booking (done), Return is ahead of it
+    // (blocked). Neither is affected by the absence of a progress map.
+    await mount(<OperationsShell bookingNo="B-715" bookingStatus="Packed" isOpen onClose={() => {}} />)
+    expect(packRow()?.textContent).toContain('Done')
+    const ret = buttons().find((b) => (b.textContent ?? '').includes('Return & Inspection'))
+    expect(ret?.disabled).toBe(true)
+    expect(ret?.textContent).toContain('Not open yet')
   })
 })
 
@@ -276,23 +441,29 @@ describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () =
  * FX3 Documentary Package's 18 seeded items underneath it, so a second booking
  * number produced another booking's packing list wearing that number. That is
  * the class Rulings §8 forbids: a screen asserting a subject it has no source
- * for. The number-from-the-route assertion is kept and **strengthened** with
- * the thing it was missing — that the seeded booking's own content is not what
- * is being shown.
+ * for.
  *
- * The Evidence case additionally used to require a link to
- * `/rentals/:bookingNo/packing`. That link belongs to the loaded workspace and
- * is still asserted at the seeded booking below; at a foreign number there is
- * no evidence set to cross-link, so requiring it there would be requiring the
- * defect.
+ * Since the 21 Aug live conversion the four verb workspaces resolve the route
+ * param through `fetchFloorBooking` (mocked above: only B-715 exists). An
+ * unknown number now gets the query's honest answer — the not-found empty
+ * state — and no other booking's identifier appears anywhere on the page.
+ * The old `BookingNotLoaded` wording ("… is not loaded yet", naming the seeded
+ * booking) died with the seed it described.
+ *
+ * **Evidence joined them on 7 Sep 2026 (HO-09).** Its booking HEAD is the same
+ * `fetchFloorBooking` read, so it belongs in the list below rather than in the
+ * `BookingNotLoaded` exception it used to hold. Its photo GRID is still the
+ * seeded sample set — there is no storage bucket and no `evidence_files`
+ * writer (HO-06) — but the grid renders only inside a resolved booking, so an
+ * unknown number reaches none of it.
  */
 describe('Spec 03 Notes — routes are parameterised, not one seeded booking', () => {
   const SECOND = 'B-9001'
-  /* The identifier the seed uses; no workspace may render its contents under
-     another booking's number. */
-  const SEED = 'B-715'
+  /* The one booking the mocked query knows; its content must never render
+     under another booking's number. */
+  const KNOWN = 'B-715'
 
-  const cases: Array<[string, ReactNode, string, string]> = [
+  const wired: Array<[string, ReactNode, string, string]> = [
     ['Packing', <PackingWorkspace key="p" />, '/rentals/:bookingNo/packing', 'packing'],
     ['Handover', <HandoverWorkspace key="h" />, '/rentals/:bookingNo/handover', 'handover'],
     ['Return', <ReturnWorkspace key="r" />, '/rentals/:bookingNo/return', 'return'],
@@ -300,25 +471,22 @@ describe('Spec 03 Notes — routes are parameterised, not one seeded booking', (
     ['Evidence', <EvidenceWorkspace key="e" />, '/rentals/:bookingNo/evidence', 'evidence'],
   ]
 
-  for (const [name, element, pattern, segment] of cases) {
-    it(`${name} states the route's booking number and refuses to show the seed under it`, async () => {
+  for (const [name, element, pattern, segment] of wired) {
+    it(`${name} states the route's booking number and refuses to show another booking under it`, async () => {
       await mountAt(`/rentals/${SECOND}/${segment}`, element, pattern)
-      expect(text()).toContain(SECOND)
-      // The honest gap, not another booking's gear.
-      expect(text()).toContain('is not loaded yet')
-      expect(
-        [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SECOND}`),
-      ).toBe(true)
-      // Named only as "floor data exists for …", never as this page's subject.
-      expect(text().indexOf(SEED)).toBeGreaterThan(text().indexOf(SECOND))
+      // The honest gap: the query found nothing with this number.
+      expect(text()).toContain(`No booking matches ${SECOND}`)
+      // Not the known booking's gear, and not even its identifier.
+      expect(text()).not.toContain(KNOWN)
+      expect(text()).not.toContain('Sony FX3')
     })
   }
 
-  it('Evidence at the seeded booking still links across to its packing workspace', async () => {
-    await mountAt(`/rentals/${SEED}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
-    expect(text()).toContain(SEED)
+  it('Evidence at the resolved booking still links across to its packing workspace', async () => {
+    await mountAt(`/rentals/${KNOWN}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
+    expect(text()).toContain(KNOWN)
     expect(
-      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SEED}/packing`),
+      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${KNOWN}/packing`),
     ).toBe(true)
   })
 })
@@ -354,7 +522,7 @@ describe('Spec 03 Notes bullet 2 — blockers are inline in the rail', () => {
   })
 })
 
-describe('Rulings §7 — rails reflow below 1180 rather than collapsing', () => {
+describe('Rulings §7 — rails reflow below 1280 rather than collapsing', () => {
   it('keeps the Packing progress column on screen at tablet width', async () => {
     viewport = 'tablet'
     await mountAt('/rentals/B-715/packing', <PackingWorkspace />, '/rentals/:bookingNo/packing')

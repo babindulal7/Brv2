@@ -803,7 +803,12 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'FINANCE_MONEY_ROLES',
       'FINANCE_REQUIRED_ROLE',
       'FINANCE_RESTRICTED_REASON',
+      'INVOICE_STATUSES',
+      'INVOICE_TOKEN',
+      'SPEC_TABS',
       'STORED_INVOICE_STATUSES',
+      'businessDayAd',
+      'businessNowAd',
       'createExpense',
       'expensesAwaitingApproval',
       'expensesByReceipt',
@@ -812,7 +817,19 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'expensesForBranch',
       'expensesForCategory',
       'expensesInPeriod',
+      'fetchInvoiceLines',
       'financeRestriction',
+      'invoiceDetailGroups',
+      'invoiceGlance',
+      /*
+       * Added 4 Sep 2026 for the Calendar Workspace's *Upcoming* rail, and
+       * added deliberately rather than to silence this guard: it is a named
+       * `ListFilters` set — the same shape as `outstandingInvoices` and
+       * `overdueInvoices` either side of it — that returns an object and
+       * touches nothing. It reaches `invoices` only through `listInvoices`,
+       * which is already on this list, and it goes nowhere near `payments`.
+       */
+      'invoicesDueInPeriod',
       'invoicesForBooking',
       'invoicesForClient',
       'listExpenseBranches',
@@ -823,12 +840,19 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'liveInvoices',
       'outstandingInvoices',
       'overdueInvoices',
+      // MONEY-05 — the set a PAYMENT may be recorded against, which is
+      // `outstandingInvoices` plus 'Draft'. R-02 keeps an invoice in Draft for
+      // the whole rental and R-14 leaves it there when a payment lands, so a
+      // Draft is payable by ruling; it is still not a receivable, which is why
+      // the two sets stayed separate rather than one being widened.
+      'payableInvoices',
       'paymentsForBooking',
       'paymentsForClient',
       'paymentsForInvoice',
       'paymentsInPeriod',
       'receivedPayments',
       'setExpenseStatus',
+      'todayDate',
       'voidedInvoices',
     ])
   })
@@ -889,6 +913,21 @@ describe('payment filter sets', () => {
   it('paymentsForInvoice reads oldest-first, so an instalment history reads forwards', () => {
     record(paymentsForInvoice('i-1'))
     expect(db.state.calls).toContainEqual(['order', 'payment_date', { ascending: true }])
+  })
+
+  /**
+   * FI-03. A 'Refund' row is `status = 'Received'` with `amount > 0`
+   * (payments_amount_positive, 0006:197), so a status-only set would ADD a
+   * refund to the Received KPI, the method donut, the collections chart and
+   * the closing's takings. The takings set names the one type that is money
+   * taken; 'Security Deposit' needs no exclusion because the table CHECK
+   * (0006:198) already makes it unreachable.
+   */
+  it('paymentsInPeriod is money taken: Received AND Advance Payment, never a Refund', () => {
+    record(paymentsInPeriod('2026-08-01', '2026-08-31'))
+    expect(chipCalls()['status']).toEqual(['Received'])
+    expect(chipCalls()['payment_type']).toEqual(['Advance Payment'])
+    expect(chipCalls()['payment_type']).not.toContain('Refund')
   })
 })
 

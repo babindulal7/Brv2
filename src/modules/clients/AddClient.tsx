@@ -1,16 +1,18 @@
-import { useMemo, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select } from '../../components/ui'
-import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Input, Select, DateField } from '../../components/ui'
+import { Card, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { PageActions } from '../../components/ui/PageActions'
 import { Modal } from '../../components/ui/Modal'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatMoney, parseMoney } from '../../lib/money'
-import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
+import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { useViewport } from '../../lib/device'
 /* The phone rule is `lib/phone`'s, not this screen's — see that module's header
    for the CHECK it mirrors and why three screens may not each own a copy.
@@ -23,7 +25,7 @@ import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
 import {
-  CLIENTS_DATA,
+  findClientsByPhoneTail,
   CLIENT_SOURCES,
   PAYMENT_TERMS_OPTIONS,
   PREFERRED_CONTACT_METHODS,
@@ -35,7 +37,8 @@ import {
   type OrganisationType,
   type Profession,
   type Segment,
-} from '../../data/clients'
+} from '../../lib/queries/clients'
+
 
 /**
  * Add Client — full-page creation workflow, replacing the old "Register New
@@ -50,8 +53,11 @@ import {
  * is the existing Membership Tier, which already drives credit/discount
  * policy elsewhere (Clients → Credit tab).
  *
- * No data layer exists yet (Phase 1), so Save simulates and navigates back to
- * /clients without persisting — the same contract AddEquipment already uses.
+ * Save dispatches the implemented `createClient` action and reports from its
+ * own outcome (see `handleSave`), and the duplicate warning asks the database
+ * — `client_directory_v` through `lib/queries/clients` (Law 2), not the
+ * retired `CLIENTS_DATA` seed array, so it can only ever name a client that
+ * actually exists.
  */
 
 const TYPE_OPTIONS: Array<{ value: ClientType; label: string; icon: IconName; blurb: string; example: string }> = [
@@ -74,6 +80,31 @@ const SEGMENTS: Segment[] = [
   'Commercial', 'Feature', 'YouTube / Creator', 'Education', 'Other'
 ]
 
+/**
+ * PAN/VAT — the database's rule, not a second one.
+ *
+ * `clients_pan_vat_nine_digits` (`0005_clients.sql:93`) is
+ * `check (pan_vat is null or pan_vat ~ '^[0-9]{9}$')`, and
+ * `actions/clients/createClient.ts`'s `validate` already mirrors it as
+ * `/^[0-9]{9}$/`, and so does `lib/booqable/map/clients.ts`'s
+ * `PAN_VAT_FORMAT`, whose own comment says it mirrors the same CHECK. Counting
+ * the CHECK itself this is the FOURTH copy of those nine digits — an earlier
+ * draft of this note said "third" and had missed the Booqable mapper — and it
+ * is deliberate: `validate()` below has to answer PER FIELD and BEFORE Save,
+ * and the alternative was to keep letting the CHECK answer afterwards.
+ *
+ * ⚠ It must never become the looser copy. A client-side rule that admits what
+ * the CHECK refuses only moves the refusal later; one that refuses what the
+ * CHECK admits blocks a save the database would have taken. Both are worse
+ * than no rule at all.
+ *
+ * TODO(refactor): hoist to a `lib/pan.ts` the way the phone rule lives in
+ * `lib/phone.ts`, so the screens and the action read one constant.
+ * `createClient.ts` is outside this change's files.
+ */
+const PAN_RE = /^[0-9]{9}$/
+const PAN_REJECTION = 'PAN/VAT must be exactly nine digits.'
+
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
@@ -94,9 +125,13 @@ function formatSinceDate(iso: string): string {
   return bs ? `${formatBs(bs)} · ${formatAd(d)}` : formatAd(d)
 }
 
+/* Law 15 — 44 is the minimum hit area, and `--tap` is the single place that
+   number is written. Every consumer here is a field in the New Client form, one
+   per line with nothing to collide with, so `minHeight` (not `height`) — the
+   notes textarea at the bottom still overrides to `auto` and grows past it. */
 const inputStyle = (hasError?: boolean): CSSProperties => ({
   width: '100%',
-  height: 38,
+  minHeight: 'var(--tap)',
   padding: '0 12px',
   borderRadius: 'var(--r-input)',
   border: `1px solid ${hasError ? 'var(--danger-text)' : 'var(--border)'}`,
@@ -108,27 +143,39 @@ const inputStyle = (hasError?: boolean): CSSProperties => ({
 
 function Field({
   label,
+  id: propId,
   required,
   error,
   help,
   children,
 }: {
   label: string
+  id?: string | undefined
   required?: boolean
-  /* `| undefined` is explicit because tsconfig sets exactOptionalPropertyTypes:
-     callers read `errors[field]`, which is `string | undefined` on a miss, and
-     without it every call site would need a `?? null`. */
   error?: string | null | undefined
-  /** Standing rule for the field, shown until an error takes its place. */
   help?: ReactNode
   children: ReactNode
 }) {
+  const autoId = useId()
+  const fieldId = propId || autoId
+
+  let content = children
+  if (isValidElement(children)) {
+    const childProps = children.props as Record<string, unknown>
+    if (!childProps.id && !childProps['aria-label'] && !childProps.label) {
+      content = cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id: fieldId,
+        'aria-label': label,
+      })
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-      <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+      <label htmlFor={fieldId} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
         {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
       </label>
-      {children}
+      {content}
       {error ? (
         <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
           <Icon name="error" size={12} />
@@ -200,7 +247,12 @@ const NOT_SAVED_YET: string[] = [
   'Professions, segments, source and “referred by”',
 ]
 
-export default function AddClient() {
+export interface AddClientProps {
+  embedded?: boolean
+  onDone?: () => void
+}
+
+export default function AddClient({ embedded = false, onDone }: AddClientProps = {}) {
   const navigate = useNavigate()
   const { showSuccessToast } = useToast()
   const money = useCanViewMoney()
@@ -230,7 +282,11 @@ export default function AddClient() {
   const [website, setWebsite] = useState('')
   const [govIdType, setGovIdType] = useState('Citizenship')
 
-  const [clientSince, setClientSince] = useState(TODAY.toISOString().slice(0, 10))
+  /* The default is resolved when the form MOUNTS, not when the module loads
+     (X-05): a module-scope `TODAY` pre-filled "Client since" with the day the
+     tab was opened, so a client added on Tuesday from a tablet last reloaded on
+     Sunday was dated Sunday, silently and by default. */
+  const [clientSince, setClientSince] = useState(() => getBusinessToday().toISOString().slice(0, 10))
   const [source, setSource] = useState('')
   const [referredBy, setReferredBy] = useState('')
   const [membership, setMembership] = useState<MembershipTier>('Creator')
@@ -245,6 +301,13 @@ export default function AddClient() {
 
   const [errors, setErrors] = useState<Record<string, string | null>>({})
   const [dismissedDuplicate, setDismissedDuplicate] = useState(false)
+  const [duplicateMatch, setDuplicateMatch] = useState<ClientRecord | null>(null)
+  /**
+   * Set when the duplicate lookup itself failed — a degraded check is stated,
+   * never silently skipped (Law 12: inline and persistent). The database's
+   * phone unique constraint remains the real backstop at Save.
+   */
+  const [dupCheckError, setDupCheckError] = useState<string | null>(null)
   const [showDiscard, setShowDiscard] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -262,11 +325,20 @@ export default function AddClient() {
    * same press, so a double-click or a "try again" after a network wobble
    * conflicts on `clients_client_uuid_key` and returns the client that already
    * exists, instead of creating a second one that then collides on the phone
-   * unique constraint. Cleared only when the form is edited into a genuinely
-   * different client — which it is not, on this screen, because a successful
-   * save navigates away.
+   * unique constraint.
+   *
+   * ⛔ **Keyed on the identity fields, not on the mount** (item 2.6c). The
+   * previous version minted once per page load and never again — so after a
+   * FAILED save, correcting the form into a genuinely different client
+   * (another name, another phone) replayed the first client's key:
+   * `idempotentInsert` read the 23505 on `client_uuid` as "already saved" and
+   * handed back the FIRST client, silently swallowing the second. The key is
+   * therefore paired with the identity (name/phone/email) it was minted for:
+   * a pure retry of the same client replays the same key; an edit into a
+   * different client mints a fresh one. Non-identity edits (address, notes)
+   * keep the key — correcting a typo in the city is still the same client.
    */
-  const saveKey = useRef<string | null>(null)
+  const saveKey = useRef<{ key: string; identity: string } | null>(null)
 
   const clearError = (key: string) => setErrors((prev) => (prev[key] ? { ...prev, [key]: null } : prev))
 
@@ -284,12 +356,46 @@ export default function AddClient() {
   const togglePreferred = (m: string) =>
     setPreferredMethods((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]))
 
-  const duplicateMatch = useMemo<ClientRecord | null>(() => {
-    if (dismissedDuplicate) return null
+  /**
+   * Duplicate detection, against the database. Debounced because it runs as
+   * the operator types; cancelled on every phone change so a slow older
+   * response cannot overwrite a newer one. The check queries
+   * `client_directory_v` server-side (`findClientsByPhoneTail`) — it never
+   * downloads the client table to match in the browser.
+   *
+   * A changed number is a fresh question, so a "Continue Anyway" dismissal is
+   * cleared here the moment the phone changes — previously the dismissal was
+   * permanent and a *second, different* duplicate typed after dismissing the
+   * first produced no warning at all (docs/pages/05 §7.8).
+   */
+  useEffect(() => {
+    setDismissedDuplicate(false)
     const digits = phone.replace(/\D/g, '')
-    if (digits.length < 7) return null
-    return CLIENTS_DATA.find((c) => c.phone.replace(/\D/g, '').endsWith(digits.slice(-9))) ?? null
-  }, [phone, dismissedDuplicate])
+    if (digits.length < 7) {
+      setDuplicateMatch(null)
+      setDupCheckError(null)
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      findClientsByPhoneTail(phone)
+        .then((matches) => {
+          if (cancelled) return
+          setDuplicateMatch(matches[0] ?? null)
+          setDupCheckError(null)
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          // An unreachable check must not pretend it found nothing.
+          setDuplicateMatch(null)
+          setDupCheckError(err instanceof Error ? err.message : String(err))
+        })
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [phone])
 
   const isDirty = Boolean(
     name.trim() ||
@@ -360,6 +466,28 @@ export default function AddClient() {
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       e.email = 'Enter a valid email address.'
     }
+    /*
+     * ── CL-10 — the CHECK, at the field, before Save ────────────────────
+     *
+     * Optional stays optional: a blank PAN is accepted here exactly as
+     * `clients_pan_vat_nine_digits` accepts a NULL. What changed is that a
+     * PRESENT one is shaped here instead of arriving as a post-submit banner
+     * after the whole form has been filled and the operator has been sent
+     * back to find which field caused it. The banner stays — the database is
+     * still the authority — but it is the backstop now, not the first refusal.
+     *
+     * ⛔ `org_subtype`, the other half of the register's claim, is NOT checked
+     * here and needs no check. `ORG_TYPES` above lists the seven members of
+     * `client_organisation_subtype` (`0001_enums.sql:796-804`) and nothing
+     * else; `orgType` is typed `OrganisationType`, initialised to
+     * 'Production House', and its `Select` offers no empty option — so this
+     * screen can emit neither a value outside the enum nor an absent one for
+     * an Organisation, and `clients_org_subtype_pairing` has nothing to
+     * catch. A branch for it would be a validation that can never fire.
+     */
+    if (pan.trim() && !PAN_RE.test(pan.trim())) {
+      e.pan = PAN_REJECTION
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -401,8 +529,14 @@ export default function AddClient() {
 
     setSaveError(null)
     setSaving(true)
-    // Law 8: one key for this press, reused by every retry of it.
-    if (!saveKey.current) saveKey.current = newClientUuid()
+    /* Law 8: one key per CLIENT, reused by every retry of the same client.
+       The identity is the canonical stored forms — the same strings the
+       payload below carries — so a whitespace or formatting edit does not
+       read as a different client, and a real identity edit does. */
+    const identity = `${name.trim()}|${canonicalPhone(phone)}|${email.trim().toLowerCase()}`
+    if (!saveKey.current || saveKey.current.identity !== identity) {
+      saveKey.current = { key: newClientUuid(), identity }
+    }
 
     try {
       const { createClient } = await import('../../actions/clients/createClient')
@@ -427,7 +561,7 @@ export default function AddClient() {
           country: country.trim(),
           panVat: pan.trim(),
           notes: notes.trim(),
-          clientUuid: saveKey.current,
+          clientUuid: saveKey.current.key,
         },
         ctx,
       )
@@ -442,6 +576,7 @@ export default function AddClient() {
 
   function handleCancel() {
     if (isDirty) setShowDiscard(true)
+    else if (onDone) onDone()
     else navigate('/clients')
   }
 
@@ -518,12 +653,42 @@ export default function AddClient() {
               <span>Contact person</span>
             </div>
           )}
+          {/*
+            ── CL-09 — the invented half of a two-screen disagreement ───────
+            This row read "VAT / PAN missing — required before a booking can be
+            confirmed" while `ClientDetail` read "Optional — a client without a
+            PAN can still rent". Both cannot be true, and the code says which
+            one is:
+
+              · `clients.pan_vat` is nullable (`0005_clients.sql:47`), and
+                `clients_pan_vat_nine_digits` is `pan_vat is null or …`;
+              · `createClient.validate` checks a PAN's SHAPE, never its
+                presence — a client saves without one;
+              · neither `actions/rentals/confirmRental.ts` nor
+                `createRental.ts` reads it, and no migration adds a gate on
+                it: `validate_booking_gates()` guards the deposit and the
+                invoice outstanding, and nothing else.
+
+            So no booking is refused for a missing PAN, and this row says so.
+            It keeps a mark rather than disappearing, because New Rental shows
+            "Missing client ID or PAN" as a non-blocking advisory, seeded from
+            this very field.
+
+            **Ruled 8 Oct 2026** (RULINGS-2026-10-08.md): a missing PAN is a
+            warning, never a Confirm gate. 0005's column comment ("the booking
+            Confirm gate enforces it") is therefore stale; the gate is not to
+            be built.
+          */}
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
-            <Icon name={pan.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--warning-text)', flexShrink: 0, marginTop: 2 }} />
-            <span>VAT / PAN {!pan.trim() && 'missing — required before a booking can be confirmed'}</span>
+            <Icon name={pan.trim() ? 'check' : 'info'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
+            <span>
+              VAT / PAN
+              {!pan.trim() &&
+                ' — optional, and no booking is refused without it. New Rental asks for a PAN or citizenship number in its own box before Confirm.'}
+            </span>
           </div>
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
-            <Icon name={address.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: address.trim() ? 'var(--success-text)' : 'var(--warning-text)', flexShrink: 0, marginTop: 2 }} />
+            <Icon name={address.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: address.trim() ? 'var(--success-text)' : 'var(--ready-text)', flexShrink: 0, marginTop: 2 }} />
             <span>Address {!address.trim() && 'missing — required on the invoice'}</span>
           </div>
         </div>
@@ -553,18 +718,23 @@ export default function AddClient() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 32 }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         title="Add New Client"
         description="Create an accurate client profile with the details needed for bookings, payments and documents."
         actions={
-          <>
-            <Button variant="ghost" onClick={handleCancel} disabled={saving}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleSave} disabled={saving || saved}>
-              {saved ? 'Client Saved' : saving ? 'Saving Client…' : 'Save Client'}
-            </Button>
-          </>
+          <PageActions
+            secondary={
+              <Button variant="ghost" onClick={handleCancel} disabled={saving}>
+                Cancel
+              </Button>
+            }
+            primary={
+              <Button variant="primary" onClick={handleSave} disabled={saving || saved}>
+                {saved ? 'Client Saved' : saving ? 'Saving Client…' : 'Save Client'}
+              </Button>
+            }
+          />
         }
       />
 
@@ -572,7 +742,31 @@ export default function AddClient() {
           timer. It stays until the next Save attempt replaces it. */}
       {saveError && <ErrorBanner title="This client was not saved" message={saveError} />}
 
-      {duplicateMatch && (
+      {/* The duplicate lookup failing is stated, not swallowed — otherwise a
+          silent failure reads as "no duplicate exists". */}
+      {dupCheckError && (
+        <p
+          role="alert"
+          style={{
+            margin: 0,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 7,
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            color: 'var(--danger-text)',
+            lineHeight: 1.45,
+          }}
+        >
+          <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>
+            Duplicate check unavailable — {dupCheckError}. This phone number was not checked against the client
+            directory; if it already belongs to a client, Save will be refused by the database&rsquo;s unique phone rule.
+          </span>
+        </p>
+      )}
+
+      {duplicateMatch && !dismissedDuplicate && (
         <ErrorBanner
           title="Possible existing client"
           message={
@@ -713,8 +907,10 @@ export default function AddClient() {
                     🇳🇵 +977
                   </span>
                   <Input
+                    type="tel"
+                    aria-label="Primary Phone"
                     value={phone}
-                    inputMode="numeric"
+                    inputMode="tel"
                     autoComplete="tel-national"
                     onChange={(e) => {
                       setPhone(e.target.value)
@@ -812,16 +1008,30 @@ export default function AddClient() {
               {clientType === 'Individual' && (
                 <Field label="Government ID">
                   <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
-                    <Select value={govIdType} onChange={(e) => setGovIdType(e.target.value)} style={{ ...inputStyle(), width: 120, flexShrink: 0 }}>
+                    <Select value={govIdType} aria-label="Government ID Type" onChange={(e) => setGovIdType(e.target.value)} style={{ ...inputStyle(), width: 120, flexShrink: 0 }}>
                       <option value="Citizenship">Citizenship</option>
                       <option value="Passport">Passport</option>
                     </Select>
-                    <Input value={businessRegNo} onChange={(e) => setBusinessRegNo(e.target.value)} placeholder="ID Number" style={{ ...inputStyle(), flex: 1 }} />
+                    <Input value={businessRegNo} aria-label="Government ID Number" onChange={(e) => setBusinessRegNo(e.target.value)} placeholder="ID Number" style={{ ...inputStyle(), flex: 1 }} />
                   </div>
                 </Field>
               )}
-              <Field label="VAT / PAN No.">
-                <Input value={pan} onChange={(e) => setPan(e.target.value)} placeholder="e.g. 600123456" style={inputStyle()} />
+              <Field
+                label="VAT / PAN No."
+                error={errors.pan}
+                help="Optional. If given, exactly nine digits — the rule the database enforces."
+              >
+                <Input
+                  value={pan}
+                  inputMode="numeric"
+                  onChange={(e) => {
+                    setPan(e.target.value)
+                    clearError('pan')
+                  }}
+                  placeholder="e.g. 600123456"
+                  className="figure"
+                  style={inputStyle(!!errors.pan)}
+                />
               </Field>
             </div>
           </SectionCard>
@@ -895,7 +1105,7 @@ export default function AddClient() {
 
             <div style={fieldRow}>
               <Field label="Client Since">
-                <Input type="date" value={clientSince} onChange={(e) => setClientSince(e.target.value)} style={inputStyle()} />
+                <DateField ariaLabel="Client since" value={clientSince} onChange={setClientSince} style={inputStyle()} />
               </Field>
               <Field label="Source">
                 <Select value={source} onChange={(e) => setSource(e.target.value)} style={inputStyle()}>
@@ -949,13 +1159,42 @@ export default function AddClient() {
             <div style={fieldRow}>
               <Field label="Preferred Contact Method">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', paddingTop: 4 }}>
+                  {/*
+                    These three rows were as tall as the text in them — about 19px
+                    of target for a control the operator taps on a docked tablet
+                    while holding a case in the other hand. The fix is on the
+                    LABEL, not the box: a label hands its clicks to the control it
+                    wraps, so stretching it to the touch minimum makes the whole
+                    "☐ WhatsApp" strip clickable while the checkbox itself stays
+                    16px. Resizing the input instead would give us a 44px native
+                    checkbox, which is enormous and still leaves the word beside it
+                    dead to the touch. The literal 44 rather than `var(--tap)` is
+                    deliberate — it matches the three card-row labels in the
+                    packing, handover and reset workspaces that set this same
+                    pattern.
+
+                    They stack in a flex column with a real gap between them, so
+                    each grown row pushes the next one down; nothing overlaps.
+                  */}
                   {PREFERRED_CONTACT_METHODS.map((m) => (
-                    <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
+                    <label
+                      key={m}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--sp-sm)',
+                        minHeight: 44,
+                        fontSize: 'var(--t-meta)',
+                        color: 'var(--text)',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <input
                         type="checkbox"
+                        aria-label={`Preferred communication: ${m}`}
                         checked={preferredMethods.includes(m)}
                         onChange={() => togglePreferred(m)}
-                        style={{ width: 16, height: 16, accentColor: 'var(--nav-active-accent)' }}
+                        style={{ width: 16, height: 16, flexShrink: 0, accentColor: 'var(--nav-active-accent)' }}
                       />
                       {m}
                     </label>
@@ -966,6 +1205,7 @@ export default function AddClient() {
                 <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Notes (Optional)</label>
                 <textarea
                   value={notes}
+                  aria-label="Client Notes"
                   maxLength={300}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Any additional notes about this client…"
@@ -1020,6 +1260,7 @@ export default function AddClient() {
             <input
               ref={fileInputRef}
               type="file"
+              aria-label="Upload client documents"
               multiple
               accept=".pdf,.jpg,.jpeg,.png"
               onChange={(e) => {
@@ -1052,7 +1293,7 @@ export default function AddClient() {
                       type="button"
                       onClick={() => setDocuments((prev) => prev.filter((x) => x.id !== d.id))}
                       aria-label={`Remove ${d.file.name}`}
-                      style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', width: 24, height: 24, borderRadius: 'var(--r-xs)', display: 'grid', placeItems: 'center' }}
+                      style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', minWidth: 44, minHeight: 44, borderRadius: 'var(--r-xs)', display: 'grid', placeItems: 'center' }}
                     >
                       <Icon name="close" size={14} />
                     </button>
@@ -1103,7 +1344,14 @@ export default function AddClient() {
             <Button variant="secondary" onClick={() => setShowDiscard(false)}>
               Keep Editing
             </Button>
-            <Button variant="danger" onClick={() => navigate('/clients')}>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setShowDiscard(false)
+                if (onDone) onDone()
+                else navigate('/clients')
+              }}
+            >
               Discard
             </Button>
           </div>

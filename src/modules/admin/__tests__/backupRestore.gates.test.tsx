@@ -36,6 +36,32 @@ vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'USR-TEST', name: 'Tester', role: auth.role, isSharedDevice: false } }),
 }))
 
+/**
+ * One completed backup in the live query's vocabulary (`backup_logs`,
+ * 0007:295-310) so the history table has a row to hang its gated actions on.
+ * The query seam is mocked at the same boundary the other converted screens'
+ * suites mock it; `backupRestriction` and the reason strings stay real.
+ */
+const BACKUP_FIXTURES = [
+  {
+    id: 'bk-1',
+    backupNo: 'BKP-2026-0142',
+    backupType: 'Full',
+    status: 'Completed',
+    storageLocation: 'supabase-storage://backups/2026-08-20',
+    fileSizeBytes: 734_003_200,
+    startedAtAd: '2026-08-20T00:30:00.000Z',
+    completedAtAd: '2026-08-20T00:52:00.000Z',
+    initiatedBy: '22222222-2222-4222-8222-222222222222',
+    errorMessage: null,
+  },
+]
+
+vi.mock('../../../lib/queries/backup', async (orig) => ({
+  ...(await orig<typeof import('../../../lib/queries/backup')>()),
+  listBackupLogs: async () => ({ rows: BACKUP_FIXTURES, total: BACKUP_FIXTURES.length }),
+}))
+
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
 const { default: BackupRestore } = await import('../BackupRestore')
@@ -56,6 +82,13 @@ async function mount() {
       </MemoryRouter>,
     )
   })
+  /* The history resolves `listBackupLogs` in an effect — the same flush the
+     BookingDetail suites use to let the mocked read land. */
+  for (let i = 0; i < 4; i++) {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
 }
 
 /**
@@ -111,26 +144,31 @@ describe('Backup & Restore — the Owner gate §10.7 never mentions', () => {
 })
 
 describe('Backup & Restore — the restore flow, and the failure it must report', () => {
-  it('opens the confirmation with the sandbox preselected and the checkpoint mandatory', async () => {
+  it('parks Start Restore as a stated absence — the theatre flow is retired, its protections named', async () => {
+    /*
+     * The seed build's Owner-only branch opened `SystemRestoreModal`, whose
+     * checkpoint was a 2-second timer and whose 2FA compared a code against
+     * nothing but its own length. The 21 Aug conversion removed that flow
+     * rather than pointing it at a service that does not exist — so what is
+     * pinned now is the honest replacement: no live restore control for ANY
+     * role (Owner included), no dialog, and the §7 protections (Owner-only,
+     * 2FA, sandbox default, mandatory checkpoint) stated on the page as the
+     * contract the real service must arrive with.
+     */
     await mount()
+    expect(liveActions().filter((b) => /restore/i.test(b.getAttribute('aria-label') ?? b.textContent ?? ''))).toHaveLength(0)
+
     const start = [...container.querySelectorAll('button')].find((b) => (b.textContent ?? '').includes('Start Restore'))
-    expect(start).toBeDefined()
-    await act(async () => {
-      start!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    expect(start).toBeUndefined()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
 
-    const dialog = document.querySelector('[role="dialog"]')
-    expect(dialog).not.toBeNull()
-    const text = dialog?.textContent ?? ''
-    expect(text).toContain('Sandbox Environment (Default / Recommended)')
+    /* The protections stay written down where the control is parked. */
+    const text = container.textContent ?? ''
+    expect(text).toContain('sandbox as the default')
+    expect(text).toContain('pre-restore checkpoint')
 
-    /* Sandbox is *checked*, production merely offered. */
-    const radios = [...(dialog?.querySelectorAll('input[type="radio"]') ?? [])] as HTMLInputElement[]
-    expect(radios[0]?.checked).toBe(true)
-    expect(radios[1]?.checked).toBe(false)
-
-    /* The next step is the checkpoint — not the 2FA, and not the restore. */
-    expect(text).toContain('Proceed to Checkpoint')
+    const reasons = [...container.querySelectorAll('[aria-disabled]')].map((n) => n.getAttribute('aria-label') ?? '')
+    expect(reasons.some((r) => r.includes('No restore service exists in this build'))).toBe(true)
   })
 
   it('tells a non-Owner who reaches the dialog that it is not theirs', async () => {

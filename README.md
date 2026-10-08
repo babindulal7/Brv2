@@ -10,15 +10,32 @@ Foundation, Foundation wins.
 
 ## Status
 
-**Schema first.** This scaffold exists so the database work has somewhere to land. Screens
-are ported from the existing capsule build (`Rental_workspace_backup/babin-rentals-os`,
-76 files, JS) one module at a time — that UI is good and matches the approved render; what
-it lacks is a real data layer.
+*Rewritten 16 Aug 2026. This said "Schema first — this scaffold exists so the database work
+has somewhere to land", which had stopped being true by a wide margin.*
+
+**A 54-route application on a live Postgres schema, with a partly-connected data layer.**
+
+| | State, measured 16 Aug 2026 |
+|---|---|
+| Schema | 121 tables, 62 migrations, RLS on 121/121, 231 policies, 36 triggers — applied to the live project |
+| Data | Real: 121 bookings · 419 booking lines · 76 clients · 126 products · 120 invoices · 93 payments |
+| Screens | 52 of 52 routes driven in a browser; all render |
+| Gates | `tsc --noEmit` exit 0 · `vitest run` 1,982 passed / 78 files · `vite build` exit 0 |
+| Auth | Real Supabase Auth — sign-in, session, and password reset by email |
+
+**What green does not mean.** 1,982 passing tests coexist with roughly two dozen unbuilt
+actions, because the untested surface is exactly the unbuilt surface. `createRental` and
+`saveDraft` are still stubs, so a booking cannot be created in the app; Booking Detail still
+renders one seeded record for every booking number, though it now says so on screen. Green
+means "what exists is correct", not "the system works".
+
+**Where the truth lives:** Start with [`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md) for governance, [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) for verified status, [`PLAN.md`](PLAN.md) (laws, build order, open decisions), and [`PROGRESS.md`](PROGRESS.md) (what changed and how it was verified, newest first). Every other document in this repo is dated; `docs/DOC_MIGRATION_MAP.md` records classifications.
 
 ```
-supabase/migrations/   ← the schema (in progress)
+supabase/migrations/   ← the schema — 62 files, 0001–0062 (0062 written, deliberately unapplied)
 src/lib/supabase.ts    ← anon key only, RLS is the enforcement layer
-src/index.css          ← token layer, ported verbatim from the capsule build
+src/styles/theme.css   ← the token layer
+src/actions/           ← the write layer; a stub refuses rather than faking success
 ```
 
 ---
@@ -37,6 +54,8 @@ is the single most likely way this product's authorization model gets defeated.
 ---
 
 ## Deployment
+
+Follow the repository [production deployment runbook](DEPLOYMENT.md) for the release audit, database cutover boundary, staging checks, smoke tests, and rollback record.
 
 ### Environment variables
 
@@ -150,16 +169,28 @@ Locked and dated later:
 | `--rail-w` | 264px | **240** | Spec: *"not 280 — 280 costs a table column"* |
 | `--head-h` | 56px flat | **64** desktop / 56 mobile | Spec: 72 was cut to 64; 56 is the mobile value |
 | `--dur-med` / `--dur-page` | 200 / 260ms | **180 / 240 / 320** | Spec locks four steps: 120 / 180 / 240 / 320 |
-| `--font-sans` | **Outfit** | **Inter** | index.css lines 178, 204 |
+| ~~`--font-sans`~~ | — | — | ✅ **Settled — row void.** See below. |
 | `.msr` (Material Symbols) | present | **Tabler** | Material Symbols was 72% of the old bundle |
 
 **Verified live**, not inferred — `getComputedStyle` on the running dev server returns
 `--radius-card: 14px`, `--rail-w: 264px`, and a resolved body font of `Outfit`.
 
-The font row was an outright **bug**, now patched: the CSS asked for Outfit while
-`index.html` loaded only Inter, so the capsule's actual typeface never rendered — it fell
-back silently. Both faces are loaded for now so the CSS renders as authored. Whichever
-wins, drop the other from `index.html` and update `--font-sans`.
+**The font row is settled and this paragraph was stale — corrected 16 Aug 2026.** It said
+"both faces are loaded for now… drop the other from `index.html`". Read off the running app:
+
+| | Reality |
+|---|---|
+| `--font-sans` | **does not exist.** The token was replaced by a three-way split. |
+| `--font-display` | `'Outfit'` — headings. `h1` resolves to `Outfit`. |
+| `--font-body` | `'Source Sans 3'` — body. `document.body` resolves to `Source Sans 3`. |
+| `--font-id` | `'JetBrains Mono Variable'` — every number. |
+| Inter | **not loaded at all.** `document.fonts` holds exactly Outfit, Source Sans 3, JetBrains Mono Variable. |
+| `index.html` | contains **no font references whatsoever** — faces are self-hosted `.woff2`, per `PLAN.md §4.0b`. |
+
+So there is nothing to drop and no token to update. `PLAN.md §4.0b` ruled Outfit and dropped
+Inter; the split into display/body/id happened afterwards and this file never caught up.
+Nepali faces (`--font-ne-display: 'Asar'`, `--font-ne-body: 'Hind'`) are also installed —
+`PLAN.md §4.26` closed the Devanagari tofu question §4.2 raised.
 
 **What matches exactly and should not be touched** — all six semantic colours:
 `--ok #2ECC8F` · `--info #2F7DFF` · `--work #F5C518` · `--warn #FF9F43` · `--bad #FF0F0F` ·
@@ -185,7 +216,7 @@ Full detail in the spec library; these are the ones that bite at the code level.
 - **Every write carries a client UUID.** Duplicates rejected — a replayed scan must not act twice.
 - **Never colour alone.** Every status is icon + label + colour.
 - **No platform branch in a layout component.** Branch on capability, never platform.
-- **Breakpoints 768 / 1180.** Width decides, never orientation.
+- **Breakpoints 768 / 1280.** Width decides, never orientation. *(Was 768 / 1180 until 31 Aug 2026 — Law 14 amended, `PLAN.md` §4.38a. The pair lives in `src/lib/breakpoints.ts`, mirrored by `styles/responsive.css` and the `index.html` pre-paint script; a test asserts all three agree.)*
 - **44×44 touch targets** on every device, desktop included.
 
 ---
@@ -195,5 +226,7 @@ Full detail in the spec library; these are the ones that bite at the code level.
 `@/` maps to `src/`. Strict TypeScript, including `noUncheckedIndexedAccess` and
 `exactOptionalPropertyTypes`.
 
-Icons: **Tabler**, outline, 2px. Fonts: **Inter** (UI) and **JetBrains Mono** (every
-number — currency, IDs, serials, dates, quantities, percentages).
+Icons: **Tabler**, outline, 2px. Fonts: **Outfit** (headings), **Source Sans 3** (body) and
+**JetBrains Mono** (every number — currency, IDs, serials, dates, quantities, percentages).
+Nepali: **Asar** (display) and **Hind** (body). All self-hosted; nothing is fetched at
+runtime. *(This line said "Inter (UI)" until 16 Aug 2026; Inter is not loaded anywhere.)*

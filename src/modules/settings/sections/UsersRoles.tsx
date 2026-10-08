@@ -1,19 +1,20 @@
 import Icon from '../../../components/ui/Icon'
 import { Card } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import {
   canViewMoney,
   canRecordPayment,
   canVoidInvoice,
-  canApproveDiscount,
   canOverrideCreditLimit,
   canPerformOperations,
   canManageSettings,
   isStaff,
 } from '../../../lib/rbac'
 import type { SystemRole } from '../../../types/database'
-import { BRANCHES } from '../../../data/settings'
+import { BRANCHES } from '../../../lib/queries/settings'
 import { ToneChip, td } from './shared'
+import { StaffDirectoryCard } from './StaffDirectory'
 
 /**
  * **Settings ▸ Users & Roles** — §11.2: *"user list, role assignment, the
@@ -31,7 +32,10 @@ const CAPABILITIES: Array<{ label: string; note: string; test: (r: SystemRole) =
   { label: 'See money', note: 'Warehouse, Technician, Driver and Client see none, anywhere.', test: canViewMoney },
   { label: 'Record payment', note: 'Advances and security deposits.', test: (r) => canRecordPayment(r) },
   { label: 'Void invoice', note: 'Corrections are reversal rows, never edits.', test: (r) => canVoidInvoice(r) },
-  { label: 'Approve 15% discount', note: 'Above 10% needs a reason and an approver.', test: (r) => canApproveDiscount(r, 15) },
+  /* The 'Approve 15% discount' row left this matrix on 31 Aug 2026 — the
+     discount gate is gone (D3, Babin: "don't put any gate on discount"), so
+     there is no approval capability to compare roles by. A row every role
+     passes is a row that says nothing. */
   { label: 'Override credit limit', note: 'Book past a client’s ceiling.', test: (r) => canOverrideCreditLimit(r) },
   { label: 'Run operations', note: 'Pack, handover, return, reset.', test: canPerformOperations },
   { label: 'Manage settings', note: 'This screen, and everything under it.', test: canManageSettings },
@@ -40,11 +44,18 @@ const CAPABILITIES: Array<{ label: string; note: string; test: (r: SystemRole) =
 export function UsersPane() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+      {/*
+        First, because it is the task. The matrix below it is reference material
+        — an operator arrives on this tab to act on a person, not to read the
+        9-role grid, and the grid was the only thing here until 24 Aug 2026.
+      */}
+      <StaffDirectoryCard />
+
       <Card
         title="Permissions Matrix"
-        action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Computed live from lib/rbac — not a copy of it</span>}
+        action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{/* Computed live from lib/rbac — not a copy of it */}Permissions for each role </span>}
       >
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Permissions matrix" data-table-scroll style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead>
               <tr>
@@ -88,7 +99,7 @@ export function UsersPane() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px,1fr))', gap: 'var(--sp-md)' }}>
@@ -139,10 +150,27 @@ export function UsersPane() {
                 </span>
               </div>
             ))}
+            {/*
+              Narrowed twice. 24 Aug 2026: the first two clauses stopped being
+              true when `Staff Directory` above started reading
+              `staff_directory_v`. 8 Sep 2026 (RULING R-27): the third stopped
+              being true as well — the ruling exists (Owner, mirroring this
+              card's own read gate) and `0101` built the write path, so the
+              directory can now assign a role and deactivate an account.
+
+              What survives is the part that was never about a ruling:
+              CREATION. A `users` row with no `auth.users` identity cannot sign
+              in, and minting one needs the admin API and therefore the service
+              key — a complete authorization bypass in a browser. That needs an
+              Edge Function, and `0101` deliberately opens no INSERT path, so
+              nothing here can half-create a person.
+            */}
             <p style={{ margin: '4px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              How many staff accounts exist is not tracked yet — there is no user query in this build. The full directory,
-              user creation and role assignment need the auth backend, which is not connected — only the branch managers named
-              in the branch records can be listed here.
+              These are the managers named on the branch records. Assigning a role and deactivating an account are
+              done in the Staff Directory above — Owner only, and every change is written to the audit trail.
+              <strong> Creating</strong> a staff account is still unbuilt: a{' '}
+              <span className="identifier">users</span> row with no sign-in account behind it cannot be used, and
+              minting one needs a server-side key this app deliberately never holds.
             </p>
           </div>
         </Card>

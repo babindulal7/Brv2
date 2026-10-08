@@ -1,13 +1,18 @@
+import { Pagination } from '../../components/ui/Pagination'
+import { recordExport } from '../../lib/exportAudit'
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { AddBundle } from './AddBundle'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
-import { Card, Button, KpiStrip, cardStyle, Rail, SummaryRows } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, Rail, SummaryRows } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
+import { PageBody } from '../../components/ui/PageBody'
 import type { Kpi } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { EmptyState } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
@@ -21,22 +26,25 @@ import { gateContext } from '../../lib/fieldGating'
 import { useMenuFlip } from '../../lib/menuFlip'
 import { useViewport } from '../../lib/device'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { bundleGlance, bundleDetailGroups } from '../../data/bundleIntel'
 import {
-  ACTIVE_BUNDLES,
-  ARCHIVED_BUNDLES,
-  ALL_CATEGORIES,
-  ALL_TAGS,
+  bundleGlance,
+  bundleDetailGroups,
   BUNDLE_STATES,
-  STATE_COUNTS,
-  NEEDS_ATTENTION,
-  SEED_ERRORS,
   factsOf,
   ratioLabelOf,
   iconFor,
   isPriced,
-} from '../../data/bundles'
-import type { BundleRecord, BundleState, BundleLine, BundleFacts } from '../../data/bundles'
+  type BundleRecord,
+  type BundleState,
+  type BundleLine,
+  type BundleFacts,
+} from '../../lib/queries/bundles'
+import { useBundleRecords } from '../../lib/queries/useBundles'
+import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
+import { DateField } from '../../components/ui/DateField'
+import { FilterDrawer } from '../../components/ui/FilterDrawer'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
+import './inventory.css'
 
 /**
  * **Bundles** — Inventory's second tab (Foundation §5.1 makes it a tab, never a
@@ -70,15 +78,33 @@ const th: CSSProperties = {
   verticalAlign: 'bottom',
 }
 
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this states §7.3's row floor
+ * ("rows >= 56px") with the token rather than with padding arithmetic, and
+ * leaves the horizontal padding alone.
+ *
+ * It is here for correctness, not for air. Every row starts with the selection
+ * checkbox that feeds the bulk bar and ends in a `Menu` trigger, and a 44px hit
+ * area does not fit inside 10 + one line + 10. What overflows does not stop at
+ * the row edge: it reaches into the rows above and below, and the later row in
+ * the DOM wins a tap in that band. A bulk action then runs against a bundle the
+ * user never ticked, with nothing on screen to say why. At 56 the target sits
+ * inside its own row with room each side, so the overlap cannot form. Rows
+ * already taller than the floor do not move — this is a minimum, not a height.
+ */
 const td: CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',
   verticalAlign: 'top',
 }
 
+/* Law 15 — the hit area is the law and `--tap` is the token. Every consumer is
+   a Select in the wrapping filter card or the pager, so a taller box costs a
+   few pixels of chrome and nothing else. */
 const selectStyle: CSSProperties = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',
@@ -165,28 +191,6 @@ function BsAd({ date, prefix }: { date: Date; prefix?: string }) {
         </span>
       )}
     </span>
-  )
-}
-
-/**
- * Foundation §6 — a failure is stated in place, naming the figures that
- * disagree. `data/bundles.ts` reports rather than throws, because a module-scope
- * throw runs before React mounts and blanks the app. Renders through the shared
- * `ErrorBanner` (§2.4) rather than a local reimplementation — this exact banner
- * used to be copy-pasted per-module (see `Maintenance.tsx`'s near-identical one).
- */
-function SeedDefectBanner({ messages }: { messages: string[] }) {
-  return (
-    <ErrorBanner
-      title="These bundle figures do not reconcile."
-      message={
-        <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
-          {messages.map((m) => (
-            <li key={m}>{m}</li>
-          ))}
-        </ul>
-      }
-    />
   )
 }
 
@@ -282,6 +286,7 @@ function Menu({
 /* ── export ────────────────────────────────────────────────────────────── */
 
 function download(name: string, rows: string[][]) {
+  recordExport({ list: `bundles.${name.replace(/\.csv$/, '')}`, module: 'Inventory', rowCount: Math.max(0, rows.length - 1), ...(rows[0] ? { columns: rows[0] } : {}) })
   const csv = rows.map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
@@ -363,13 +368,70 @@ const SORT_OPTIONS: Array<{ value: string; label: string; money?: boolean }> = [
 
 const ROWS_PER_PAGE = [10, 25, 50]
 
+
 /* ── the screen ────────────────────────────────────────────────────────── */
 
-export function Bundles() {
+export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { filtersOpen?: boolean; onFiltersClose?: () => void }) {
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const isNewBundle = params.get('action') === 'new'
   const money = useCanViewMoney()
   const { user } = useAuth()
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+
+  /*
+   * §4.44 (ruled 4 Sep 2026) — the window availability is measured against.
+   *
+   * A bundle is not "available" in the abstract; it is available for a window.
+   * The seed baked one figure in as though the question had a single answer,
+   * which is why this pane could show `Available` for gear that was out. The
+   * window lives in the URL beside `?tab=`, so a checked availability can be
+   * linked and shared, and defaults to today→tomorrow: one day, half-open,
+   * matching `RENTAL_WINDOW_BOUNDS`.
+   */
+  const { window: availabilityWindow, setWindow, search: windowSearch } = useRentalWindowParams(
+    () => setPage(1),
+  )
+  const { fromAd, toAd } = availabilityWindow
+
+  const bundles = useBundleRecords(availabilityWindow, money)
+
+  const activeBundles = useMemo(() => bundles.rows.filter((b) => !b.archived), [bundles.rows])
+  const archivedBundles = useMemo(() => bundles.rows.filter((b) => b.archived), [bundles.rows])
+
+  /* §1 — every number on this page is computed at render, none is stored. That
+     rule is why these move from module scope to here without changing: they were
+     always derivations, they just used to derive from a literal. */
+  const stateCounts = useMemo(() => {
+    const acc = {} as Record<BundleState, number>
+    for (const state of BUNDLE_STATES) acc[state] = 0
+    for (const b of activeBundles) acc[factsOf(b).state] += 1
+    return acc
+  }, [activeBundles])
+
+  /* §3 — deliberately overlaps two chips and is never summed with them. A bundle
+     that is out is doing its job, so On Rent is not attention. */
+  const needsAttention = useMemo(
+    () =>
+      activeBundles.filter((b) => {
+        const state = factsOf(b).state
+        return state === 'Partially Available' || state === 'On Maintenance'
+      }).length,
+    [activeBundles],
+  )
+
+  const allCategories = useMemo(
+    () => Array.from(new Set(bundles.rows.map((b) => b.category))).sort(),
+    [bundles.rows],
+  )
+  /* Empty against live data — `bundles` has no tags column (§4.44). The filter
+     renders its `All` option and nothing else rather than being removed, so the
+     day a tags column lands the control is already in place. */
+  const allTags = useMemo(
+    () => Array.from(new Set(bundles.rows.flatMap((b) => b.tags))).sort(),
+    [bundles.rows],
+  )
+
 
   const [chip, setChip] = useState<ChipKey>('All')
   const [category, setCategory] = useState('All')
@@ -387,18 +449,16 @@ export function Bundles() {
     is only the operator's desktop preference.
   */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const [view, setView] = useState<'list' | 'grid'>(() => 'list')
   const effectiveView: 'list' | 'grid' = viewport === 'phone' ? 'grid' : viewport === 'tablet' && view === 'list' ? 'grid' : view
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [previewId, setPreviewId] = useState<string>(ACTIVE_BUNDLES[0]?.id ?? '')
+  const [previewId, setPreviewId] = useState<string>('')
   const [serialsOpen, setSerialsOpen] = useState<Set<string>>(new Set())
   const [groupsClosed, setGroupsClosed] = useState<Set<string>>(new Set())
-
-  const filtersOn =
-    chip !== 'All' || category !== 'All' || tag !== 'All' || hasCrew !== 'Any' || hasVehicle !== 'Any'
 
   const clearAll = () => {
     setChip('All')
@@ -409,8 +469,16 @@ export function Bundles() {
     setPage(1)
   }
 
+  const clearAdvanced = () => {
+    setCategory('All')
+    setTag('All')
+    setHasCrew('Any')
+    setHasVehicle('Any')
+    setPage(1)
+  }
+
   const filtered = useMemo(() => {
-    const source = chip === 'Archived' ? ARCHIVED_BUNDLES : ACTIVE_BUNDLES
+    const source = chip === 'Archived' ? archivedBundles : activeBundles
     const rows = source.filter((b) => {
       const f = factsOf(b)
       if (chip !== 'All' && chip !== 'Archived' && f.state !== chip) return false
@@ -441,7 +509,7 @@ export function Bundles() {
           return 0
       }
     })
-  }, [chip, category, tag, hasCrew, hasVehicle, sort])
+  }, [chip, category, tag, hasCrew, hasVehicle, sort, activeBundles, archivedBundles])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const safePage = Math.min(page, pageCount)
@@ -470,44 +538,44 @@ export function Bundles() {
     [visible, gctx],
   )
 
-  const preview = filtered.find((b) => b.id === previewId) ?? filtered[0] ?? ACTIVE_BUNDLES[0]
+  const preview = filtered.find((b) => b.id === previewId) ?? filtered[0] ?? activeBundles[0]
   const previewFacts = preview ? factsOf(preview) : null
 
   /* §1 — chips, the invariant and the KPI cards all read one query. */
   const chipRow: Array<{ label: ChipKey; count: number }> = [
-    { label: 'All', count: ACTIVE_BUNDLES.length },
-    ...BUNDLE_STATES.map((s) => ({ label: s as ChipKey, count: STATE_COUNTS[s] })),
-    { label: 'Archived', count: ARCHIVED_BUNDLES.length },
+    { label: 'All', count: activeBundles.length },
+    ...BUNDLE_STATES.map((s) => ({ label: s as ChipKey, count: stateCounts[s] })),
+    { label: 'Archived', count: archivedBundles.length },
   ]
-  const chipSum = BUNDLE_STATES.reduce((s, k) => s + STATE_COUNTS[k], 0)
-  const chipsReconcile = chipSum === ACTIVE_BUNDLES.length
+  const chipSum = BUNDLE_STATES.reduce((sum, k) => sum + stateCounts[k], 0)
+  const chipsReconcile = chipSum === activeBundles.length
 
   const kpis: Kpi[] = [
     {
       label: 'Total Bundles',
-      value: String(ACTIVE_BUNDLES.length),
+      value: String(activeBundles.length),
       icon: 'queues',
       accent: 'primary',
-      note: `Excludes archived (${ARCHIVED_BUNDLES.length})`,
+      note: `Excludes archived (${archivedBundles.length})`,
     },
     {
       // §3 — "`Availables` is not a word. The card is Available, matching its chip."
       label: 'Available',
-      value: String(STATE_COUNTS.Available),
+      value: String(stateCounts.Available),
       icon: 'check',
       accent: 'success',
       note: 'Ready to rent',
     },
     {
       label: 'On Rent',
-      value: String(STATE_COUNTS['On Rent']),
+      value: String(stateCounts['On Rent']),
       icon: 'truck',
       accent: 'progress',
       note: 'Currently out with a client',
     },
     {
       label: 'Needs Attention',
-      value: String(NEEDS_ATTENTION),
+      value: String(needsAttention),
       icon: 'alert_triangle',
       accent: 'danger',
       note: 'Partial, blocked or maintenance',
@@ -573,35 +641,106 @@ export function Bundles() {
     )
   }
 
+  if (isNewBundle) {
+    return (
+      <AddBundle
+        embedded
+        onDone={() => {
+          const next = new URLSearchParams(params)
+          next.delete('action')
+          setParams(next, { replace: true })
+        }}
+      />
+    )
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {SEED_ERRORS.length > 0 && <SeedDefectBanner messages={SEED_ERRORS} />}
+    <div className="inventory-v2">
+      <FilterDrawer
+        id="bundle-filters"
+        open={filtersOpen}
+        onClose={onFiltersClose}
+        resultCount={bundles.loading ? null : filtered.length}
+        noun="bundles"
+        activeCount={Number(category !== 'All') + Number(tag !== 'All') + Number(hasCrew !== 'Any') + Number(hasVehicle !== 'Any')}
+        onClearAll={clearAdvanced}
+        standardFooter
+        onApply={onFiltersClose}
+      >
+        <div style={{ display: 'grid', gap: 'var(--sp-md)' }}>
+          <label>Category
+            <Select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="All">All categories</option>
+              {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </label>
+          {allTags.length > 0 && <label>Tags
+            <Select value={tag} onChange={(e) => { setTag(e.target.value); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="All">All tags</option>
+              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+            </Select>
+          </label>}
+          <label>Contains crew
+            <Select value={hasCrew} onChange={(e) => { setHasCrew(e.target.value as Triple); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="Any">Any</option><option value="Yes">Yes</option><option value="No">No</option>
+            </Select>
+          </label>
+          <label>Contains vehicle
+            <Select value={hasVehicle} onChange={(e) => { setHasVehicle(e.target.value as Triple); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="Any">Any</option><option value="Yes">Yes</option><option value="No">No</option>
+            </Select>
+          </label>
+        </div>
+      </FilterDrawer>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           Create and manage equipment kits and rental packages.
         </p>
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          <Unavailable reason="Import is not built — there is no bundle intake pipeline in this release.">
-            <Button icon="upload" disabled>
-              Import
-            </Button>
-          </Unavailable>
-          <Button icon="download" onClick={() => exportBundles(filtered, money)}>
-            Export
+          {!phone && (
+            <Unavailable reason="Import is not built — there is no bundle intake pipeline in this release.">
+              <Button icon="upload" disabled>
+                Import
+              </Button>
+            </Unavailable>
+          )}
+          <Button icon="download" onClick={() => exportBundles(filtered, money)} aria-label="Export bundles">
+            {phone ? '' : 'Export'}
           </Button>
-          <Button icon="plus" variant="primary" onClick={() => navigate('/inventory/bundles/new')}>
-            New Bundle
+          <Button
+            icon="plus"
+            variant="primary"
+            aria-label="New Bundle"
+            onClick={() => {
+              const next = new URLSearchParams(params)
+              next.set('action', 'new')
+              setParams(next, { replace: true })
+            }}
+          >
+            {phone ? '' : 'New Bundle'}
           </Button>
           <Menu
             label="More"
             icon="chevron_down"
             items={[
-              { key: 'blank', label: 'Start a blank bundle', onSelect: () => navigate('/inventory/bundles/new') },
+              {
+                key: 'blank',
+                label: 'Start a blank bundle',
+                onSelect: () => {
+                  const next = new URLSearchParams(params)
+                  next.set('action', 'new')
+                  setParams(next, { replace: true })
+                },
+              },
               {
                 key: 'dup',
                 label: preview ? `Duplicate ${preview.id}` : 'Duplicate a bundle',
-                onSelect: () => navigate('/inventory/bundles/new'),
+                onSelect: () => {
+                  const next = new URLSearchParams(params)
+                  next.set('action', 'new')
+                  setParams(next, { replace: true })
+                },
               },
               {
                 key: 'tpl',
@@ -614,13 +753,23 @@ export function Bundles() {
       </div>
 
       {/* Rulings §7 — the Bundle preview rail sits beside the grid at desktop
-          and reflows inline beneath it below 1180, never behind a handle. */}
+          and reflows inline beneath it below 1280, never behind a handle. */}
       <div style={{ display: 'grid', gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={4} />
 
           {/* §2 — chips, then the invariant readout that can fail (§1.1). */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div
+            className="rsp-chip-scroll inventory-chip-track"
+            style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: phone ? 'nowrap' : 'wrap',
+              overflowX: phone ? 'auto' : 'visible',
+              alignItems: 'center',
+              paddingBottom: phone ? 4 : 0,
+            }}
+          >
             {chipRow.map((c) => {
               const on = chip === c.label
               return (
@@ -632,25 +781,10 @@ export function Bundles() {
                     setPage(1)
                   }}
                   aria-pressed={on}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    height: 30,
-                    padding: '0 10px',
-                    borderRadius: 'var(--r-sm)',
-                    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                    background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: on ? 600 : 500,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
-                  }}
+                  className={`inventory-filter-chip ${on ? 'is-active' : ''}`}
                 >
                   {c.label}
-                  <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }}>
+                  <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', fontWeight: 600 }}>
                     {c.count}
                   </span>
                 </button>
@@ -659,77 +793,77 @@ export function Bundles() {
 
             <span
               aria-live="polite"
+              className="bundle-invariant-badge"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                fontSize: 'var(--t-th)',
-                fontWeight: 600,
-                color: chipsReconcile ? 'var(--success-text)' : 'var(--warning-text)',
+                color: chipsReconcile ? 'var(--success-text)' : 'var(--ready-text)',
+                borderColor: chipsReconcile
+                  ? 'color-mix(in srgb, var(--success-text) 25%, var(--border))'
+                  : 'color-mix(in srgb, var(--warn-text) 25%, var(--border))',
               }}
             >
               <Icon name={chipsReconcile ? 'check' : 'alert_triangle'} size={12} />
               <span className="figure">
-                {BUNDLE_STATES.map((s) => STATE_COUNTS[s]).join(' + ')} = {chipSum}
+                {BUNDLE_STATES.map((s) => stateCounts[s]).join(' + ')} = {chipSum}
               </span>
               {chipsReconcile
-                ? ` · All ${ACTIVE_BUNDLES.length}`
-                : ` — does not reconcile against All ${ACTIVE_BUNDLES.length}`}
+                ? ` · All ${activeBundles.length}`
+                : ` — does not reconcile against All ${activeBundles.length}`}
             </span>
           </div>
 
-          {/* Filter bar — the render's row, with every control wired to state. */}
-          <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
-              <Icon name="checklist" size={14} />
-              Filters
+          {/*
+            §4.44 — the window every availability figure on this page is measured
+            against. It sits ABOVE the filters and is separated from them,
+            because it is not a filter: it does not decide which bundles are
+            listed, it decides what "available" means for all of them. Putting it
+            in the filter row would have read as one more narrowing control.
+          */}
+          <div
+            className="bundle-window-card"
+            style={{
+              display: 'flex',
+              gap: 'var(--sp-sm)',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>
+              <span className="inventory-thumb-sm" style={{ display: 'inline-grid', placeItems: 'center' }}>
+                <Icon name="calendar" size={13} />
+              </span>
+              Available for
             </span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Category
-              <Select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} style={selectStyle}>
-                <option value="All">All</option>
-                {ALL_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </Select>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+              From
+              <DateField
+                ariaLabel="Availability window from"
+                value={dayValue(fromAd)}
+                onChange={(v) => setWindow('from', v)}
+                showBs={false}
+                style={selectStyle}
+              />
             </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Tags
-              <Select value={tag} onChange={(e) => { setTag(e.target.value); setPage(1) }} style={selectStyle}>
-                <option value="All">All</option>
-                {ALL_TAGS.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </Select>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+              To
+              <DateField
+                ariaLabel="Availability window to"
+                value={dayValue(toAd)}
+                onChange={(v) => setWindow('to', v)}
+                showBs={false}
+                align="right"
+                style={selectStyle}
+              />
             </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Contains Crew
-              <Select value={hasCrew} onChange={(e) => { setHasCrew(e.target.value as Triple); setPage(1) }} style={selectStyle}>
-                <option value="Any">Any</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </Select>
-            </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Contains Vehicle
-              <Select value={hasVehicle} onChange={(e) => { setHasVehicle(e.target.value as Triple); setPage(1) }} style={selectStyle}>
-                <option value="Any">Any</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </Select>
-            </label>
-            {filtersOn ? (
-              <Button icon="close" onClick={clearAll}>
-                Clear All
-              </Button>
-            ) : (
-              <Unavailable reason="No filter is set, so there is nothing to clear.">
-                <Button icon="close" disabled>
-                  Clear All
-                </Button>
-              </Unavailable>
-            )}
+            <BsAd date={new Date(fromAd)} prefix="From" />
+            <BsAd date={new Date(toAd)} prefix="To" />
+            <span style={{ ...subtle, flexBasis: '100%', marginTop: 2 }}>
+              Every ready / blocked figure below answers “free for this window”, not “free in
+              general”. Returns are half-open: a rental ending on the To date does not block it.
+            </span>
+          </div>
 
+          {/* Sorting and view controls stay beside the list. */}
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                 Sort by
@@ -782,6 +916,16 @@ export function Bundles() {
           </div>
 
           <Card bodyStyle={{ padding: 0 }}>
+            <PageBody
+              loading={bundles.loading}
+              error={bundles.error}
+              onRetry={bundles.refetch}
+              hasRows={bundles.rows.length > 0}
+              empty={bundles.isEmpty}
+              noun="bundles"
+              emptyTitle="No bundles yet"
+              emptyMessage="Nothing has been built as a bundle. Create one and it appears here."
+            >
             {visible.length === 0 ? (
               <EmptyState
                 icon={<Icon name="queues" size={22} />}
@@ -796,76 +940,76 @@ export function Bundles() {
               />
             ) : effectiveView === 'grid' ? (
               <div
+                className="bundle-grid"
                 style={{
                   display: 'grid',
-                  // Spec 7.2 sets the bands explicitly — TABLET 2-up, PHONE
-                  // 1-up full-width — rather than letting `auto-fill` decide.
                   gridTemplateColumns:
-                    viewport === 'phone' ? '1fr' : viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fill, minmax(232px, 1fr))',
-                  gap: 10,
+                    viewport === 'phone' ? '1fr' : viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fill, minmax(248px, 1fr))',
+                  gap: 12,
                   padding: 'var(--sp-md)',
                 }}
               >
                 {visible.map((b) => {
                   const f = factsOf(b)
+                  const isSelected = preview?.id === b.id
                   return (
                     <button
                       key={b.id}
                       type="button"
                       onClick={() => setPreviewId(b.id)}
-                      aria-pressed={preview?.id === b.id}
-                      style={{
-                        ...cardStyle,
-                        textAlign: 'left',
-                        padding: 11,
-                        cursor: 'pointer',
-                        borderColor: preview?.id === b.id ? 'var(--nav-active-accent)' : 'var(--border)',
-                        font: 'inherit',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 7,
-                      }}
+                      aria-pressed={isSelected}
+                      className={`bundle-grid-card ${isSelected ? 'is-selected' : ''}`}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                         <span
                           aria-hidden
-                          style={{ width: 30, height: 30, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                          className="inventory-thumb"
                         >
-                          <Icon name={iconFor(b.category)} size={15} />
+                          <Icon name={iconFor(b.category)} size={16} />
                         </span>
                         <span style={{ minWidth: 0 }}>
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{b.name}</span>
-                          <span className="identifier" style={{ ...subtle, display: 'block' }}>{b.id}</span>
+                          <span className="inventory-asset-code identifier" style={{ display: 'inline-block', marginTop: 2 }}>{b.id}</span>
                         </span>
                       </span>
                       <StatePill state={b.archived ? 'Archived' : f.state} />
-                      <span className="figure" style={{ ...subtle }}>
+                      <span className="figure" style={{ ...subtle, fontWeight: 500 }}>
                         {f.totalItems} items · {ratioLabelOf(f)}
                       </span>
                       {money && (
-                        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                          {formatMoney(b.bundleRatePaisa)}
-                          <span style={{ ...subtle, marginLeft: 6, textDecoration: 'line-through' }}>
-                            {formatMoney(f.sumOfPartsPaisa)}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                          <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                            {formatMoney(b.bundleRatePaisa)}
+                            <span style={{ ...subtle, marginLeft: 6, textDecoration: 'line-through', fontWeight: 400 }}>
+                              {formatMoney(f.sumOfPartsPaisa)}
+                            </span>
                           </span>
-                        </span>
+                          {f.savingPct > 0 && (
+                            <span className="bundle-savings-badge">
+                              Save {f.savingPct}%
+                            </span>
+                          )}
+                        </div>
                       )}
                     </button>
                   )
                 })}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1100 : 960 }}>
+              /* Flush in the card's top corners with an opaque --th-bg header
+                 behind it; takes the card radius so the header does not paint
+                 square notches over the 14px arc. See Maintenance.tsx. */
+              <DataTableShell ariaLabel="Bundles directory" style={{ borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
+                <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1100 : 960 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
-                      <th style={{ ...th, width: 30 }} scope="col">
+                      <th style={{ ...th, width: 34, textAlign: 'center' }} scope="col">
                         <input
                           type="checkbox"
                           aria-label="Select every bundle on this page"
                           checked={allOnPageSelected}
                           onChange={toggleAllOnPage}
-                          style={{ accentColor: 'var(--nav-active-accent)' }}
+                          style={{ accentColor: 'var(--nav-active-accent)', width: 16, height: 16 }}
                         />
                       </th>
                       {sortHeader('name', 'Bundle')}
@@ -888,22 +1032,23 @@ export function Bundles() {
                       const f = factsOf(b)
                       const open = expanded.has(b.id)
                       const isPreview = preview?.id === b.id
+                      const isRowSelected = selected.has(b.id)
                       const showBlocked = f.state === 'Partially Available' || f.state === 'On Maintenance'
                       return (
                         <tr
                           key={b.id}
+                          className={`inventory-parent-row ${isPreview ? 'is-inspected' : ''} ${isRowSelected ? 'is-selected' : ''}`}
                           style={{
                             borderBottom: '1px solid var(--border)',
-                            background: isPreview ? 'var(--nav-active-bg)' : 'transparent',
                           }}
                         >
-                          <td style={td}>
+                          <td style={{ ...td, textAlign: 'center' }}>
                             <input
                               type="checkbox"
                               aria-label={`Select ${b.name}`}
-                              checked={selected.has(b.id)}
+                              checked={isRowSelected}
                               onChange={() => toggleRow(b.id)}
-                              style={{ accentColor: 'var(--nav-active-accent)' }}
+                              style={{ accentColor: 'var(--nav-active-accent)', width: 16, height: 16 }}
                             />
                           </td>
 
@@ -919,17 +1064,18 @@ export function Bundles() {
                                 onClick={() => setPreviewId(b.id)}
                                 aria-pressed={isPreview}
                                 title="Show this bundle in the preview rail"
-                                style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--text)' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'transparent', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--text)' }}
                               >
                                 <span
                                   aria-hidden
-                                  style={{ width: 38, height: 34, flexShrink: 0, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                                  className="inventory-thumb"
+                                  style={{ width: 34, height: 34 }}
                                 >
-                                  <Icon name={iconFor(b.category)} size={17} />
+                                  <Icon name={iconFor(b.category)} size={16} />
                                 </span>
                                 <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                                   <span style={{ fontWeight: 600 }}>{b.name}</span>
-                                  <span className="identifier" style={subtle}>
+                                  <span className="inventory-asset-code identifier" style={{ alignSelf: 'flex-start' }}>
                                     {b.id}
                                   </span>
                                 </span>
@@ -1046,21 +1192,14 @@ export function Bundles() {
                               <span className="figure" style={{ display: 'block', ...subtle, textDecoration: 'line-through' }}>
                                 {formatMoney(f.sumOfPartsPaisa)}
                               </span>
-                              <span
-                                className="figure"
-                                style={{
-                                  display: 'inline-block',
-                                  marginTop: 3,
-                                  fontSize: 'var(--t-th)',
-                                  fontWeight: 700,
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  background: 'var(--st-in-bg)',
-                                  color: 'var(--st-in-fg)',
-                                }}
-                              >
-                                Save {f.savingPct}%
-                              </span>
+                              {f.savingPct > 0 && (
+                                <span
+                                  className="bundle-savings-badge figure"
+                                  style={{ marginTop: 3 }}
+                                >
+                                  Save {f.savingPct}%
+                                </span>
+                              )}
                             </td>
                           )}
 
@@ -1086,7 +1225,15 @@ export function Bundles() {
                                 {
                                   key: 'detail',
                                   label: 'Open bundle detail',
-                                  reason: 'Bundle detail has no screen yet — only the New Bundle route is built.',
+                                  /* The window travels with the link (§4.44): the
+                                     detail page must answer availability for the
+                                     same dates this row was measured against. */
+                                  onSelect: () => navigate(`/inventory/bundles/${b.id}${windowSearch}`),
+                                },
+                                {
+                                  key: 'edit',
+                                  label: 'Edit bundle',
+                                  onSelect: () => navigate(`/inventory/bundles/${b.id}/edit${windowSearch}`),
                                 },
                               ]}
                             />
@@ -1096,7 +1243,7 @@ export function Bundles() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             {/* §4.5 / §5.3 — the bulk bar appears only when a selection exists. */}
@@ -1137,39 +1284,9 @@ export function Bundles() {
                 </span>
               )}
 
-              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap' }}>
-                <span className="figure">
-                  Showing {filtered.length === 0 ? 0 : start + 1} to {Math.min(start + rowsPerPage, filtered.length)} of{' '}
-                  {filtered.length} bundles
-                </span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
-                  Rows per page
-                  <Select
-                    value={rowsPerPage}
-                    onChange={(e) => {
-                      setRowsPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    style={selectStyle}
-                  >
-                    {ROWS_PER_PAGE.map((n) => (
-                      <option key={n} value={n}>{n}</option>
-                    ))}
-                  </Select>
-                </label>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Button icon="chevron_left" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
-                    Prev
-                  </Button>
-                  <span className="figure" style={{ minWidth: 58, textAlign: 'center' }}>
-                    {safePage} / {pageCount}
-                  </span>
-                  <Button icon="chevron_right" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)}>
-                    Next
-                  </Button>
-                </span>
-              </span>
+              <Pagination page={safePage} total={filtered.length} pageSize={rowsPerPage} onPageChange={setPage} pageSizeOptions={ROWS_PER_PAGE} onPageSizeChange={(size) => { setRowsPerPage(size); setPage(1) }} />
             </div>
+            </PageBody>
           </Card>
 
           <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -1188,6 +1305,7 @@ export function Bundles() {
               <PreviewCard
                 bundle={preview}
                 facts={previewFacts}
+                detailTo={`/inventory/bundles/${preview.id}${windowSearch}`}
                 closed={groupsClosed}
                 onToggleGroup={(g) => toggleIn(groupsClosed, setGroupsClosed, g)}
                 serialsOpen={serialsOpen}
@@ -1227,6 +1345,7 @@ export function Bundles() {
 function PreviewCard({
   bundle,
   facts,
+  detailTo,
   closed,
   onToggleGroup,
   serialsOpen,
@@ -1234,6 +1353,8 @@ function PreviewCard({
 }: {
   bundle: BundleRecord
   facts: BundleFacts
+  /** Built by the pane so the caller's window rides along — see §4.44. */
+  detailTo: string
   closed: Set<string>
   onToggleGroup: (g: string) => void
   serialsOpen: Set<string>
@@ -1290,7 +1411,7 @@ function PreviewCard({
                 <Icon name={iconFor(g.name)} size={13} style={{ color: 'var(--muted)' }} />
                 <span style={{ fontWeight: 600 }}>{g.name}</span>
                 {notInRate && (
-                  <span style={{ ...subtle, fontStyle: 'italic' }}>
+                  <span style={{ ...subtle, fontStyle: 'italic', lineHeight: '1.5' }}>
                     (not in rate) <NotInRate what={g.name.toLowerCase()} />
                   </span>
                 )}
@@ -1349,11 +1470,11 @@ function PreviewCard({
       </div>
 
       <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
-        <Unavailable reason="Bundle detail has no screen yet — only the New Bundle route is built.">
-          <Button icon="external_link" disabled>
+        <Link to={detailTo} style={{ textDecoration: 'none' }}>
+          <Button icon="external_link">
             View full breakdown ({facts.totalItems} items)
           </Button>
-        </Unavailable>
+        </Link>
       </div>
     </Card>
   )
@@ -1397,14 +1518,12 @@ function SummaryCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
       />
       {facts.totalWeightKg === null && (
         <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-          No weight is recorded against these models, so the total is shown as `—` rather than 0.{' '}
-          <span className="identifier">TODO(decision)</span> — where do per-model weights come from?
+          No weight is recorded against these models, so the total is shown as `—` rather than 0.
         </p>
       )}
       <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-        The donut counts the {facts.totalItems} items {bundle.name} requires. The tree above counts stock units, which is
-        a different question — §6.1.
-      </p>
+        The donut counts the {facts.totalItems} items {bundle.name} {/* requires. The tree above counts stock units, which is
+        a different question — §6.1. */}requires. The tree above counts stock units, which is a different question — </p>
     </Card>
   )
 }
@@ -1440,31 +1559,14 @@ function PricingCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
         </span>
       </div>
       <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-        Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections (§8).
-      </p>
+        {/* Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections (§8). */}Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections . </p>
     </Card>
   )
 }
 
 /** §5 of the render — exactly three tiles. Every one states what it does or why it cannot. */
 function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: boolean }) {
-  const navigate = useNavigate()
-  const tile: CSSProperties = {
-    flex: 1,
-    minWidth: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 5,
-    padding: '11px 6px',
-    borderRadius: 'var(--r-sm)',
-    border: '1px solid var(--border)',
-    background: 'var(--card2)',
-    fontSize: 'var(--t-th)',
-    fontFamily: 'inherit',
-    color: 'var(--text)',
-    textAlign: 'center',
-  }
+  const { openOperations } = useOperationsWorkspace()
 
   return (
     <Card title="Quick Actions">
@@ -1472,15 +1574,15 @@ function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: bool
         {bundle.booking ? (
           <button
             type="button"
-            onClick={() => navigate(`/rentals/${bundle.booking?.id}/packing`)}
-            style={{ ...tile, cursor: 'pointer' }}
+            onClick={() => bundle.booking && openOperations(bundle.booking.id, bundle.booking.state === 'reserved' ? 'Booked' : 'On Rent', 'Pack')}
+            className="bundle-quick-tile"
           >
             <Icon name="checklist" size={17} style={{ color: 'var(--text2)' }} />
             Packing List
           </button>
         ) : (
           <Unavailable reason="A packing list belongs to a booking, and this bundle is not on one.">
-            <span style={{ ...tile, color: 'var(--disabled)', cursor: 'not-allowed' }}>
+            <span className="bundle-quick-tile" style={{ color: 'var(--disabled)', cursor: 'not-allowed' }}>
               <Icon name="checklist" size={17} />
               Packing List
             </span>
@@ -1488,13 +1590,13 @@ function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: bool
         )}
 
         <Unavailable reason="Label printing is not built — there is no label renderer in this release.">
-          <span style={{ ...tile, color: 'var(--disabled)', cursor: 'not-allowed' }}>
+          <span className="bundle-quick-tile" style={{ color: 'var(--disabled)', cursor: 'not-allowed' }}>
             <Icon name="receipt" size={17} />
             Generate Labels
           </span>
         </Unavailable>
 
-        <button type="button" onClick={() => exportOneBundle(bundle, money)} style={{ ...tile, cursor: 'pointer' }}>
+        <button type="button" onClick={() => exportOneBundle(bundle, money)} className="bundle-quick-tile">
           <Icon name="download" size={17} style={{ color: 'var(--text2)' }} />
           Export Lines
         </button>

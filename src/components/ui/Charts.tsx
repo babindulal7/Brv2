@@ -70,6 +70,15 @@ function Tip({ text, x, y }: { text: string; x: number; y: number }) {
 
 function arc(cx: number, cy: number, r: number, rInner: number, a0: number, a1: number) {
   const p = (ang: number, rad: number) => [cx + rad * Math.cos(ang), cy + rad * Math.sin(ang)]
+  // A full SVG arc ends where it starts and draws nothing. Split a complete ring
+  // into two semicircles so a single payment method remains visible.
+  if (a1 - a0 >= Math.PI * 2 - 1e-9) {
+    const [ox, oy] = p(a0, r)
+    const [mx, my] = p(a0 + Math.PI, r)
+    const [ix, iy] = p(a0, rInner)
+    const [imx, imy] = p(a0 + Math.PI, rInner)
+    return `M${ox},${oy}A${r},${r},0,0,1,${mx},${my}A${r},${r},0,0,1,${ox},${oy}L${ix},${iy}A${rInner},${rInner},0,0,0,${imx},${imy}A${rInner},${rInner},0,0,0,${ix},${iy}Z`
+  }
   const large = a1 - a0 > Math.PI ? 1 : 0
   const [x0, y0] = p(a0, r)
   const [x1, y1] = p(a1, r)
@@ -151,7 +160,7 @@ export function Donut({
 }
 
 /** Legend rows — swatch + name + value + share. Text stays in text tokens. */
-export function Legend({ slices, showPercent = true }: { slices: Slice[]; showPercent?: boolean }) {
+export function Legend({ slices, showPercent = true, showValues = true }: { slices: Slice[]; showPercent?: boolean; showValues?: boolean }) {
   return (
     <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 0 }}>
       {slices.map((s, i) => (
@@ -174,9 +183,9 @@ export function Legend({ slices, showPercent = true }: { slices: Slice[]; showPe
           </span>
           {/* flexShrink 0 on both figures — the label is the only part that may
               be truncated. A compressed "(43.4%)" is worse than a shorter name. */}
-          <span className="figure" style={{ color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {showValues && <span className="figure" style={{ color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {s.display}
-          </span>
+          </span>}
           {showPercent && (
             <span
               className="figure"

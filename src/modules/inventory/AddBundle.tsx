@@ -1,40 +1,50 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { newClientUuid } from '../../lib/supabase'
+import { useInventoryCategories, listInventory } from '../../lib/queries/inventory'
+import { readProductAvailability } from '../../lib/queries/productAvailability'
+import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
+import { DateField } from '../../components/ui/DateField'
 import type { CSSProperties, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
-import { Card, PageHeader, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
+import { Card, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { RestrictedState } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { useToast } from '../../components/ui/Toast'
-import { formatMoney, parseMoney, rupees, roundHalfUp } from '../../lib/money'
+import { formatMoney, parseMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
+import { useBundleWithItems } from '../../lib/queries/useBundles'
+import { readRecordEditor } from '../../lib/queries/recordEditor'
+import { UnsavedLeaveDialog, useUnsavedRecord } from '../../components/ui/RecordWorkspace'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import type { BundleWithItems, BundleComponent } from '../../lib/queries/bundles'
+import type {
+  UpdateBundlePatch,
+  UpdateBundleLineEdit,
+  UpdateBundleLineAdd,
+  UpdateBundleLineDeactivate,
+} from '../../actions/inventory/updateBundle'
 import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { validateDiscount } from '../../lib/discount'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
-import { canApproveDiscount } from '../../lib/rbac'
-import type { SystemRole } from '../../types/database'
 import {
-  INVENTORY_CATEGORIES,
-  INVENTORY_MODELS,
-  ROOT_MODELS,
-  USED_CATEGORIES,
-  ALL_BRANDS,
   BOX_CATEGORIES,
   CREW_ROLES,
   VEHICLE_TYPES,
   TAG_OPTIONS,
   TEMPLATE_BUNDLES,
-  INITIAL_LINES,
   INITIAL_CREW,
   INITIAL_VEHICLE,
   SEED_ERRORS,
-  modelOf,
   iconForCategory,
   totalsOf,
   pricingOf,
@@ -43,7 +53,7 @@ import {
   rateDriftOf,
   parentsHolding,
   duplicateFrom,
-} from '../../data/addBundle'
+} from '../../lib/queries/addBundle'
 import type {
   DraftLine,
   CrewPick,
@@ -51,7 +61,7 @@ import type {
   VehicleType,
   InventoryCategory,
   InventoryModel,
-} from '../../data/addBundle'
+} from '../../lib/queries/addBundle'
 
 /**
  * **Inventory ▸ Bundles ▸ New Bundle** — rebuilt 8 Aug against
@@ -106,13 +116,35 @@ const controlBase: CSSProperties = {
 
 const selectStyle: CSSProperties = { ...controlBase, cursor: 'pointer' }
 
-const filterSelect: CSSProperties = { ...selectStyle, height: 32, width: 'auto' }
+/* Law 15 — hit area, not paint, and the number comes from `--tap`. These four
+   are the one part of this file the density argument above does not cover: they
+   sit in a wrapping filter card, not the ten-column pricing grid, so they take
+   the floor directly. `height: 'auto'` sheds `controlBase`'s 34 so the box is
+   governed by --tap alone instead of by two rules fighting. */
+const filterSelect: CSSProperties = { ...selectStyle, height: 'auto', minHeight: 'var(--tap)', width: 'auto' }
 
 /*
  * The render fits ten Bundle Items columns into roughly 600px beside the tree
  * and the rail. That density is the point — a line you have to scroll to price
  * is a line nobody checks — so the cells run tight rather than the table running
  * wide. It still scrolls inside its own container below that.
+ *
+ * RULED 26 Aug 2026 — this argument and the §7.3 row floor DO NOT CONFLICT, so
+ * no exception is carved for this table and none is needed.
+ *
+ * The reasoning above is entirely about HORIZONTAL width: ten columns inside
+ * ~600px, cells running tight rather than the table running wide. §7.3's
+ * "rows >= 56px" is VERTICAL and costs nothing horizontally. A row-floor sweep
+ * flagged this file for a ruling on the strength of the words "that density is
+ * the point"; the ruling is that the two rules are about different axes and the
+ * flag was a false positive.
+ *
+ * So the `td` below deliberately does NOT carry `height: var(--row-min-h)`,
+ * and that is the ruled state rather than an oversight — recorded here so the
+ * next sweep does not re-open it. Note also that the exposure here is latent,
+ * not live: this file imports no `TouchTarget`, so no 44px hit area currently
+ * overhangs these rows. It would arrive the moment a row control adopts one,
+ * and THAT is the trigger to revisit — not the width argument above.
  */
 const th: CSSProperties = {
   textAlign: 'left',
@@ -161,9 +193,11 @@ function Field({
 }) {
   return (
     <label style={fieldBox}>
-      <Caption label={label} {...(required ? { required } : {})} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Caption label={label} {...(required ? { required } : {})} />
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
-      {hint && <span style={subtle}>{hint}</span>}
     </label>
   )
 }
@@ -186,9 +220,11 @@ function FieldBlock({
 }) {
   return (
     <div style={fieldBox} role="group" aria-label={label}>
-      <Caption label={label} {...(required ? { required } : {})} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Caption label={label} {...(required ? { required } : {})} />
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
-      {hint && <span style={subtle}>{hint}</span>}
     </div>
   )
 }
@@ -305,7 +341,7 @@ function Banner({
     tone === 'danger'
       ? { border: 'var(--danger)', background: 'var(--st-danger-bg)', color: 'var(--st-danger-fg)' }
       : tone === 'warning'
-        ? { border: 'var(--warning-text)', background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)' }
+        ? { border: 'var(--ready-text)', background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)' }
         : { border: 'var(--border)', background: 'var(--card2)', color: 'var(--text2)' }
   return (
     <div
@@ -382,14 +418,27 @@ function downloadCsv(name: string, rows: string[][]) {
  */
 const NOTES_LIMIT = 500
 
-export function AddBundle() {
+export interface AddBundleProps {
+  bundleRef?: string | undefined
+  bundleId?: string | undefined
+  initialBundle?: BundleWithItems | undefined
+  embedded?: boolean | undefined
+  onDone?: (() => void) | undefined
+}
+
+export function AddBundle(props: AddBundleProps = {}) {
+  const { bundleRef: propBundleRef, embedded, onDone } = props
+  const routeParams = useParams<{ bundleRef: string }>()
+  const bundleRef = propBundleRef ?? routeParams.bundleRef
+  const isEditMode = Boolean(bundleRef)
   const navigate = useNavigate()
+  const handleExit = () => (onDone ? onDone() : navigate('/inventory'))
   const money = useCanViewMoney()
   /*
     Spec 7.7: "TABLET: three panes become three stacked sections. PHONE: three
     accordion steps with a sticky [Save]." This screen had no width read at all
     and pinned a two-pane grid plus a 318px rail at every width, so the form was
-    unusable below 1180. `viewport` now drives the three bands; the sticky save
+    unusable below 1280. `viewport` now drives the three bands; the sticky save
     bar below 768 follows BookingDetail's in-repo precedent.
   */
   const viewport = useViewport()
@@ -400,36 +449,166 @@ export function AddBundle() {
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   /* §4 — Bundle Details */
-  const [name, setName] = useState('Sony FX3 Documentary Kit')
-  const [category, setCategory] = useState<InventoryCategory | ''>('Camera')
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState<InventoryCategory | ''>('')
   const [active, setActive] = useState(true)
-  const [description, setDescription] = useState(
-    'Professional documentary shooting package including camera, prime lenses, support and essential accessories.',
-  )
-  const [tags, setTags] = useState<string[]>(['Documentary', 'Travel', 'Corporate'])
+  const [description, setDescription] = useState('')
+  const [tags, setTags] = useState<string[]>([])
   const [thumbnail, setThumbnail] = useState<string | null>(null)
 
   /* §7.3 — the rate is computed; an override is declared, never hidden. */
   const [override, setOverride] = useState(false)
-  const [overrideRate, setOverrideRate] = useState('18,000')
+  const [overrideRate, setOverrideRate] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
 
   /* §5 / §6 — the tree and the lines */
-  const [lines, setLines] = useState<DraftLine[]>(INITIAL_LINES)
+  /* Empty, not `INITIAL_LINES`. Those ten lines carry SEED model ids, so on
+     a live catalogue every one is unresolvable — the screen used to boot
+     pre-populated and refuse on line 1 the moment Create was pressed. */
+  const [lines, setLines] = useState<DraftLine[]>([])
+  const [originalBundle, setOriginalBundle] = useState<BundleWithItems | null>(props.initialBundle ?? null)
+  const [initialLineKeys, setInitialLineKeys] = useState<Map<string, string>>(new Map()) // itemId -> lineKey
+  const [deactivatedItemIds, setDeactivatedItemIds] = useState<string[]>([])
+  const existingBundleRecord = useBundleWithItems(bundleRef, money)
   const [search, setSearch] = useState('')
   const [fCategory, setFCategory] = useState<'All' | InventoryCategory>('All')
   const [fBrand, setFBrand] = useState('All')
   const [fAvailability, setFAvailability] = useState<'Any' | 'Free now' | 'Nothing free'>('Any')
   const [fChildren, setFChildren] = useState<'Any' | 'Yes' | 'No'>('Any')
-  const [treeOpen, setTreeOpen] = useState<Set<string>>(new Set(['M-FX3-BODY']))
+  const [treeOpen, setTreeOpen] = useState<Set<string>>(new Set())
   const [childrenOpen, setChildrenOpen] = useState<Set<string>>(new Set())
-  const [discountOpen, setDiscountOpen] = useState<Set<string>>(new Set())
 
   /* §10 — crew, vehicle, boxes */
-  const [crew, setCrew] = useState<CrewPick[]>(INITIAL_CREW)
-  const [vehicle, setVehicle] = useState<VehicleType | null>(INITIAL_VEHICLE)
+  const [crew, setCrew] = useState<CrewPick[]>([])
+  const [vehicle, setVehicle] = useState<VehicleType | null>(null)
 
   const [notes, setNotes] = useState('')
+
+  /*
+   * ── The catalogue this screen builds a bundle FROM ─────────────────────
+   *
+   * `products`, not `data/addBundle.ts`'s twenty seed models. `bundle_items`
+   * .product_id is a uuid FK, and 19 of those 20 model NAMES match no products
+   * row — the real catalogue is Booqable-shaped ('Sony FX3 Full-Frame Camera',
+   * not 'Sony FX3 Cinema Camera'), so `createBundle` refused on line 1 and every
+   * Create Bundle and Save Draft failed after the form reported every gate green.
+   *
+   * `DraftLine.modelId` therefore now carries a real `products.id`. That id is
+   * the join key for `availabilityOf`, `breakdownOf`, `rateDriftOf` and
+   * `LineRow`, every one of which resolves it through a map and SKIPS SILENTLY
+   * on a miss — which is why each of them is now handed `liveById` explicitly
+   * rather than falling back to the seed map. Miss that and the screen empties
+   * itself with no error at all.
+   *
+   * What is honestly available and what is not: `unitsByState` is per-UNIT, and
+   * a quantity-tracked product has no units, so its stock is `totalQuantity` and
+   * the state split is unknown rather than zero. Nothing here invents a
+   * reservation. `children` has no schema behind it at all, so a live model
+   * carries none and the child affordances simply have nothing to show.
+   */
+  /*
+   * §4.44 — availability is the answer to "free *when*", so the operator picks
+   * the window and it lives in the URL, exactly as the Bundles pane and the
+   * bundle detail page do. A create form having one is not odd: the kit is a
+   * template, but the question the picker used to answer badly — "can I field
+   * this" — only has an answer against dates.
+   */
+  const { window: availabilityWindow, setWindow } = useRentalWindowParams()
+  const { fromAd: winFromAd, toAd: winToAd } = availabilityWindow
+
+  const [catalogue, setCatalogue] = useState<InventoryModel[]>([])
+  const [catalogueError, setCatalogueError] = useState<string | null>(null)
+  const [catalogueLoading, setCatalogueLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    /* Rebuilt from the two primitives, not captured from the object: the hook
+       returns a fresh `window` every render, and depending on it would refetch
+       the whole catalogue forever. */
+    const win = { fromAd: winFromAd, toAd: winToAd }
+    setCatalogueLoading(true)
+    void (async () => {
+      try {
+        /* The same read New Rental's equipment picker uses
+           (`rentals/NewRental.tsx:1731`). `withMoney` is true because this
+           screen is Law 6-gated to money-visible roles already — it returns
+           above for anyone else — and a bundle line stores the unit rate. */
+        const inv = await listInventory({ page: { index: 0, size: 500 }, withMoney: true })
+        if (cancelled) return
+        const rows = inv.rows.filter((r) => r.isActive)
+        /* §4.44 — the same engine the Bundles pane and New Rental ask, for the
+           window the operator picked above.
+           RULING 2026-09-09 (R-37): §4.45(a) is closed by asking the engine for a
+           window, not by collapsing ten unit statuses into four pools. Revert =
+           restore the `unitsByState` mapping in git and drop the window control. */
+        const byProduct = await readProductAvailability(win, rows.map((r) => r.id))
+        if (cancelled) return
+        setCatalogue(
+          rows.map((r): InventoryModel => {
+              const answer = byProduct.get(r.id)
+              /* The engine's own count of stock, whichever half answered:
+                 non-retired unit rows, or `total_quantity` for bulk. Falling
+                 back to the list read only if the product is missing from the
+                 map, which `readProductAvailability` does not do. */
+              const stock =
+                answer?.unitsOwned ??
+                (r.trackingMode === 'Serialised' ? r.unitCountExcludingRetired : r.totalQuantity)
+              const free = answer?.unitsFree ?? 0
+              const held = answer?.unitsHeld ?? 0
+              return {
+                id: r.id,
+                sku: r.assetCode,
+                name: r.name,
+                brand: r.brand,
+                category: (r.category ?? 'Other') as InventoryCategory,
+                stock,
+                available: free,
+                /* `reserved` is renamed **Held** in the render, and it is the
+                   engine's one figure for "another booking has this across the
+                   window". It is not split into reserved-versus-on-rent because
+                   nothing answers that for a window: `product_units.status` is
+                   a now-state, and reading it here is exactly the defect this
+                   replaced — a hold three weeks out left `status` at In Stock,
+                   so the picker called four held C-stands free. */
+                reserved: held,
+                onRent: 0,
+                /* The remainder, so §5.1's invariant holds by construction:
+                   owned, but neither free nor claimed by a booking — a unit in
+                   maintenance, cleaning, inspection, or missing. Named for the
+                   largest of those rather than measured, and never rendered. */
+                maintenance: Math.max(0, stock - free - held),
+                unitRatePaisa: r.dailyRate ?? (0 as Paisa),
+              }
+            }),
+        )
+      } catch (e) {
+        if (cancelled) return
+        setCatalogueError(e instanceof Error ? e.message : String(e))
+      } finally {
+        if (!cancelled) setCatalogueLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [winFromAd, winToAd])
+
+  const liveById: ReadonlyMap<string, InventoryModel> = useMemo(
+    () => new Map(catalogue.map((m) => [m.id, m])),
+    [catalogue],
+  )
+  /* Shadows the seed `modelOf` this file used to import. Every lookup in this
+     component resolves against the live catalogue. */
+  const modelOf = (id: string): InventoryModel | undefined => liveById.get(id)
+
+  const liveCategories2 = useMemo(
+    () => [...new Set(catalogue.map((m) => m.category))].sort((a, b) => a.localeCompare(b)),
+    [catalogue],
+  )
+  const liveBrands = useMemo(
+    () => [...new Set(catalogue.map((m) => m.brand))].sort((a, b) => a.localeCompare(b)),
+    [catalogue],
+  )
 
   /* prompts */
   const [askParent, setAskParent] = useState<InventoryModel | null>(null)
@@ -453,8 +632,107 @@ export function AddBundle() {
    * `saving` disables both buttons while a dispatch is in flight, so a second
    * click cannot start a second write.
    */
+  /*
+   * The categories that EXIST. This offered `data/addBundle.ts`'s
+   * `INVENTORY_CATEGORIES` — sixteen labels off the `product_category` enum —
+   * under a hint reading "From the Inventory category list", which was exactly
+   * the false claim: `inventory_categories` holds SIX rows
+   * (`0012_seed_data.sql:115-123`, the only insert into it in any migration).
+   * `bundles.category_id` is a uuid FK, so ten of the sixteen refused the save.
+   */
+  const { rows: liveCategories } = useInventoryCategories()
+
+  const fetchedBundle: BundleWithItems | undefined = props.initialBundle ?? existingBundleRecord.rows[0]
+  useEffect(() => {
+    if (!isEditMode || !fetchedBundle) return
+    if (originalBundle?.id === fetchedBundle.id) return
+
+    setOriginalBundle(fetchedBundle)
+    setName(fetchedBundle.name)
+    setDescription(fetchedBundle.description ?? '')
+    setActive(fetchedBundle.isActive)
+
+    if (fetchedBundle.category) {
+      setCategory(fetchedBundle.category as InventoryCategory)
+    } else if (fetchedBundle.categoryId && liveCategories.length > 0) {
+      const match = liveCategories.find((c) => c.id === fetchedBundle.categoryId)
+      if (match) setCategory(match.name as InventoryCategory)
+    }
+
+    const itemKeyMap = new Map<string, string>()
+    const initialLines: DraftLine[] = (fetchedBundle.items ?? []).map((item: BundleComponent, index: number) => {
+      const key = `L${100 + index}`
+      itemKeyMap.set(item.itemId, key)
+      const originalRate = item.dailyRate ?? (0 as Paisa)
+      return {
+        key,
+        modelId: item.productId,
+        qty: item.quantity,
+        originalRatePaisa: originalRate,
+        discountKind: 'pct',
+        discountPct: 0,
+        discountFixedPaisa: rupees(0),
+        childIds: [],
+        discountReason: '',
+        approvedBy: null,
+      }
+    })
+    setSeq(100 + initialLines.length)
+    setLines(initialLines)
+    setInitialLineKeys(itemKeyMap)
+
+    const sumParts = initialLines.reduce((sum, l) => sum + l.originalRatePaisa * l.qty, 0)
+    if (fetchedBundle.dailyRate !== sumParts && fetchedBundle.dailyRate > 0) {
+      setOverride(true)
+      setOverrideRate(String(toRupees(fetchedBundle.dailyRate)))
+      setOverrideReason('Existing bundle daily rate override')
+    }
+  }, [isEditMode, fetchedBundle, originalBundle?.id, liveCategories])
+
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  /**
+   * **Law 8 — one key per row, minted where the operator acts** (the
+   * AddEquipment `writeKeys` pattern). The bundle key and each line's key are
+   * minted on the first press of a save button and reused by every retry of
+   * that press, so a network wobble retried resolves to the SAME bundle
+   * instead of minting a second one under a second code. Reset only after a
+   * save that succeeded: the next press is then a new bundle on purpose,
+   * which is what pressing Save Draft twice has always meant on this screen.
+   */
+  /* Record revision for the atomic save (update_bundle, 0153). Read when the edit opens; a save made
+     against a bundle that has since changed is refused and the operator's entries are kept. */
+  const [bundleRevision, setBundleRevision] = useState<string | null>(null)
+  const [revisionError, setRevisionError] = useState<string | null>(null)
+  const bundleKeyFingerprint = useRef<string | null>(null)
+  const editingBundleId = isEditMode ? (fetchedBundle?.id ?? null) : null
+  useEffect(() => {
+    if (!editingBundleId) return
+    let active = true
+    void readRecordEditor('bundle', editingBundleId)
+      .then((snap) => { if (active) { setBundleRevision(snap.revision); setRevisionError(null) } })
+      .catch((err: unknown) => { if (active) setRevisionError(err instanceof Error ? err.message : String(err)) })
+    return () => { active = false }
+  }, [editingBundleId])
+
+  /* Unsaved-change protection: the baseline is the form as first shown (hydrated record in edit mode,
+     the empty form in create mode). Cancel and link navigation ask only when something differs. */
+  const bundleFingerprint = JSON.stringify({ name, category, active, description, lines: lines.map((l) => [l.modelId, l.qty]), deactivatedItemIds, override, overrideRate })
+  const bundleBaseline = useRef<string | null>(null)
+  useEffect(() => {
+    if (bundleBaseline.current !== null) return
+    if (isEditMode && !originalBundle) return
+    bundleBaseline.current = bundleFingerprint
+  })
+  const bundleDirty = bundleBaseline.current !== null && bundleFingerprint !== bundleBaseline.current
+  useUnsavedRecord(bundleDirty)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const requestExit = () => (bundleDirty ? setConfirmCancel(true) : handleExit())
+  const writeKeys = useRef<{ bundle: string | null; lines: Map<string, string> }>({
+    bundle: null,
+    lines: new Map(),
+  })
 
   /*
    * ── derived, never typed ─────────────────────────────────────────────
@@ -468,21 +746,30 @@ export function AddBundle() {
    * exactly as it covers one anywhere else.
    */
   const pricing = useMemo(() => pricingOf(lines), [lines])
-  const availability = useMemo(() => availabilityOf(lines), [lines])
-  const breakdown = useMemo(() => breakdownOf(lines, crew, vehicle), [lines, crew, vehicle])
-  const drift = useMemo(() => rateDriftOf(lines), [lines])
+  const availability = useMemo(() => availabilityOf(lines, liveById), [lines, liveById])
+  const breakdown = useMemo(() => breakdownOf(lines, crew, vehicle, liveById), [lines, crew, vehicle, liveById])
+  const drift = useMemo(() => rateDriftOf(lines, liveById), [lines, liveById])
 
   /* ── §13 · this page sets prices, so the floor does not get it ────────── */
   if (!money) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        <PageHeader
-          icon="plus"
-          title="New Bundle"
-          description="Create a reusable equipment kit and set bundle pricing."
+        <ScreenHeader
+          embedded={embedded}
+          icon={isEditMode ? 'queues' : 'plus'}
+          title={isEditMode ? `Edit ${originalBundle?.name ?? 'Bundle'}` : 'New Bundle'}
+          description={
+            isEditMode
+              ? `${originalBundle?.bundleCode ?? bundleRef ?? ''} · Edit equipment kit and pricing.`
+              : 'Create a reusable equipment kit and set bundle pricing.'
+          }
         />
         <RestrictedState
-          reason="Creating a bundle is not available for your role. A bundle sets prices — every rate, discount and the daily rate itself — so building one is a commercial decision your role does not carry. You can open any saved bundle from Inventory ▸ Bundles to see its contents and print its packing list. Ask an Owner, Admin, Coordinator or Accounts user to create a new one."
+          reason={
+            isEditMode
+              ? 'Editing a bundle is not available for your role. A bundle sets prices — every rate, discount and the daily rate itself — so editing one is a commercial decision your role does not carry. Ask an Owner, Admin, Coordinator or Accounts user to update it.'
+              : 'Creating a bundle is not available for your role. A bundle sets prices — every rate, discount and the daily rate itself — so building one is a commercial decision your role does not carry. You can open any saved bundle from Inventory ▸ Bundles to see its contents and print its packing list. Ask an Owner, Admin, Coordinator or Accounts user to create a new one.'
+          }
           requiredRole="Owner, Admin, Coordinator or Accounts"
         />
       </div>
@@ -498,7 +785,8 @@ export function AddBundle() {
   const totalSavingPct =
     pricing.sumOfPartsPaisa === 0 ? 0 : roundHalfUp((totalSavingPaisa / pricing.sumOfPartsPaisa) * 100)
 
-  /* Foundation §9 — a line discount above 10% needs a reason and an approver. */
+  /* Law 10 as amended 31 Aug 2026 — ungated; the only refusals left are a
+     negative percent (a price rise) and >100% (a negative price). */
   const discountProblems = lines
     .map((l) => {
       const t = totalsOf(l)
@@ -560,15 +848,20 @@ export function AddBundle() {
    *
    * Now: a real session or a refusal; the dispatch is awaited; success reporting
    * and the navigation live *only* on the resolved path; and the rejection is
-   * surfaced inline where the operator can act on it. The toast quotes the id
+   * surfaced inline where the operator can act on it. The toast quotes the code
    * the action hands back — never one chosen here.
    *
-   * `TODO(decision)` — `createBundle`'s capability is `inventory.create`, and
-   * `actions/core.ts:109-125` maps no rule for that string, so an unmapped
-   * capability is denied fail-closed for every role. Who may create a bundle is
-   * unruled; it belongs in `PLAN.md` §4, not in this file. Until it is ruled and
-   * the action is implemented, every press of these buttons ends in the banner
-   * below — which is the honest outcome, and is why no toast may precede it.
+   * (An earlier revision of this comment recorded `inventory.create` as
+   * unmapped and the action as unimplemented. Both are stale since Phase 1:
+   * `actions/core.ts` maps it to `rbac.canCreateBundle` — Owner/Admin/Manager
+   * — and `createBundle.ts` carries `implemented: true` and really inserts.)
+   *
+   * What the payload now carries that it used to drop (item 2.6a): each line's
+   * MODEL NAME, which the action resolves to a real `products.id` uuid by
+   * SELECT (the seed id `'M-FX3-BODY'` is carried for the refusal message
+   * only); the category NAME, resolved to `inventory_categories.id` the same
+   * way; and `effectiveRatePaisa` — the rate every card on this screen shows —
+   * so the row's `daily_rate` is the figure the toast quotes, not zero.
    */
   const saveBundle = (isDraft: boolean) => {
     if (!user) {
@@ -577,44 +870,176 @@ export function AddBundle() {
       )
       return
     }
-    const items = lines.map((l) => ({
-      modelId: l.modelId,
-      qty: l.qty,
-      discountPct: l.discountPct,
-      discountReason: l.discountReason,
-      approvedBy: l.approvedBy,
-    }))
+    if (isEditMode && !bundleRevision) {
+      setSaveError(revisionError ? `Bundle not updated - the current version could not be read: ${revisionError} Everything you typed is still here.` : 'Still loading the latest version of this bundle - try again in a moment. Everything you typed is still here.')
+      return
+    }
+    // Law 8: one key per press, per row, reused by every retry of that press.
+    const keys = writeKeys.current
+    if (!keys.bundle) keys.bundle = newClientUuid()
+    setSaveError(null)
+    setSaving(true)
+
+    if (isEditMode && originalBundle) {
+      const patch: UpdateBundlePatch = {}
+      if (name.trim() !== originalBundle.name) patch.name = name.trim()
+      const descVal = description.trim() || null
+      if (descVal !== (originalBundle.description ?? null)) patch.description = descVal
+
+      const catHit = liveCategories.find((c) => c.name === category)
+      const nextCatId = catHit ? catHit.id : null
+      if (nextCatId !== (originalBundle.categoryId ?? null)) patch.categoryId = nextCatId
+      if (active !== originalBundle.isActive) patch.isActive = active
+      if (effectiveRatePaisa !== originalBundle.dailyRate) patch.dailyRatePaisa = effectiveRatePaisa
+
+      const lineEdits: UpdateBundleLineEdit[] = []
+      const lineAdds: UpdateBundleLineAdd[] = []
+      const lineDeactivations: UpdateBundleLineDeactivate[] = deactivatedItemIds.map((itemId) => ({
+        itemId,
+        clientUuid: newClientUuid(),
+      }))
+
+      for (const l of lines) {
+        let matchedInitialItemId: string | undefined
+        for (const [itemId, lineKey] of initialLineKeys.entries()) {
+          if (lineKey === l.key) {
+            matchedInitialItemId = itemId
+            break
+          }
+        }
+
+        if (matchedInitialItemId) {
+          const originalItem = originalBundle.items.find((i) => i.itemId === matchedInitialItemId)
+          if (originalItem && originalItem.quantity !== l.qty) {
+            lineEdits.push({
+              itemId: matchedInitialItemId,
+              quantity: l.qty,
+              clientUuid: newClientUuid(),
+            })
+          }
+        } else {
+          lineAdds.push({
+            productId: l.modelId,
+            qty: l.qty,
+            days: 1,
+            clientUuid: newClientUuid(),
+          })
+        }
+      }
+
+      /* A retry of the SAME content reuses its key (idempotent); changed content gets a new one. */
+      const fingerprint = JSON.stringify({ patch, lineEdits: lineEdits.map((e) => [e.itemId, e.quantity]), lineAdds: lineAdds.map((a) => [a.productId, a.qty]), lineDeactivations: lineDeactivations.map((d) => d.itemId) })
+      if (bundleKeyFingerprint.current !== fingerprint) {
+        keys.bundle = newClientUuid()
+        bundleKeyFingerprint.current = fingerprint
+      }
+      void import('../../actions/inventory/updateBundle')
+        .then((m) =>
+          m.updateBundle(
+            {
+              clientUuid: keys.bundle as string,
+              expectedRevision: bundleRevision as string,
+              bundleId: originalBundle.id,
+              patch,
+              lineEdits,
+              lineAdds,
+              lineDeactivations,
+            },
+            { userId: user.id, role: user.role },
+          ),
+        )
+        .then((result) => {
+          writeKeys.current = { bundle: null, lines: new Map() }
+          showSuccessToast('Bundle saved', `${result.bundleCode} · Changes applied successfully`)
+          if (onDone) {
+            onDone()
+          } else {
+            navigate(`/inventory/bundles/${result.bundleCode}`)
+          }
+        })
+        .catch((err: unknown) => {
+          setSaveError(
+            `Bundle not updated — ${
+              err instanceof Error ? err.message : 'the update failed and no reason was reported.'
+            } Everything you typed is still here.`,
+          )
+        })
+        .finally(() => setSaving(false))
+      return
+    }
+    const items = lines.map((l) => {
+      let lineKey = keys.lines.get(l.key)
+      if (!lineKey) {
+        lineKey = newClientUuid()
+        keys.lines.set(l.key, lineKey)
+      }
+      return {
+        modelId: l.modelId,
+        /* `l.modelId` IS `products.id` now, so the action resolves it directly
+           instead of matching a name that existed in no row. The name still
+           rides along so a refusal can say which line it was about. */
+        productId: l.modelId,
+        productName: modelOf(l.modelId)?.name ?? l.modelId,
+        qty: l.qty,
+        discountPct: l.discountPct,
+        discountReason: l.discountReason,
+        approvedBy: l.approvedBy,
+        clientUuid: lineKey,
+      }
+    })
     setSaveError(null)
     setSaving(true)
     void import('../../actions/inventory/createBundle')
       .then((m) =>
         m.createBundle(
           {
+            clientUuid: keys.bundle as string,
             name: name.trim(),
             /* `exactOptionalPropertyTypes` — an unset category is absent from
                the payload, never the empty string, which would reach the action
                as a category nobody picked. Create Bundle cannot reach here with
                one unset (`blockingReason`); a draft can. */
+            /* The uuid when this screen can resolve it, the name as the fallback —
+               same shape as the equipment and transfer pickers. */
             ...(category ? { category } : {}),
+            ...(() => {
+              const hit = liveCategories.find((c) => c.name === category)
+              return hit ? { categoryId: hit.id } : {}
+            })(),
+            ...(description.trim() ? { description: description.trim() } : {}),
             items,
             itemCount: isDraft ? lines.length : breakdown.totalItems,
             isDraft,
+            /* Law 6 — Paisa here, rupees exactly once inside the action. This
+               is the same figure the Pricing Summary and the success toast
+               show, so the row can no longer read 0 while the toast quotes a
+               rate. This page is unreachable for money-blind roles (the
+               RestrictedState gate above), so the rate is always present. */
+            dailyRatePaisa: effectiveRatePaisa,
           },
           { userId: user.id, role: user.role },
         ),
       )
       .then((result) => {
+        // A landed save consumes its keys: the NEXT press is a new bundle.
+        writeKeys.current = { bundle: null, lines: new Map() }
         if (isDraft) {
-          showSuccessToast('Draft saved', `${result.bundleId} · ${lines.length} lines`)
+          showSuccessToast('Draft saved', `${result.bundleCode} · ${lines.length} lines`)
         } else {
           showSuccessToast(
             'Bundle created',
-            `${result.bundleId} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
+            `${result.bundleCode} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
           )
           /* Only a landed write leaves the page. Navigating on the failing path
              would discard everything the operator typed to show them a list
-             their bundle is not in. */
-          navigate('/inventory')
+             their bundle is not in.
+
+             Lands on the new bundle's own page, not `/inventory` — which was the
+             EQUIPMENT tab, so the operator was sent somewhere their bundle could
+             not appear even in principle. `result.bundleCode` is the same string
+             the toast above quotes, so the URL and the confirmation agree at the
+             one moment someone is checking them against each other. */
+          navigate(`/inventory/bundles/${result.bundleCode}`)
         }
       })
       .catch((err: unknown) => {
@@ -638,7 +1063,15 @@ export function AddBundle() {
   const patch = (key: string, updates: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...updates } : l)))
 
-  const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key))
+  const removeLine = (key: string) => {
+    for (const [itemId, lineKey] of initialLineKeys.entries()) {
+      if (lineKey === key) {
+        setDeactivatedItemIds((prev) => [...prev, itemId])
+        break
+      }
+    }
+    setLines((prev) => prev.filter((l) => l.key !== key))
+  }
 
   const addModel = (m: InventoryModel, includeRequiredChildren: boolean) => {
     const key = nextKey()
@@ -736,7 +1169,7 @@ export function AddBundle() {
   }
 
   const resetDraft = () => {
-    setLines(INITIAL_LINES)
+    setLines([])
     setCrew(INITIAL_CREW)
     setVehicle(INITIAL_VEHICLE)
     setOverride(false)
@@ -790,7 +1223,9 @@ export function AddBundle() {
     search.trim() !== '' || fCategory !== 'All' || fBrand !== 'All' || fAvailability !== 'Any' || fChildren !== 'Any'
 
   /* Roots only while unfiltered — an accessory belongs under its parent, not beside it. */
-  const treeRows = (filtersOn ? INVENTORY_MODELS : ROOT_MODELS).filter((m) => {
+  /* Every row is a root: `children` is a seed-only relationship with no
+     column behind it, so a live catalogue has no parents to nest under. */
+  const treeRows = catalogue.filter((m) => {
     const q = search.trim().toLowerCase()
     if (q && !`${m.name} ${m.sku} ${m.brand} ${m.category}`.toLowerCase().includes(q)) return false
     if (fCategory !== 'All' && m.category !== fCategory) return false
@@ -832,37 +1267,55 @@ export function AddBundle() {
       )}
 
       {/* §2 — breadcrumb only, and the shell already renders it. No Back button. */}
-      <PageHeader
-        icon="plus"
-        title="New Bundle"
-        description="Create a reusable equipment kit and set bundle pricing."
+      <ScreenHeader
+        embedded={embedded}
+        icon={isEditMode ? 'queues' : 'plus'}
+        title={isEditMode ? `Edit ${originalBundle?.name ?? 'Bundle'}` : 'New Bundle'}
+        description={
+          isEditMode
+            ? `${originalBundle?.bundleCode ?? bundleRef ?? ''} · Edit equipment kit and pricing.`
+            : 'Create a reusable equipment kit and set bundle pricing.'
+        }
         actions={
-          <>
-            <Unavailable reason="Templates are not built — there is no bundle template store in this release.">
-              <Button icon="upload" disabled>
-                Import Template
+          isEditMode ? (
+            embedded && onDone ? (
+              <Button icon="chevron_left" onClick={onDone}>
+                Back to Bundle
               </Button>
-            </Unavailable>
-            <select
-              aria-label="Duplicate an existing bundle"
-              value=""
-              onChange={(e) => e.target.value && applyDuplicate(e.target.value)}
-              style={{
-                ...selectStyle,
-                width: 'auto',
-                border: '1px solid var(--btn-secondary-border)',
-                background: 'var(--btn-secondary-bg)',
-                fontWeight: 600,
-              }}
-            >
-              <option value="">Duplicate Existing…</option>
-              {TEMPLATE_BUNDLES.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.id} · {b.name}
-                </option>
-              ))}
-            </select>
-          </>
+            ) : null
+          ) : (
+            <>
+              {embedded && onDone && (
+                <Button icon="chevron_left" onClick={onDone}>
+                  Back to Bundles
+                </Button>
+              )}
+              <Unavailable reason="Templates are not built — there is no bundle template store in this release.">
+                <Button icon="upload" disabled>
+                  Import Template
+                </Button>
+              </Unavailable>
+              <select
+                aria-label="Duplicate an existing bundle"
+                value=""
+                onChange={(e) => e.target.value && applyDuplicate(e.target.value)}
+                style={{
+                  ...selectStyle,
+                  width: 'auto',
+                  border: '1px solid var(--btn-secondary-border)',
+                  background: 'var(--btn-secondary-bg)',
+                  fontWeight: 600,
+                }}
+              >
+                <option value="">Duplicate Existing…</option>
+                {TEMPLATE_BUNDLES.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.id} · {b.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )
         }
       />
 
@@ -933,7 +1386,10 @@ export function AddBundle() {
               {/* Not an input, and not a number: the box held a prediction of the
                   next Bundle counter (see the note above `NOTES_LIMIT`). A
                   `FieldBlock`, because there is no control here to label. */}
-              <FieldBlock label="Bundle ID" hint="Assigned on save, by the database — not by this form">
+              <FieldBlock
+                label="Bundle ID"
+                hint={isEditMode ? 'Permanent bundle identifier' : 'Assigned on save, by the database — not by this form'}
+              >
                 <span
                   className="identifier"
                   style={{
@@ -941,18 +1397,25 @@ export function AddBundle() {
                     display: 'flex',
                     alignItems: 'center',
                     background: 'var(--card2)',
-                    color: 'var(--muted)',
+                    color: isEditMode ? 'var(--text)' : 'var(--muted)',
+                    fontWeight: isEditMode ? 600 : 'normal',
                   }}
                 >
-                  Assigned on save
+                  {isEditMode ? (originalBundle?.bundleCode ?? bundleRef) : 'Assigned on save'}
                 </span>
               </FieldBlock>
-              <Field label="Primary Category" required hint="From the Inventory category list">
+              <Field
+                label="Primary Category"
+                required
+                hint="The categories `inventory_categories` actually holds."
+              >
                 <select value={category} onChange={(e) => setCategory(e.target.value as InventoryCategory | '')} style={selectStyle}>
-                  <option value="">Select category…</option>
-                  {INVENTORY_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                  <option value="">
+                    {liveCategories.length === 0 ? 'No category exists to file this under' : 'Select category…'}
+                  </option>
+                  {liveCategories.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
                     </option>
                   ))}
                 </select>
@@ -1123,15 +1586,11 @@ export function AddBundle() {
                 paddingTop: 'var(--sp-md)',
                 borderTop: '1px solid var(--border)',
                 display: 'flex',
-                gap: 14,
-                flexWrap: 'wrap',
-                alignItems: 'flex-start',
+                flexDirection: 'column',
+                gap: 'var(--sp-md)',
               }}
             >
-              <FieldBlock
-                label="Default Daily Rate (Equipment Only)"
-                hint="This rate covers equipment only. Crew and vehicle are not included."
-              >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                   <span
                     className="figure"
@@ -1152,12 +1611,10 @@ export function AddBundle() {
                     {formatMoney(effectiveRatePaisa)}
                   </span>
                   <span style={subtle}>
-                    {override ? 'Override — declared below' : 'Computed from the lines below (§7.3)'}
+                    {override ? 'Override active' : /* Computed from the lines below (§7.3) */ "Computed from the lines below"}
                   </span>
                 </span>
-              </FieldBlock>
 
-              <FieldBlock label="Override the computed rate">
                 <button
                   type="button"
                   onClick={() => setOverride((v) => !v)}
@@ -1176,12 +1633,12 @@ export function AddBundle() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {override ? 'Override on' : 'Override off'}
+                  {override ? 'Disable override' : 'Set override rate'}
                 </button>
-              </FieldBlock>
+              </div>
 
               {override && (
-                <>
+                <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   <Field label="Target daily rate" required>
                     <input
                       value={overrideRate}
@@ -1191,6 +1648,7 @@ export function AddBundle() {
                       style={{ ...controlBase, width: 140 }}
                     />
                   </Field>
+
                   <Field
                     label="Reason for the override"
                     required
@@ -1203,7 +1661,16 @@ export function AddBundle() {
                       style={{ ...controlBase, width: 340 }}
                     />
                   </Field>
-                </>
+
+                  {impliedExtraPct !== 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)', marginTop: 'auto', minWidth: '100%' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 'var(--r-badge)', background: impliedExtraPct > 0 ? 'var(--st-progress-bg)' : 'var(--st-in-bg)', color: impliedExtraPct > 0 ? 'var(--st-progress-fg)' : 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                        <Icon name={impliedExtraPct > 0 ? 'alert_triangle' : 'info'} size={12} />
+                        Implied extra discount: {formatMoney(impliedExtraPaisa)} ({impliedExtraPct > 0 ? '+' : ''}{impliedExtraPct}%)
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </Section>
@@ -1217,7 +1684,7 @@ export function AddBundle() {
               action={
                 <button
                   type="button"
-                  onClick={() => setTreeOpen(treeOpen.size === 0 ? new Set(ROOT_MODELS.filter((m) => m.children).map((m) => m.id)) : new Set())}
+                  onClick={() => setTreeOpen(treeOpen.size === 0 ? new Set(catalogue.filter((m) => m.children).map((m) => m.id)) : new Set())}
                   style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-th)', fontFamily: 'inherit', cursor: 'pointer', padding: 0 }}
                 >
                   {treeOpen.size === 0 ? 'Expand all' : 'Collapse all'}
@@ -1231,23 +1698,65 @@ export function AddBundle() {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search equipment by name, SKU, brand…"
+                    aria-label="Search equipment by name, SKU, brand"
                     style={{ ...controlBase, paddingLeft: 29 }}
                   />
                 </span>
                 <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-                  Select equipment models and their children to add to the bundle. §5.1 —{' '}
+                  {/* Select equipment models and their children to add to the bundle. §5.1 — */}Select equipment models and their children to add to the bundle. {' '}
                   <span className="figure">stock = available + reserved + on rent + maintenance</span>, asserted per row.
                 </p>
               </div>
 
-              <div style={{ maxHeight: 460, overflowY: 'auto' }}>
+              {/*
+                §4.44 — the window Free and Held below are measured against. It is
+                not a filter: it does not decide which models are listed, it decides
+                what "free" means for all of them.
+              */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 'var(--sp-md)',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  paddingBottom: 'var(--sp-sm)',
+                }}
+              >
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  Free from
+                  <DateField
+                    ariaLabel="Availability window from"
+                    value={dayValue(winFromAd)}
+                    onChange={(v) => setWindow('from', v)}
+                    showBs={false}
+                  />
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  to
+                  <DateField
+                    ariaLabel="Availability window to"
+                    value={dayValue(winToAd)}
+                    onChange={(v) => setWindow('to', v)}
+                    showBs={false}
+                    align="right"
+                  />
+                </label>
+              </div>
+              <p style={{ margin: 0, ...subtle, lineHeight: 1.5 }}>
+                Free and Held are measured for this window. Click any row to add it to the bundle — required children are included automatically.
+              </p>
+              <DataTableShell ariaLabel="Catalogue availability for bundle" style={{ maxHeight: 460, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       <th style={{ ...th, position: 'sticky', top: 0, background: 'var(--th-bg)' }} scope="col">
                         Model
                       </th>
-                      {(['Stock', 'Avail', 'Res', 'Rent'] as const).map((h) => (
+                      {/* §4.44 — `Free` and `Held` are answers for the window above, not
+                         for "now". `Rent` is gone: the engine reports what a booking holds
+                         across the window, and does not split that into on-rent versus
+                         reserved, so a fourth column could only be filled by guessing. */}
+                      {(['Stock', 'Free', 'Held'] as const).map((h) => (
                         <th key={h} style={{ ...th, textAlign: 'right', position: 'sticky', top: 0, background: 'var(--th-bg)' }} scope="col">
                           {h}
                         </th>
@@ -1255,10 +1764,29 @@ export function AddBundle() {
                     </tr>
                   </thead>
                   <tbody>
-                    {treeRows.length === 0 ? (
+                    {catalogueError !== null ? (
                       <tr>
-                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
-                          No model matches this search.
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--danger)', padding: '22px 12px' }}>
+                          The catalogue could not be read, so there is nothing to build a bundle from:{' '}
+                          {catalogueError}
+                        </td>
+                      </tr>
+                    ) : catalogueLoading ? (
+                      <tr>
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                          Reading the equipment catalogue…
+                        </td>
+                      </tr>
+                    ) : catalogue.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                          No active equipment exists yet, so a bundle has nothing to contain.
+                        </td>
+                      </tr>
+                    ) : treeRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                          No product matches this search.
                           <span style={{ display: 'block', marginTop: 'var(--sp-sm)' }}>
                             <Button icon="refresh" onClick={clearFilters}>
                               Clear filters
@@ -1294,7 +1822,7 @@ export function AddBundle() {
                     )}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             </Section>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
@@ -1304,7 +1832,7 @@ export function AddBundle() {
                   Category
                   <Select value={fCategory} onChange={(e) => setFCategory(e.target.value as 'All' | InventoryCategory)} style={filterSelect}>
                     <option value="All">All</option>
-                    {USED_CATEGORIES.map((c) => (
+                    {liveCategories2.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -1315,7 +1843,7 @@ export function AddBundle() {
                   Brand
                   <Select value={fBrand} onChange={(e) => setFBrand(e.target.value)} style={filterSelect}>
                     <option value="All">All</option>
-                    {ALL_BRANDS.map((b) => (
+                    {liveBrands.map((b) => (
                       <option key={b} value={b}>
                         {b}
                       </option>
@@ -1354,7 +1882,7 @@ export function AddBundle() {
                   </Unavailable>
                 )}
                 <span className="figure" style={{ marginLeft: 'auto', ...subtle }}>
-                  {treeRows.length} shown of {INVENTORY_MODELS.length} models
+                  {treeRows.length} shown of {catalogue.length} products
                 </span>
               </div>
 
@@ -1377,17 +1905,27 @@ export function AddBundle() {
                 }
               >
                 {lines.length === 0 ? (
-                  <div style={{ padding: '30px 16px', textAlign: 'center' }}>
-                    <Icon name="package" size={26} style={{ color: 'var(--muted)' }} />
-                    <p style={{ margin: '8px 0 4px', fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
+                  <div style={{ padding: '40px 24px', textAlign: 'center', background: 'var(--card2)', borderRadius: 'var(--r-card)' }}>
+                    <Icon name="package" size={32} style={{ color: 'var(--muted)' }} />
+                    <p style={{ margin: '12px 0 6px', fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
                       No items in this bundle yet
                     </p>
-                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      Pick models from the inventory tree on the left. §14 — a bundle needs at least one equipment line.
+                    <p style={{ margin: '0 0 16px', fontSize: 'var(--t-meta)', color: 'var(--text2)', maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
+                      Search or browse the inventory tree on the left. Click any model to add it — required children (like batteries for a camera) are included automatically.
                     </p>
+                    <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                      {/* §14 — a bundle needs at least one equipment line to be created. */}a bundle needs at least one equipment line to be created. </p>
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                  /* BOTTOM corners here, not top: the Section draws its own
+                     numbered title bar above (which paints no background, so
+                     the top arc is already clean), and this scroller is the
+                     LAST child of a padding-0 body — its <tfoot> row carries an
+                     opaque --th-bg that squared off the card's 14px bottom
+                     corners once v4.2 §6 raised --r-card from 8. `overflowX:
+                     auto` already makes this a clip box, so the radius rounds
+                     the totals row with it. */
+                  <DataTableShell ariaLabel="Bundle components and rate breakdown" style={{ borderRadius: '0 0 var(--r-card) var(--r-card)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                       <thead>
                         <tr style={{ background: 'var(--th-bg)' }}>
@@ -1432,15 +1970,12 @@ export function AddBundle() {
                             key={l.key}
                             line={l}
                             childrenOpen={childrenOpen.has(l.key)}
-                            discountOpen={discountOpen.has(l.key)}
-                            role={user?.role ?? null}
-                            approverName={user ? `${user.name} (${user.role})` : null}
                             onToggleChildren={() => toggleIn(childrenOpen, setChildrenOpen, l.key)}
-                            onToggleDiscount={() => toggleIn(discountOpen, setDiscountOpen, l.key)}
                             onPatch={(u) => patch(l.key, u)}
                             onRemove={() => removeLine(l.key)}
                             onToggleChild={(childId, required, on) => toggleChild(l.key, childId, required, on)}
                             childIsLine={(id) => lines.some((o) => o.modelId === id)}
+                            lookup={liveById}
                           />
                         ))}
                       </tbody>
@@ -1470,7 +2005,7 @@ export function AddBundle() {
                         </tr>
                       </tfoot>
                     </table>
-                  </div>
+                  </DataTableShell>
                 )}
               </Section>
 
@@ -1490,8 +2025,8 @@ export function AddBundle() {
 
           {/* ── 4 · Crew, Vehicle and Boxes ─────────────────────────────── */}
           <Section n={4} title="Crew, Vehicle and Boxes">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'var(--sp-lg)' }}>
-              <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--sp-lg)' }}>
+              <div style={{ background: 'var(--card2)', borderRadius: 'var(--r-card)', padding: 'var(--sp-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="crew" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Crew suggestions</span>
@@ -1550,7 +2085,7 @@ export function AddBundle() {
                 </select>
               </div>
 
-              <div>
+              <div style={{ background: 'var(--card2)', borderRadius: 'var(--r-card)', padding: 'var(--sp-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="truck" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Vehicle suggestion</span>
@@ -1575,13 +2110,13 @@ export function AddBundle() {
                 </select>
               </div>
 
-              <div>
+              <div style={{ background: 'var(--card2)', borderRadius: 'var(--r-card)', padding: 'var(--sp-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="package" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Boxes and bags</span>
                 </div>
                 <p style={{ margin: '0 0 8px', ...subtle, lineHeight: 1.5 }}>
-                  §10.4 — <strong>boxes are different.</strong> A case is equipment and <em>is</em> priced in the bundle
+                  {/* §10.4 — */}Not tracked yet. <strong>boxes are different.</strong> A case is equipment and <em>is</em> priced in the bundle
                   rate, so each one is a Bundle Item line above with its own availability.
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -1605,7 +2140,7 @@ export function AddBundle() {
                   style={{ ...selectStyle, marginTop: 'var(--sp-sm)', height: 30 }}
                 >
                   <option value="">+ Add a case or bag</option>
-                  {INVENTORY_MODELS.filter((m) => BOX_CATEGORIES.has(m.category)).map((m) => (
+                  {catalogue.filter((m) => BOX_CATEGORIES.has(m.category)).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>
@@ -1626,7 +2161,7 @@ export function AddBundle() {
               style={{ ...controlBase, height: 'auto', padding: '8px 9px', resize: 'vertical', lineHeight: 1.5 }}
             />
             <div style={{ display: 'flex', marginTop: 6 }}>
-              <span style={subtle}>§11 — internal only. Never printed, never visible to the client.</span>
+              <span style={subtle}>{/* §11 — internal only. Never printed, never visible to the client. */}internal only. Never printed, never visible to the client. </span>
               <span className="figure" style={{ marginLeft: 'auto', ...subtle }}>
                 {notes.length} / {NOTES_LIMIT}
               </span>
@@ -1656,29 +2191,47 @@ export function AddBundle() {
                 : {}),
             }}
           >
-            <Button onClick={() => navigate('/inventory')}>Cancel</Button>
+            <Button onClick={requestExit}>Cancel</Button>
+            <UnsavedLeaveDialog />
+            <ConfirmDialog isOpen={confirmCancel} title="Discard unsaved changes?" description="Your edits to this bundle have not been saved and will be lost." confirmLabel="Discard" cancelLabel="Keep editing" variant="danger" onClose={() => setConfirmCancel(false)} onConfirm={() => { setConfirmCancel(false); handleExit() }} />
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-              {draftBlockingReason ? (
-                <Unavailable reason={draftBlockingReason}>
-                  <Button icon="file" disabled>
-                    Save Draft
+              {isEditMode ? (
+                blockingReason ? (
+                  <Unavailable reason={blockingReason}>
+                    <Button icon="check" variant="primary" disabled>
+                      Save Changes
+                    </Button>
+                  </Unavailable>
+                ) : (
+                  <Button icon="check" variant="primary" disabled={saving} onClick={() => saveBundle(false)}>
+                    {saving ? 'Saving…' : 'Save Changes'}
                   </Button>
-                </Unavailable>
+                )
               ) : (
-                <Button icon="file" disabled={saving} onClick={() => saveBundle(true)}>
-                  {saving ? 'Saving…' : 'Save Draft'}
-                </Button>
-              )}
-              {blockingReason ? (
-                <Unavailable reason={blockingReason}>
-                  <Button icon="plus" variant="primary" disabled>
-                    Create Bundle
-                  </Button>
-                </Unavailable>
-              ) : (
-                <Button icon="plus" variant="primary" disabled={saving} onClick={() => saveBundle(false)}>
-                  {saving ? 'Saving…' : 'Create Bundle'}
-                </Button>
+                <>
+                  {draftBlockingReason ? (
+                    <Unavailable reason={draftBlockingReason}>
+                      <Button icon="file" disabled>
+                        Save Draft
+                      </Button>
+                    </Unavailable>
+                  ) : (
+                    <Button icon="file" disabled={saving} onClick={() => saveBundle(true)}>
+                      {saving ? 'Saving…' : 'Save Draft'}
+                    </Button>
+                  )}
+                  {blockingReason ? (
+                    <Unavailable reason={blockingReason}>
+                      <Button icon="plus" variant="primary" disabled>
+                        Create Bundle
+                      </Button>
+                    </Unavailable>
+                  ) : (
+                    <Button icon="plus" variant="primary" disabled={saving} onClick={() => saveBundle(false)}>
+                      {saving ? 'Saving…' : 'Create Bundle'}
+                    </Button>
+                  )}
+                </>
               )}
             </span>
           </div>
@@ -1721,14 +2274,13 @@ export function AddBundle() {
                 ]}
               />
               <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
-                §9 — <span className="figure">{breakdown.equipment} + {breakdown.crew} + {breakdown.vehicle} + {breakdown.boxes} = {breakdown.totalItems}</span>
+                {/* §9 — */}Not tracked yet. <span className="figure">{breakdown.equipment} + {breakdown.crew} + {breakdown.vehicle} + {breakdown.boxes} = {breakdown.totalItems}</span>
                 , asserted on render. The donut counts the {availability.totalItems} stocked items these lines require;
                 crew and vehicle carry no stock record here, so they count in Total Items but not in the ready ratio.
               </p>
               {breakdown.totalWeightKg === null && (
                 <p style={{ margin: '6px 0 0', ...subtle, lineHeight: 1.5 }}>
-                  No weight is recorded against these models, so the total shows `—` rather than 0.{' '}
-                  <span className="identifier">TODO(decision)</span> — where do per-model weights come from?
+                  No weight is recorded against these models, so the total shows `—` rather than 0.
                 </p>
               )}
             </Card>
@@ -1773,9 +2325,8 @@ export function AddBundle() {
                 </span>
               </div>
               <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
-                Every figure is the sum of the {lines.length} lines above. Crew and vehicle are not in this rate — they
-                are priced in the booking's Crew and Transport sections (§10.4).
-              </p>
+                Every figure is the sum of the {lines.length} {/* lines above. Crew and vehicle are not in this rate — they
+                are priced in the booking's Crew and Transport sections (§10.4). */}lines above. Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections . </p>
             </Card>
 
             {/* §8.2 — one computation, two views. */}
@@ -1787,7 +2338,7 @@ export function AddBundle() {
                   gap: 7,
                   fontSize: 'var(--t-meta)',
                   fontWeight: 700,
-                  color: availability.blockedItems === 0 ? 'var(--success-text)' : 'var(--warning-text)',
+                  color: availability.blockedItems === 0 ? 'var(--success-text)' : 'var(--ready-text)',
                 }}
               >
                 <Icon name={availability.blockedItems === 0 ? 'check' : 'alert_triangle'} size={14} />
@@ -1812,9 +2363,8 @@ export function AddBundle() {
 
               {availability.blocked.length === 0 ? (
                 <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
-                  §8.1 — a line is blocked only when it has fewer available units than it requires. Every line here is
-                  satisfied. Raise a required quantity above its free units to see the shortfall and its return date.
-                </p>
+                  {/* §8.1 — a line is blocked only when it has fewer available units than it requires. Every line here is
+                  satisfied. Raise a required quantity above its free units to see the shortfall and its return date. */}a line is blocked only when it has fewer available units than it requires. Every line here is satisfied. Raise a required quantity above its free units to see the shortfall and its return date. </p>
               ) : (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 10 }}>
@@ -1901,8 +2451,7 @@ export function AddBundle() {
               {packingOpen && (
                 <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
                   <p style={{ margin: '0 0 6px', ...subtle, lineHeight: 1.5 }}>
-                    §12 — models only, never serials. A unit is assigned at packing from whatever is free.
-                  </p>
+                    {/* §12 — models only, never serials. A unit is assigned at packing from whatever is free. */}models only, never serials. A unit is assigned at packing from whatever is free. </p>
                   <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {lines.map((l) => {
                       const m = modelOf(l.modelId)
@@ -1930,7 +2479,7 @@ export function AddBundle() {
           </div>
           )
           /* Rulings §7 — reflow, not hide. The summary sits beside the form at
-             desktop and beneath it below 1180, never behind the rail handle. */
+             desktop and beneath it below 1280, never behind the rail handle. */
           return desktop ? <Rail width={318} label="Bundle summary">{railContent}</Rail> : railContent
         })()}
       </div>
@@ -1953,7 +2502,7 @@ export function AddBundle() {
               })}
             </ul>
           }
-          note="Children are priced inside this line's rate, at Rs 0 of their own (§5.3)."
+          note={/* Children are priced inside this line's rate, at Rs 0 of their own (§5.3). */ "Children are priced inside this line's rate, at Rs 0 of their own ."}
           actions={[
             {
               key: 'all',
@@ -2105,7 +2654,7 @@ function Prompt({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 60,
+        zIndex: 'var(--z-modal)' as unknown as number,
         display: 'grid',
         placeItems: 'center',
         padding: 'var(--sp-lg)',
@@ -2164,9 +2713,10 @@ function TreeRow({
 }) {
   const kids = model.children ?? []
   const num: CSSProperties = { ...td, textAlign: 'right', padding: '8px 6px' }
+  const hasAvailable = model.available > 0
   return (
     <>
-      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+      <tr style={{ borderBottom: '1px solid var(--border)', background: inBundle ? 'var(--success-bg)' : undefined }}>
         <td style={{ ...td, paddingRight: 'var(--sp-xs)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {kids.length > 0 ? (
@@ -2185,19 +2735,24 @@ function TreeRow({
             <button
               type="button"
               onClick={onAdd}
-              title={inBundle ? `Add one more ${model.name}` : `Add ${model.name} to the bundle`}
+              title={inBundle
+                ? `Add one more ${model.name}`
+                : hasAvailable
+                  ? `Add ${model.name} to the bundle`
+                  : 'No units free — add anyway to queue for later availability'}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
                 border: 'none',
-                background: 'transparent',
+                background: inBundle ? 'transparent' : 'transparent',
                 padding: 0,
                 font: 'inherit',
                 textAlign: 'left',
                 cursor: 'pointer',
-                color: 'var(--text)',
+                color: inBundle ? 'var(--text)' : hasAvailable ? 'var(--text)' : 'var(--text2)',
                 minWidth: 0,
+                opacity: 1,
               }}
             >
               <Icon name={iconForCategory(model.category)} size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
@@ -2220,9 +2775,6 @@ function TreeRow({
         <td className="figure" style={num}>
           {model.reserved}
         </td>
-        <td className="figure" style={num}>
-          {model.onRent}
-        </td>
       </tr>
       {open &&
         childRows.map(({ child, required }) => (
@@ -2231,7 +2783,7 @@ function TreeRow({
               <button
                 type="button"
                 onClick={() => onAddChild(child)}
-                title={`Add ${child.name} as its own line`}
+                title={`Add ${child.name} as its own line${child.available === 0 ? ' (no units free)' : ''}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -2242,8 +2794,9 @@ function TreeRow({
                   font: 'inherit',
                   textAlign: 'left',
                   cursor: 'pointer',
-                  color: 'var(--text2)',
+                  color: childInBundle(child.id) ? 'var(--text)' : child.available > 0 ? 'var(--text2)' : 'var(--text2)',
                   minWidth: 0,
+                  opacity: 1,
                 }}
               >
                 <Icon name={iconForCategory(child.category)} size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />
@@ -2265,56 +2818,66 @@ function TreeRow({
             <td className="figure" style={num}>
               {child.reserved}
             </td>
-            <td className="figure" style={num}>
-              {child.onRent}
-            </td>
           </tr>
         ))}
     </>
   )
 }
 
-/** §6.1 — one Bundle Items line, with its discount, its children and its availability. */
+/** §6.1 — one Bundle Items line, with its discount, its children and its availability.
+ *
+ * `discountOpen` / `onToggleDiscount` / `role` / `approverName` left this
+ * signature with the discount gate (31 Aug 2026 — D3, no gate): they existed
+ * only to drive the approval panel. */
 function LineRow({
   line,
   childrenOpen,
-  discountOpen,
-  role,
-  approverName,
   onToggleChildren,
-  onToggleDiscount,
   onPatch,
   onRemove,
   onToggleChild,
   childIsLine,
+  lookup,
 }: {
   line: DraftLine
   childrenOpen: boolean
-  discountOpen: boolean
-  role: SystemRole | null
-  approverName: string | null
   onToggleChildren: () => void
-  onToggleDiscount: () => void
   onPatch: (u: Partial<DraftLine>) => void
   onRemove: () => void
   onToggleChild: (childId: string, required: boolean, on: boolean) => void
   childIsLine: (id: string) => boolean
+  lookup: ReadonlyMap<string, InventoryModel>
 }) {
-  const m = modelOf(line.modelId)
-  if (!m) return null
+  const m = lookup.get(line.modelId)
+  /*
+   * ⛔ Was `if (!m) return null` against the SEED map: a line the catalogue
+   * could not resolve simply vanished from the table, with the totals below
+   * still counting it. That silent skip is the failure mode this whole change
+   * exists to remove — so an unresolvable line now SAYS so and offers the one
+   * action that helps, instead of disappearing.
+   */
+  if (!m) {
+    return (
+      <tr>
+        <td colSpan={9} style={{ padding: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--danger)' }}>
+          This line points at an item the catalogue no longer holds
+          (<code>{line.modelId}</code>), so the bundle cannot be saved with it.{' '}
+          <button type="button" onClick={onRemove} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--danger)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}>
+            Remove this line
+          </button>
+        </td>
+      </tr>
+    )
+  }
 
   const t = totalsOf(line)
   const short = Math.max(0, line.qty - m.available)
-  const gate = validateDiscount(t.discountPct, line.discountReason, line.approvedBy)
-  const needsApproval = t.discountPct > 10
-  /*
-   * ⛔ This used to be a single `canApprove` computed once in the parent from a
-   * hardcoded ceiling of 25%, so an Admin (who can approve up to 15% per
-   * `lib/rbac.ts`) was told "your role cannot approve" on an 11–15% line —
-   * reproduced live by driving the app as Admin against a 12% discount.
-   * Approval capability depends on *this line's* percentage, not the 25% cap.
-   */
-  const canApprove = role ? canApproveDiscount(role, t.discountPct) : false
+  /* Law 10 as amended 31 Aug 2026 — the gate is GONE (D3, Babin: "don't put
+     any gate on discount"). The per-line approval affordance, the reason/
+     approver panel and the role check that lived here left with it; the only
+     refusal `validateDiscount` still makes is arithmetic (negative, >100%),
+     surfaced through the parent's discountProblems banner. */
+  const gate = validateDiscount(t.discountPct)
   const kids = m.children ?? []
   const cols = 9
 
@@ -2402,26 +2965,18 @@ function LineRow({
               />
             )}
           </span>
-          {needsApproval && (
-            <button
-              type="button"
-              onClick={onToggleDiscount}
-              aria-expanded={discountOpen}
+          {!gate.valid && (
+            <span
               style={{
                 display: 'block',
                 marginTop: 3,
-                border: 'none',
-                background: 'transparent',
-                padding: 0,
-                fontFamily: 'inherit',
                 fontSize: 'var(--t-th)',
                 fontWeight: 700,
-                cursor: 'pointer',
-                color: gate.valid ? 'var(--success-text)' : 'var(--danger-text)',
+                color: 'var(--danger-text)',
               }}
             >
-              {gate.valid ? 'Approved' : 'Needs approval'} ▾
-            </button>
+              {gate.error}
+            </span>
           )}
         </td>
 
@@ -2512,7 +3067,7 @@ function LineRow({
           <td colSpan={cols} style={{ ...td, paddingLeft: 46 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 'var(--t-meta)' }}>Included in this line</strong>
-              <span style={subtle}>Priced inside the line's rate, at Rs 0 of their own (§5.3).</span>
+              <span style={subtle}>{/* Priced inside the line's rate, at Rs 0 of their own (§5.3). */}Priced inside the line's rate, at Rs 0 of their own . </span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-sm)' }}>
                 <button
                   type="button"
@@ -2534,7 +3089,7 @@ function LineRow({
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
               {kids.map((c) => {
-                const child = modelOf(c.id)
+                const child = lookup.get(c.id)
                 if (!child) return null
                 const isLine = childIsLine(c.id)
                 return (
@@ -2561,7 +3116,7 @@ function LineRow({
                       {child.available} / {child.stock} free
                     </span>
                     {isLine && (
-                      <span style={{ ...subtle, color: 'var(--warning-text)' }}>
+                      <span style={{ ...subtle, color: 'var(--ready-text)' }}>
                         already its own line — a child or a line, never both
                       </span>
                     )}
@@ -2573,57 +3128,13 @@ function LineRow({
         </tr>
       )}
 
-      {/* Foundation §9 — a discount above 10% carries a reason and a named approver. */}
-      {discountOpen && needsApproval && (
-        <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
-          <td colSpan={cols} style={{ ...td, paddingLeft: 46 }}>
-            <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <Field label="Reason for this discount" required hint="At least 10 characters. Stored and audited.">
-                <input
-                  value={line.discountReason}
-                  onChange={(e) => onPatch({ discountReason: e.target.value })}
-                  placeholder="e.g. Repeat client, four-week booking"
-                  style={{ ...controlBase, width: 320 }}
-                />
-              </Field>
-              <FieldBlock label="Approver" required>
-                {canApprove && approverName ? (
-                  <button
-                    type="button"
-                    onClick={() => onPatch({ approvedBy: line.approvedBy ? null : approverName })}
-                    aria-pressed={!!line.approvedBy}
-                    style={{
-                      height: 34,
-                      padding: '0 11px',
-                      borderRadius: 'var(--r-btn)',
-                      border: `1px solid ${line.approvedBy ? 'var(--success)' : 'var(--border)'}`,
-                      background: line.approvedBy ? 'var(--st-in-bg)' : 'var(--card2)',
-                      color: line.approvedBy ? 'var(--st-in-fg)' : 'var(--text2)',
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 600,
-                      fontFamily: 'inherit',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {line.approvedBy ? `Approved by ${line.approvedBy}` : `Approve as ${approverName}`}
-                  </button>
-                ) : (
-                  <span style={{ ...subtle, color: 'var(--danger-text)', maxWidth: 300, lineHeight: 1.5 }}>
-                    Your role cannot approve a discount above 10%. Ask an Owner or an Admin, or bring this line back to
-                    10% or less.
-                  </span>
-                )}
-              </FieldBlock>
-            </div>
-            {!gate.valid && (
-              <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
-                {gate.error}
-              </p>
-            )}
-          </td>
-        </tr>
-      )}
+      {/* The reason/approver panel that lived here left with the discount
+          gate (31 Aug 2026 — D3, no gate). `discountReason`/`approvedBy`
+          survive on the draft line as OPTIONAL record-keeping fields; nothing
+          requires them any more. */}
     </>
   )
 }
+
+export { AddBundle as LegacyAddBundle }
+export default AddBundle

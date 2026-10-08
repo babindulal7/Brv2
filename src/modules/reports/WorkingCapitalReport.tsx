@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -27,7 +29,9 @@ import {
   receivableShare,
   cashPerDayOfCycle,
   cycleUpside,
-} from '../../data/liquidityReports'
+  getLiquiditySummary,
+  type LiquiditySummary,
+} from '../../lib/queries/liquidity'
 
 /**
  * **Finance ▸ Reports ▸ Working Capital** — built from the
@@ -104,7 +108,20 @@ const th = {
   fontWeight: 600,
   borderBottom: '1px solid var(--divider)',
 }
-const td = { padding: '10px', fontSize: 'var(--fs-body)', borderBottom: '1px solid var(--divider)' }
+/*
+ * `height` on a table cell behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than by padding arithmetic;
+ * the horizontal padding is unchanged.
+ *
+ * Under-height rows are a tap-accuracy problem rather than a look: 44px of hit
+ * area cannot fit inside a ~38px row, so the target overhangs the rows either
+ * side and the later row in the DOM wins the tap in the overlap band. The
+ * position table is read-only today and still owes the floor — its label cells
+ * are `<th scope="row">` spreading this same object and `num` derives from it,
+ * so every cell of a line rises together, and a drill-through added later
+ * inherits a row that can already hold its target.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--fs-body)', borderBottom: '1px solid var(--divider)' }
 const num = { ...td, textAlign: 'right' as const, fontFamily: 'var(--font-id)' }
 
 /**
@@ -153,10 +170,22 @@ function workingCapitalCsv(): ReportCsvRow[] {
 }
 
 export default function WorkingCapitalReport() {
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()
+  const [, setSummary] = useState<LiquiditySummary | null>(null)
+
+  useEffect(() => {
+    if (!canSeeMoney) return
+    let active = true
+    void getLiquiditySummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [canSeeMoney])
 
   // Law 6 — a balance sheet is money in every line. Shared RESTRICTED state, so
   // the reader is told which roles to ask rather than only that they cannot look.
@@ -368,84 +397,86 @@ export default function WorkingCapitalReport() {
 
       <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`The position · ${asAt}`}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={th} scope="col">Line</th>
-                <th style={th} scope="col">Nature</th>
-                <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
-                <th style={{ ...th, textAlign: 'right' }} scope="col">Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assets.map((l) => (
-                <tr key={l.label}>
-                  <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
-                  <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
-                  <td style={l.amount === null ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' } : num}>
-                    {l.amount === null ? NOT_TRACKED : money(l.amount)}
-                  </td>
-                  <td style={{ ...num, color: 'var(--text-3)' }}>{l.amount === null ? '—' : `${shareOf(l.amount)}%`}</td>
+          <DataTableShell ariaLabel={`The position as at ${asAt}`} data-table-scroll style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={th} scope="col">Line</th>
+                  <th style={th} scope="col">Nature</th>
+                  <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
+                  <th style={{ ...th, textAlign: 'right' }} scope="col">Share</th>
                 </tr>
-              ))}
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">Current assets</th>
-                <td style={td} />
-                <td style={{ ...num, fontWeight: 600 }}>{money(currentAssets())}</td>
-                <td style={{ ...num, fontWeight: 600 }}>100%</td>
-              </tr>
-              {liabilities.map((l) => (
-                <tr key={l.label}>
-                  <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
-                  <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
-                  {/* An untracked line loses the parentheses and the danger tone
-                      along with its figure — both are the visual grammar of "this
-                      is a number", and it is not one. Law 11: the words carry the
-                      meaning, never the colour. */}
-                  <td
-                    style={
-                      l.amount === null
-                        ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' }
-                        : { ...num, color: 'var(--danger-text)' }
-                    }
-                  >
-                    {l.amount === null ? NOT_TRACKED : `(${money(l.amount)})`}
+              </thead>
+              <tbody>
+                {assets.map((l) => (
+                  <tr key={l.label}>
+                    <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
+                    <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
+                    <td style={l.amount === null ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' } : num}>
+                      {l.amount === null ? NOT_TRACKED : money(l.amount)}
+                    </td>
+                    <td style={{ ...num, color: 'var(--text-3)' }}>{l.amount === null ? '—' : `${shareOf(l.amount)}%`}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">Current assets</th>
+                  <td style={td} />
+                  <td style={{ ...num, fontWeight: 600 }}>{money(currentAssets())}</td>
+                  <td style={{ ...num, fontWeight: 600 }}>100%</td>
+                </tr>
+                {liabilities.map((l) => (
+                  <tr key={l.label}>
+                    <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
+                    <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
+                    {/* An untracked line loses the parentheses and the danger tone
+                        along with its figure — both are the visual grammar of "this
+                        is a number", and it is not one. Law 11: the words carry the
+                        meaning, never the colour. */}
+                    <td
+                      style={
+                        l.amount === null
+                          ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' }
+                          : { ...num, color: 'var(--danger-text)' }
+                      }
+                    >
+                      {l.amount === null ? NOT_TRACKED : `(${money(l.amount)})`}
+                    </td>
+                    <td style={td} />
+                  </tr>
+                ))}
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">
+                    {LIABILITIES_ARE_COMPLETE ? 'Current liabilities' : 'Current liabilities · tracked only'}
+                  </th>
+                  <td style={{ ...td, color: 'var(--text-2)' }}>
+                    {LIABILITIES_ARE_COMPLETE ? '' : `Excludes ${UNTRACKED_LABELS.toLowerCase()}`}
                   </td>
+                  <td style={{ ...num, fontWeight: 600 }}>({money(currentLiabilities())})</td>
                   <td style={td} />
                 </tr>
-              ))}
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">
-                  {LIABILITIES_ARE_COMPLETE ? 'Current liabilities' : 'Current liabilities · tracked only'}
-                </th>
-                <td style={{ ...td, color: 'var(--text-2)' }}>
-                  {LIABILITIES_ARE_COMPLETE ? '' : `Excludes ${UNTRACKED_LABELS.toLowerCase()}`}
-                </td>
-                <td style={{ ...num, fontWeight: 600 }}>({money(currentLiabilities())})</td>
-                <td style={td} />
-              </tr>
-              <tr>
-                <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)', borderBottom: 'none' }} scope="row">
-                  Working capital
-                </th>
-                <td style={{ ...td, color: 'var(--text-2)', borderTop: '2px solid var(--border)', borderBottom: 'none' }}>
-                  {LIABILITIES_ARE_COMPLETE ? '' : `At most ${money(workingCapitalCeiling())}`}
-                </td>
-                <td
-                  style={{
-                    ...num,
-                    fontWeight: 700,
-                    borderTop: '2px solid var(--border)',
-                    borderBottom: 'none',
-                    ...(workingCapital() === null ? { color: 'var(--text-3)', fontFamily: 'inherit' } : {}),
-                  }}
-                >
-                  {moneyOrNot(workingCapital())}
-                </td>
-                <td style={{ ...td, borderTop: '2px solid var(--border)', borderBottom: 'none' }} />
-              </tr>
-            </tbody>
-          </table>
+                <tr>
+                  <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)', borderBottom: 'none' }} scope="row">
+                    Working capital
+                  </th>
+                  <td style={{ ...td, color: 'var(--text-2)', borderTop: '2px solid var(--border)', borderBottom: 'none' }}>
+                    {LIABILITIES_ARE_COMPLETE ? '' : `At most ${money(workingCapitalCeiling())}`}
+                  </td>
+                  <td
+                    style={{
+                      ...num,
+                      fontWeight: 700,
+                      borderTop: '2px solid var(--border)',
+                      borderBottom: 'none',
+                      ...(workingCapital() === null ? { color: 'var(--text-3)', fontFamily: 'inherit' } : {}),
+                    }}
+                  >
+                    {moneyOrNot(workingCapital())}
+                  </td>
+                  <td style={{ ...td, borderTop: '2px solid var(--border)', borderBottom: 'none' }} />
+                </tr>
+              </tbody>
+            </table>
+          </DataTableShell>
         </Card>
 
         <ReflowRail width={300}>

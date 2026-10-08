@@ -64,14 +64,14 @@ export const FONT_STACK: Record<Language, { heading: string; body: string; mono:
   en: {
     heading: "'Outfit', system-ui, sans-serif",
     body: "'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif",
-    mono: "'JetBrains Mono', ui-monospace, monospace",
+    mono: "'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif",
   },
   ne: {
     heading: "'Asar', 'Noto Sans Devanagari', system-ui, sans-serif",
     body: "'Hind', 'Noto Sans Devanagari', system-ui, sans-serif",
     /* Unchanged. Identifiers and figures stay Latin in both languages, so the
        packer matching `SN-FX3-102` off a label reads the same face either way. */
-    mono: "'JetBrains Mono', ui-monospace, monospace",
+    mono: "'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif",
   },
 }
 
@@ -279,7 +279,7 @@ export function nepaliFontStatus(): FontAvailability {
   return {
     available: true,
     missing: [],
-    reason: 'Asar 400 and Hind 400/600 load on the NE toggle — never eagerly, per §4.3.7.',
+    reason: /* Asar 400 and Hind 400/600 load on the NE toggle — never eagerly, per §4.3.7. */ "Asar 400 and Hind 400/600 load on the NE toggle — never eagerly, per",
   }
 }
 
@@ -344,4 +344,58 @@ export async function applyLanguage(lang: Language): Promise<void> {
     root.style.removeProperty('--font-display')
     root.style.removeProperty('--font-body')
   }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('languagechange', { detail: { lang } }))
+  }
 }
+
+import { useState, useEffect } from 'react'
+
+/** Synchronously checks active document language. */
+export function getCurrentLanguage(): Language {
+  if (typeof document !== 'undefined') {
+    const docLang = document.documentElement.getAttribute('lang')
+    if (docLang === 'ne') return 'ne'
+  }
+  if (typeof window !== 'undefined') {
+    const stored = window.localStorage.getItem('br.settings.language')
+    if (stored === 'नेपाली') return 'ne'
+  }
+  return 'en'
+}
+
+/** Reactive hook for components that adapt their typography or preset labels to the active language. */
+export function useCurrentLanguage(): Language {
+  const [lang, setLang] = useState<Language>(() => getCurrentLanguage())
+
+  useEffect(() => {
+    const handler = () => {
+      setLang(getCurrentLanguage())
+    }
+    window.addEventListener('languagechange', handler)
+    window.addEventListener('storage', handler)
+    return () => {
+      window.removeEventListener('languagechange', handler)
+      window.removeEventListener('storage', handler)
+    }
+  }, [])
+
+  return lang
+}
+
+/** Toggles between English and Nepali, persisting to settings and applying fonts immediately. */
+export async function toggleLanguage(): Promise<Language> {
+  const current = getCurrentLanguage()
+  const next: Language = current === 'en' ? 'ne' : 'en'
+  const nextLabel = next === 'ne' ? 'नेपाली' : 'English'
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem('br.settings.language', nextLabel)
+    } catch {
+      /* ignore */
+    }
+  }
+  await applyLanguage(next)
+  return next
+}
+

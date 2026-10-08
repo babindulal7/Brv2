@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { Children, useMemo, useState, useEffect } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { Badge } from '../../components/ui/Badge'
+import type { StatusKey } from '../../lib/status'
 import { EmptyState } from '../../components/ui/StateViews'
 import { formatMoney, rupees, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -15,8 +17,8 @@ import {
   OWNER_APPROVAL_THRESHOLD,
   MIN_PHOTOS,
 } from '../../lib/damage'
-import { DAMAGE_FINDINGS } from '../../data/damage'
-import type { DamageFinding } from '../../data/damage'
+import { getDamageFindings } from '../../lib/queries/damage'
+import type { DamageFinding } from '../../lib/queries/damage'
 
 /**
  * # Inventory ▸ Maintenance ▸ Damage
@@ -34,14 +36,48 @@ import type { DamageFinding } from '../../data/damage'
  * pages never implement business logic (`CLAUDE.md`).
  */
 
-function Chip({ tone, children }: { tone: 'danger' | 'progress' | 'success' | 'neutral'; children: React.ReactNode }) {
-  const bg = tone === 'danger' ? 'var(--st-danger-bg)' : tone === 'progress' ? 'var(--st-progress-bg)' : tone === 'success' ? 'var(--st-in-bg)' : 'var(--card2)'
-  const fg = tone === 'danger' ? 'var(--st-danger-fg)' : tone === 'progress' ? 'var(--st-progress-fg)' : tone === 'success' ? 'var(--success-text)' : 'var(--text2)'
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: bg, color: fg, fontSize: 'var(--t-th)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-      {children}
-    </span>
-  )
+/**
+ * This screen's four chip tones, mapped onto the §4 hues.
+ *
+ * `success` is the only name that does not survive verbatim: `lib/status`
+ * calls green `in` ("home & ready · settled"), which is what an approved
+ * finding is. The local name is kept at the call sites — five of them read
+ * `tone="success"` / `tone="progress"` and they say what this screen means,
+ * not what the palette calls it — so the translation lives here, once.
+ */
+const CHIP_TONE = {
+  danger: 'danger',
+  progress: 'progress',
+  success: 'in',
+  neutral: 'neutral',
+} as const satisfies Record<string, StatusKey>
+
+/**
+ * Delegates to `<Badge>` — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one
+ * component rendering the §4 map from lib/status; every screen inherits. No
+ * screen colours a status itself."
+ *
+ * The two ternary chains this replaces were assembling a bg/fg pair by hand,
+ * and the `success` arm got the pairing wrong: `--st-in-bg` (the solid green
+ * fill) under `--success-text` (the green INK meant for a page surface). Green
+ * on green. The on-colour for that fill is `--on-success`, and §3.2 is
+ * explicit that the on-colour is "part of the token, not a screen choice" —
+ * which is exactly the choice a hand-built pair forces a screen to make, and
+ * this one made it wrong.
+ *
+ * The `neutral` arm was not a status hue at all (`--card2` / `--text2`); it is
+ * now v4.1's gray, "not started yet", which is what both its call sites mean:
+ * a finding that has not been approved, and an approval level nobody has acted
+ * on yet.
+ *
+ * The wrapper stays so the call sites keep reading in this screen's own
+ * vocabulary, and because it takes `children` rather than a string — the two
+ * chips that render `{approver} approves` and `{approverFor(…)} level` compose
+ * their word from an engine call. `<Badge>`'s `label` is a string, so the
+ * children are joined here.
+ */
+function Chip({ tone, children }: { tone: keyof typeof CHIP_TONE; children: React.ReactNode }) {
+  return <Badge tone={CHIP_TONE[tone]} label={Children.toArray(children).join('')} size="sm" />
 }
 
 export function DamageTab() {
@@ -82,7 +118,20 @@ export function DamageTab() {
    */
   const approver = user?.name.trim() ? user.name.trim() : null
 
-  const [findings, setFindings] = useState<DamageFinding[]>(DAMAGE_FINDINGS)
+  const [findings, setFindings] = useState<DamageFinding[]>([])
+
+  useEffect(() => {
+    let active = true
+    getDamageFindings().then((res) => {
+      if (active) {
+        setFindings(res)
+      }
+    }).catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
   /* The approval confirmation cannot live inside the pending list: approving
      removes the row from it, so the message would render into a branch that no
      longer exists. Held here and shown above the list instead. */
@@ -96,33 +145,47 @@ export function DamageTab() {
   if (!money) {
     return (
       <Card title={`Damage findings (${findings.length})`}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {findings.map((f) => (
-            <div key={f.id} style={{ ...cardStyle, padding: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                <strong style={{ fontSize: 'var(--t-meta)' }}>{f.unitName}</strong>
-                <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{f.serial}</span>
-                <Chip tone={f.state === 'Approved' ? 'success' : 'progress'}>{f.state}</Chip>
+        {findings.length === 0 ? (
+          <EmptyState title="No damage findings" description="No active damage findings are currently recorded." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {findings.map((f) => (
+              <div key={f.id} style={{ ...cardStyle, padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 'var(--t-meta)' }}>{f.unitName}</strong>
+                  <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{f.serial}</span>
+                  <Chip tone={f.state === 'Approved' ? 'success' : 'progress'}>{f.state}</Chip>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.description}</p>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  <Icon name="lock" size={11} />
+                  Charges and deposit settlement are not shown to this role.
+                </span>
               </div>
-              <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.description}</p>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <Icon name="lock" size={11} />
-                Charges and deposit settlement are not shown to this role.
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     )
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {/* RS-05 — this used to read "moved to Maintenance and is no longer
+          available for booking". Nothing here writes `damage_findings`, opens a
+          maintenance job or changes `product_units`: there is no damage action
+          in src/actions, so the decision lives in this screen's state only and
+          the notice says exactly that. TODO(decision): an `approveDamageFinding`
+          action (finding write + maintenance job + unit status, per
+          `approvalEffect` in lib/damage.ts) is needed before this can claim
+          the move. */}
       {justApproved && (
-        <div style={{ ...cardStyle, padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)', borderColor: 'var(--success)' }}>
-          <Icon name="tool" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--success-text)' }} />
+        <div role="status" style={{ ...cardStyle, padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)' }}>
+          <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--warn-text)' }} />
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            Approved — {justApproved.unitName} moved to Maintenance and is no longer available for booking.
+            Approval for {justApproved.unitName} is recorded on this screen only — nothing has been written. No damage
+            action exists yet, so the finding is not saved, no maintenance job was opened and the unit's availability is
+            unchanged.
           </span>
         </div>
       )}
@@ -234,27 +297,42 @@ export function DamageTab() {
                       variant="primary"
                       icon="check"
                       disabled={!validation.valid || !mayApprove}
-                      onClick={() => {
+                      onClick={async () => {
                         /* Second gate, deliberately not relying on `disabled`:
                            an edit that loosens the button must not be able to
                            reopen the fabricated-approver path. The refusal is
                            already on the card, so this returns silently. */
                         if (approver === null) return
-                        const effect = approvalEffect(
-                          { description: f.description, photos: f.photos, chargePaisa, replacementPaisa: f.replacementPaisa },
-                          approver,
-                        )
-                        setFindings((prev) =>
-                          prev.map((x) =>
-                            x.id === f.id
-                              ? { ...x, state: 'Approved', chargePaisa, approvedBy: approver }
-                              : x,
-                          ),
-                        )
-                        /* The move and the unavailability are one fact the
-                           engine returns together — the screen reports both or
-                           neither. */
-                        setJustApproved(effect.availableForBooking === false ? { unitName: f.unitName } : null)
+
+                        try {
+                          const effect = approvalEffect(
+                            { description: f.description, photos: f.photos, chargePaisa, replacementPaisa: f.replacementPaisa },
+                            approver,
+                          )
+
+                          // FORMS-05: Call the backend action to persist the resolution
+                          const { resolveDamageFinding } = await import('../../actions/inventory/resolveDamage')
+                          await resolveDamageFinding({
+                            findingId: f.id,
+                            disposition: 'Charge Client', // Hardcoded as the standard path for this UI, could be expanded
+                            chargePaisa
+                          })
+
+                          setFindings((prev) =>
+                            prev.map((x) =>
+                              x.id === f.id
+                                ? { ...x, state: 'Approved', chargePaisa, approvedBy: approver }
+                                : x,
+                            ),
+                          )
+                          /* The move and the unavailability are one fact the
+                             engine returns together — the screen reports both or
+                             neither. */
+                          setJustApproved(effect.availableForBooking === false ? { unitName: f.unitName } : null)
+                        } catch (err) {
+                          console.error('Failed to approve damage', err)
+                          alert('Failed to approve damage: ' + (err instanceof Error ? err.message : String(err)))
+                        }
                       }}
                     >
                       Approve as {validation.approver}
@@ -302,17 +380,28 @@ export function DamageTab() {
       </Card>
 
       <Card title="Settled">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {findings
-            .filter((f) => f.state === 'Approved' || f.state === 'Rejected')
-            .map((f) => {
-              const s = settleDeposit(f.depositPaisa, f.chargePaisa)
+        {findings.filter((f) => f.state === 'Approved' || f.state === 'Rejected').length === 0 ? (
+          <EmptyState title="No settled findings" description="No damage findings have been approved or rejected yet." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {findings
+              .filter((f) => f.state === 'Approved' || f.state === 'Rejected')
+              .map((f) => {
+              /* RS-04 — a rejected finding charges nothing. Settling against
+                 the figure that was refused printed a refund and an
+                 "uncovered" shortfall for money nobody is owed. */
+              const rejected = f.state === 'Rejected'
+              const s = settleDeposit(f.depositPaisa, rejected ? (0 as Paisa) : f.chargePaisa)
               return (
                 <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
                   <span className="identifier" style={{ fontSize: 'var(--t-th)', fontWeight: 700 }}>{f.id}</span>
                   <span style={{ flex: 1, minWidth: 160 }}>{f.unitName}</span>
                   <Chip tone={f.state === 'Approved' ? 'success' : 'neutral'}>{f.state}</Chip>
-                  <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(f.chargePaisa)}</span>
+                  {rejected ? (
+                    <span style={{ fontWeight: 600, color: 'var(--muted)' }}>No charge — rejected</span>
+                  ) : (
+                    <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(f.chargePaisa)}</span>
+                  )}
                   <span className="figure" style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>
                     refund {formatMoney(s.refundPaisa)}
                     {s.shortfallPaisa > 0 && ` · ${formatMoney(s.shortfallPaisa)} uncovered`}
@@ -324,7 +413,8 @@ export function DamageTab() {
                 </div>
               )
             })}
-        </div>
+          </div>
+        )}
       </Card>
     </div>
   )

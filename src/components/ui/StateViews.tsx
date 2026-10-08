@@ -23,6 +23,12 @@ import { Button, cardStyle } from './Page'
 
 /** §2.2 Empty — "illustration · title · one-sentence explanation · one primary action." */
 export interface EmptyStateProps {
+  /**
+   * The kind of empty state (System States & Patterns §2.2):
+   * - `'nothing-yet'`: No records exist in the system yet (initial onboarding state).
+   * - `'no-results'`: Records exist, but none match the current filter or search query.
+   */
+  kind?: 'nothing-yet' | 'no-results'
   title?: string
   description?: string
   actionLabel?: string
@@ -32,13 +38,25 @@ export interface EmptyStateProps {
 }
 
 export function EmptyState({
-  title = 'No items found',
-  description = 'There are no records matching your current filter criteria.',
+  kind = 'no-results',
+  title,
+  description,
   actionLabel,
   onAction,
   icon,
   className,
 }: EmptyStateProps) {
+  const defaultTitle = kind === 'nothing-yet' ? 'No records yet' : 'No items found'
+  const defaultDescription =
+    kind === 'nothing-yet'
+      ? 'Get started by creating your first record.'
+      : 'There are no records matching your current filter criteria.'
+  const defaultIcon = kind === 'nothing-yet' ? <Icon name="plus" size={22} /> : <Icon name="search" size={22} />
+
+  const finalTitle = title ?? defaultTitle
+  const finalDescription = description ?? defaultDescription
+  const finalIcon = icon ?? defaultIcon
+
   return (
     <div
       className={className}
@@ -68,11 +86,11 @@ export function EmptyState({
           marginBottom: 14,
         }}
       >
-        {icon ?? <Icon name="folder" size={22} />}
+        {finalIcon}
       </div>
-      <h3 style={{ margin: '0 0 4px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
+      <h3 style={{ margin: '0 0 4px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{finalTitle}</h3>
       <p style={{ margin: '0 0 16px', maxWidth: 340, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-        {description}
+        {finalDescription}
       </p>
       {actionLabel && onAction && (
         <Button variant="secondary" onClick={onAction}>
@@ -90,11 +108,16 @@ export function LoadingSkeleton({
   label,
 }: {
   rows?: number
-  type?: 'card' | 'table' | 'kpi'
+  type?: 'card' | 'table' | 'kpi' | 'movement'
   /** The "Loading rentals…" text §2.1 requires — omit only where the skeleton sits right under a heading that already says what's loading. */
   label?: string
 }) {
-  const pulse = { background: 'var(--card2)', borderRadius: 'var(--r-xs)', animation: 'pulse 1.5s ease-in-out infinite' } as const
+  const pulse = {
+    background: 'linear-gradient(90deg, var(--card2) 0%, color-mix(in srgb, var(--surface) 65%, var(--card2)) 50%, var(--card2) 100%)',
+    backgroundSize: '200% 100%',
+    borderRadius: 'var(--r-xs)',
+    animation: 'skeletonShimmer 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite',
+  } as const
   const labelEl = label && (
     <p style={{ margin: '0 0 10px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{label}</p>
   )
@@ -127,6 +150,44 @@ export function LoadingSkeleton({
             <div style={{ ...pulse, width: 90, height: 30 }} />
             <div style={{ ...pulse, width: 90, height: 30 }} />
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (type === 'movement') {
+    // Matches DashboardMovementPanel movement-card layout:
+    // avatar | client/project/items | booking | time | status/action
+    return (
+      <div>
+        {labelEl}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <div className="movement-cards-list__head" aria-hidden="true" style={{ display: 'flex', gap: 'var(--sp-md)', padding: '0 var(--sp-md)', fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <div style={{ flex: 2, minWidth: 0 }} />
+            <div style={{ width: 100 }} />
+            <div style={{ width: 120 }} />
+            <div style={{ width: 100 }} />
+            <div style={{ width: 180 }} />
+          </div>
+          {Array.from({ length: rows }, (_, i) => (
+            <div key={i} style={{ ...cardStyle, padding: '12px var(--sp-md)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
+              <div style={{ ...pulse, width: 40, height: 40, borderRadius: 'var(--r-badge)', flexShrink: 0 }} />
+              <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ ...pulse, width: '40%', height: 14 }} />
+                <div style={{ ...pulse, width: '60%', height: 10 }} />
+                <div style={{ ...pulse, width: '30%', height: 9 }} />
+              </div>
+              <div style={{ width: 100 }}>
+                <div style={{ ...pulse, width: '80%', height: 13 }} />
+              </div>
+              <div style={{ width: 120 }}>
+                <div style={{ ...pulse, width: '70%', height: 13 }} />
+              </div>
+              <div style={{ width: 180 }}>
+                <div style={{ ...pulse, width: '60%', height: 28, borderRadius: 'var(--r-btn)' }} />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     )

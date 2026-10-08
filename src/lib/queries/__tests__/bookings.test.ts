@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   listBookings,
+  operationalToday,
   operationQueue,
   overdue,
   quotesExpiring,
@@ -11,6 +12,8 @@ import {
 } from '../bookings'
 import { filterKey } from '../listQuery'
 import { BOOKING_STATUS } from '../../workflow'
+import { bookingsCreatedOn } from '../closing'
+import { getBusinessToday } from '../../bs'
 
 /**
  * # What this suite pins
@@ -40,6 +43,7 @@ const db = vi.hoisted(() => {
     tables: string[]
     /** The literal string handed to `.select()` — the thing a dropped column disappears from. */
     columns: string
+    selects: string[]
     /** `.select()`'s second argument: `{ count: 'exact' }` or `undefined`. */
     selectOptions: unknown
     /** Every filter call, in order, exactly as `applyListFilters` made it. */
@@ -47,29 +51,40 @@ const db = vi.hoisted(() => {
     /** What the awaited query resolves to. */
     rows: unknown[]
     count: number | null
-    error: { message: string } | null
+    error: { message: string; code?: string } | null
+    missingProjectType: boolean
+    deniedProjectType: boolean
+    queryCallsStart: number
   }
 
   const state: State = {
     table: '',
     tables: [],
     columns: '',
+    selects: [],
     selectOptions: undefined,
     calls: [],
     rows: [],
     count: null,
     error: null,
+    missingProjectType: false,
+    deniedProjectType: false,
+    queryCallsStart: 0,
   }
 
   function reset(): void {
     state.table = ''
     state.tables = []
     state.columns = ''
+    state.selects = []
     state.selectOptions = undefined
     state.calls = []
     state.rows = []
     state.count = null
     state.error = null
+    state.missingProjectType = false
+    state.deniedProjectType = false
+    state.queryCallsStart = 0
   }
 
   /**
@@ -80,6 +95,8 @@ const db = vi.hoisted(() => {
   const builder = {
     select(columns: string, options?: unknown) {
       state.columns = columns
+      state.selects.push(columns)
+      state.queryCallsStart = state.calls.length
       state.selectOptions = options
       return builder
     },
@@ -118,11 +135,21 @@ const db = vi.hoisted(() => {
     then(
       onFulfilled: (value: {
         data: unknown[] | null
-        error: { message: string } | null
+        error: { message: string; code?: string } | null
         count: number | null
       }) => unknown,
     ): void {
-      onFulfilled({ data: state.rows, error: state.error, count: state.count })
+      const searchesProjectType = state.calls.slice(state.queryCallsStart).some(
+        ([method, value]) => method === 'or' && typeof value === 'string' && value.includes('project_type.'),
+      )
+      const missingColumn = state.missingProjectType && (state.columns.includes('project_type') || searchesProjectType)
+      const deniedColumn = state.deniedProjectType && (state.columns.includes('project_type') || searchesProjectType)
+      onFulfilled({
+        data: missingColumn || deniedColumn ? null : state.rows,
+        error: missingColumn ? { code: '42703', message: 'column bookings.project_type does not exist' }
+          : deniedColumn ? { code: '42501', message: 'permission denied for table bookings' } : state.error,
+        count: state.count,
+      })
     },
   }
 
@@ -209,10 +236,11 @@ describe('BASE_COLUMNS — the select string', () => {
    * worth pinning is now the stronger one — **this module never names the column
    * on the base table, whatever the caller asks for.**
    *
-   * That matters because until `0062` is applied the base column is still
-   * readable by any staff session, Warehouse included (`bookings_select` is
-   * `auth_is_staff()`). "No module names it" is the live protection, and a test
-   * is the only thing that keeps it true.
+   * `0062` IS applied on live now (28 Aug 2026), so the grant hides the column
+   * at the database. This test stays anyway: "no module names it" is the second,
+   * independent layer, and a test is the only thing that keeps it true — a
+   * future migration that widened the grant would otherwise silently make the
+   * query the leak again.
    */
   it('never names deposit_required on the base table — not even with withDeposit', async () => {
     await listBookings()
@@ -271,11 +299,13 @@ const RAW = {
   booking_no: 'B-715',
   client_id: 'c0ffee00-1111-4222-8333-444455556666',
   project: 'FX3 Documentary',
+  project_type: 'Documentary',
+  project_type_other: null,
   stage: 'Quote' as const,
   pickup_at: '2026-08-14T04:15:00+00:00',
   return_at: '2026-08-18T10:30:00+00:00',
   actual_return_at: null,
-  delivery_type: 'Customer Pickup' as const,
+  delivery_type: 'Client Pickup' as const,
   pickup_location: 'Thamel warehouse',
   return_location: 'Lalitpur yard',
   quote_expires_at: '2026-08-20T18:15:00+00:00',
@@ -304,6 +334,8 @@ describe('toRow — raw DB row → BookingListRow', () => {
     expect(row.returnLocation).toBe('Lalitpur yard')
     expect(row.quoteExpiresAtAd).toBe('2026-08-20T18:15:00+00:00')
     expect(row.createdAtAd).toBe('2026-07-12T09:41:00+00:00')
+    expect(row.projectType).toBe('Documentary')
+    expect(row.projectTypeOther).toBeNull()
   })
 
   it('does not disturb the fields that were already mapped', async () => {
@@ -318,7 +350,7 @@ describe('toRow — raw DB row → BookingListRow', () => {
       pickupAtAd: RAW.pickup_at,
       returnAtAd: RAW.return_at,
       actualReturnAtAd: null,
-      deliveryType: 'Customer Pickup',
+      deliveryType: 'Client Pickup',
       itemCount: 7, // units, not lines — 5 + 2
       depositRequired: null, // not requested, so not known
       isCancelled: false,
@@ -337,10 +369,14 @@ describe('toRow — raw DB row → BookingListRow', () => {
       pickup_location: null,
       return_location: null,
       quote_expires_at: null,
+      project_type: null,
+      project_type_other: null,
     })
     expect(row.pickupLocation).toBeNull()
     expect(row.returnLocation).toBeNull()
     expect(row.quoteExpiresAtAd).toBeNull()
+    expect(row.projectType).toBeNull()
+    expect(row.projectTypeOther).toBeNull()
     // `created_at` is NOT NULL in the schema, so it has no null case to test.
     expect(row.createdAtAd).toBe(RAW.created_at)
   })
@@ -348,6 +384,85 @@ describe('toRow — raw DB row → BookingListRow', () => {
   it('surfaces a query error rather than returning an empty list', async () => {
     db.state.error = { message: 'permission denied for column deposit_required' }
     await expect(listBookings()).rejects.toThrow(/listBookings failed/)
+  })
+
+  it('retries a dashboard booking read without 0144 columns when the connected schema lacks them', async () => {
+    db.state.missingProjectType = true
+    db.state.rows = [{ ...RAW, project_type: undefined, project_type_other: undefined }]
+    db.state.count = 1
+
+    const result = await listBookings({ ...todaysOutgoing('2026-08-12'), withCount: true })
+
+    expect(db.state.selects).toHaveLength(2)
+    expect(db.state.selects[0]).toContain('project_type')
+    expect(db.state.selects[1]).not.toContain('project_type')
+    expect(db.state.calls.filter(([method]) => method === 'gte')).toHaveLength(2)
+    expect(result.total).toBe(1)
+    expect(result.rows[0]).toMatchObject({ bookingNo: 'B-715', projectType: null, projectTypeOther: null, itemCount: 7 })
+  })
+
+  it('does not drop a project type filter when the connected schema lacks that column', async () => {
+    db.state.missingProjectType = true
+    await expect(listBookings({ chips: { project_type: ['Documentary'] } })).rejects.toThrow(
+      /column bookings\.project_type does not exist/,
+    )
+    expect(db.state.selects).toHaveLength(1)
+  })
+
+  it('does not retry unrelated database errors', async () => {
+    db.state.error = { code: 'PGRST301', message: 'JWT expired' }
+    await expect(listBookings()).rejects.toThrow(/JWT expired/)
+    expect(db.state.selects).toHaveLength(1)
+  })
+
+  it('loads operational rows when 0144 columns exist without read grants', async () => {
+    db.state.deniedProjectType = true
+    db.state.rows = [{ ...RAW, project_type: undefined, project_type_other: undefined }]
+    const result = await listBookings({ ...todaysOutgoing('2026-10-07'), withCount: true })
+    expect(result.rows[0]).toMatchObject({ bookingNo: RAW.booking_no, projectType: null, itemCount: 7 })
+    expect(db.state.selects).toHaveLength(2)
+    expect(db.state.selects[1]).not.toContain('project_type')
+    expect(db.state.calls.filter(([method]) => method === 'gte')).toHaveLength(2)
+  })
+
+  it('keeps denied project-type filters and genuine table denial as errors', async () => {
+    db.state.deniedProjectType = true
+    await expect(listBookings({ chips: { project_type: ['Documentary'] } })).rejects.toThrow(/permission denied/)
+    expect(db.state.selects).toHaveLength(1)
+    db.reset()
+    db.state.error = { code: '42501', message: 'permission denied for table bookings' }
+    await expect(listBookings()).rejects.toThrow(/permission denied/)
+    expect(db.state.selects).toHaveLength(2)
+  })
+
+  it('counts searched bookings through the granted projection', async () => {
+    db.state.deniedProjectType = true
+    db.state.count = 3
+    expect(await listBookings({ headOnly: true, search: 'FX3' })).toEqual({ rows: [], total: 3 })
+    expect(db.state.calls.filter(([method]) => method === 'or')).toEqual([
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*,project_type.ilike.*FX3*,project_type_other.ilike.*FX3*'],
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*'],
+    ])
+  })
+
+  /* 7 Oct 2026: live had 0144's columns but no column grant, so the whole projection was refused
+     with 42501. One retry on the pre-0144 projection; a refusal that persists still surfaces. */
+  it('retries a permission refusal once on the pre-0144 projection, and still reports it if that fails too', async () => {
+    db.state.error = { code: '42501', message: 'permission denied for table bookings' }
+    await expect(listBookings()).rejects.toThrow(/permission denied for table bookings/)
+    expect(db.state.selects).toHaveLength(2)
+  })
+
+  it('retries count-only searches against pre-0144 searchable columns', async () => {
+    db.state.missingProjectType = true
+    db.state.count = 3
+    const result = await listBookings({ headOnly: true, search: 'FX3' })
+    expect(result).toEqual({ rows: [], total: 3 })
+    expect(db.state.selects).toEqual(['id', 'id'])
+    expect(db.state.calls.filter(([method]) => method === 'or')).toEqual([
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*,project_type.ilike.*FX3*,project_type_other.ilike.*FX3*'],
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*'],
+    ])
   })
 })
 
@@ -381,12 +496,14 @@ describe('named filter sets → ListFilters', () => {
     expect(quotesExpiring(now).dateRange?.fromAd).toBeUndefined()
   })
 
-  it('todaysOutgoing bounds a Kathmandu day, not a UTC one', () => {
+  it('todaysOutgoing bounds a Kathmandu OPERATIONAL day — 06:00 → 06:00 by default (D4)', () => {
     expect(todaysOutgoing('2026-08-12')).toEqual({
       dateRange: {
         column: 'pickup_at',
-        fromAd: '2026-08-12T00:00:00.000+05:45',
-        toAd: '2026-08-12T23:59:59.999+05:45',
+        // D4, ruled 30 Aug 2026: the day starts at operationalDayStart
+        // (default 06:00), so "12 Aug" runs to 05:59:59.999 on the 13th.
+        fromAd: '2026-08-12T06:00:00.000+05:45',
+        toAd: '2026-08-13T05:59:59.999+05:45',
       },
       chips: { stage: ['Booked', 'Packed'] },
       presence: { cancelled_at: false },
@@ -398,8 +515,8 @@ describe('named filter sets → ListFilters', () => {
     expect(todaysIncoming('2026-08-12')).toEqual({
       dateRange: {
         column: 'return_at',
-        fromAd: '2026-08-12T00:00:00.000+05:45',
-        toAd: '2026-08-12T23:59:59.999+05:45',
+        fromAd: '2026-08-12T06:00:00.000+05:45',
+        toAd: '2026-08-13T05:59:59.999+05:45',
       },
       chips: { stage: ['On Rent'] },
       presence: { cancelled_at: false, actual_return_at: false },
@@ -496,8 +613,8 @@ describe('named filter sets → the calls that actually reach the builder', () =
     expect(db.state.calls).toEqual([
       ['is', 'booking_lines.voided_at', null],
       ['in', 'stage', ['Booked', 'Packed']],
-      ['gte', 'pickup_at', '2026-08-12T00:00:00.000+05:45'],
-      ['lte', 'pickup_at', '2026-08-12T23:59:59.999+05:45'],
+      ['gte', 'pickup_at', '2026-08-12T06:00:00.000+05:45'],
+      ['lte', 'pickup_at', '2026-08-13T05:59:59.999+05:45'],
       ['is', 'cancelled_at', null],
       ['order', 'pickup_at', { ascending: true }],
       ['order', 'id', { ascending: true }],
@@ -524,9 +641,20 @@ describe('named filter sets → the calls that actually reach the builder', () =
     expect(db.state.calls).not.toContainEqual(['in', 'stage', []])
   })
 
-  it('defaults the search columns to the two that exist on bookings', async () => {
+  it('defaults the search columns to the four that exist on bookings', async () => {
     await listBookings({ search: 'FX3' })
-    expect(db.state.calls).toContainEqual(['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*'])
+    expect(db.state.calls).toContainEqual([
+      'or',
+      'booking_no.ilike.*FX3*,project.ilike.*FX3*,project_type.ilike.*FX3*,project_type_other.ilike.*FX3*',
+    ])
+  })
+
+  it('finds bookings by project type text', async () => {
+    await listBookings({ search: 'documentary' })
+    expect(db.state.calls).toContainEqual([
+      'or',
+      'booking_no.ilike.*documentary*,project.ilike.*documentary*,project_type.ilike.*documentary*,project_type_other.ilike.*documentary*',
+    ])
   })
 })
 
@@ -568,5 +696,59 @@ describe('overdue / quotesExpiring — stable across renders', () => {
   it('accepts what its own doc tells callers to pass', () => {
     expect(() => overdue(new Date().toISOString())).not.toThrow()
     expect(() => quotesExpiring(new Date().toISOString())).not.toThrow()
+  })
+})
+
+/**
+ * # `operationalToday` — the day a screen is allowed to call "today"
+ *
+ * This block exists because of a live defect, not a hypothetical one. Daily
+ * Closing built its day as `getBusinessToday().toISOString()` and every figure
+ * on the screen — outgoing, incoming, new bookings, payments — was answered for
+ * the day BEFORE. It is the nastiest shape a date bug takes: a DAY MARKER
+ * dressed as an INSTANT. The callee cannot tell the two apart, `nepalDay` does
+ * exactly the right thing with it, and the screen is signed by an operator.
+ */
+describe('operationalToday — a day marker is not an instant', () => {
+  /** Kathmandu is UTC+05:45, so an NPT wall clock maps to UTC by subtracting it. */
+  const npt = (iso: string) => new Date(`${iso}+05:45`)
+
+  it('names the day that has not ended yet before the 06:00 start', () => {
+    // 05:50 in Kathmandu: the floor is still working the 11th's shift.
+    expect(operationalToday(npt('2026-08-12T05:50:00.000'))).toBe('2026-08-11')
+  })
+
+  it('turns over at the operational start, not at midnight', () => {
+    expect(operationalToday(npt('2026-08-12T06:10:00.000'))).toBe('2026-08-12')
+  })
+
+  it('is date-only, so nepalDay passes it through instead of re-resolving it', () => {
+    expect(operationalToday(npt('2026-08-12T12:00:00.000'))).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  /*
+   * ⛔ The regression itself. Both expressions below mean "today" to a reader.
+   * At noon on the 12th one of them says the 11th.
+   */
+  it('does not report yesterday where getBusinessToday().toISOString() did', () => {
+    const noon = npt('2026-08-12T12:00:00.000')
+
+    // What the screen used to send: UTC midnight of the civil day = 05:45 NPT,
+    // which is genuinely inside the 11th's operational day.
+    const dayMarkerAsInstant = getBusinessToday(noon).toISOString()
+    expect(dayMarkerAsInstant).toBe('2026-08-12T00:00:00.000Z')
+    expect(todaysOutgoing(dayMarkerAsInstant).dateRange?.fromAd).toBe('2026-08-11T06:00:00.000+05:45')
+
+    // What it sends now.
+    expect(todaysOutgoing(operationalToday(noon)).dateRange?.fromAd).toBe('2026-08-12T06:00:00.000+05:45')
+  })
+
+  it('keeps every figure on the Daily Closing screen on ONE day', () => {
+    const noon = npt('2026-08-12T12:00:00.000')
+    const day = operationalToday(noon)
+    const from = '2026-08-12T06:00:00.000+05:45'
+    expect(todaysOutgoing(day).dateRange?.fromAd).toBe(from)
+    expect(todaysIncoming(day).dateRange?.fromAd).toBe(from)
+    expect(bookingsCreatedOn(day).dateRange?.fromAd).toBe(from)
   })
 })

@@ -17,44 +17,74 @@
  * A hardcoded prefix is invisible on screen — the ID looks like an ID — so a
  * test is the only thing that can see it.
  *
- * ── Why the assertions below changed shape ────────────────────────────────
+ * ── Why the assertions below changed shape, twice ──────────────────────────
  *
- * The first version of this file asserted that the modal mints a *well-shaped*
- * number: prefix from the registry, no year, no padding. That was the right
- * assertion against the code as it then stood, and it is the wrong assertion
- * now, because `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` §B2 retired the
- * minting itself rather than correcting its format:
+ * **First rewrite.** The original version asserted that the modal mints a
+ * *well-shaped* number. `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` §B2 retired
+ * the minting itself rather than correcting its format, so the assertions moved
+ * to "no number is minted" — a strictly stronger guarantee than "the minted
+ * number is well-shaped".
  *
- * > *"Mints `INV-2026-${…}` client-side. Two invoices can collide. The operator
- * > sends that number to a client for payment reference; nothing in the system
- * > will ever match it."*
+ * **Second rewrite — this one (MONEY-01).** The modal that stood here was a
+ * free-form line editor that refused to submit, because `createInvoice` derives
+ * its lines from the BOOKING and dispatching from a hand-typed form would have
+ * discarded every row the operator entered. `PLAN.md` §4.46 recorded the
+ * question. It is answered by rulings that were already binding — R-03 (*"Append
+ * as lines to the **Draft** invoice. One invoice per rental"*), SPEC-P0-1 §3.1
+ * (*"one `invoice_lines` row per `booking_lines` row … Lines are a snapshot, not
+ * a join"*) and R-02 (Draft until issued at return) — so the modal is now a
+ * read-only PREVIEW of the booking's own lines and Confirm dispatches the
+ * action.
  *
- * Numbering belongs to `next_document_number('invoice')`, which takes a row
- * lock — the only thing that makes two concurrent invoices safe — and whose
- * seeded counter (0 in `0012_seed_data.sql:24`) does not agree with the 492 on
- * the Settings ▸ Numbering render anyway. A client-side prediction here is not
- * merely risky, it is known wrong, so the modal now refuses inline and issues
- * nothing. `Finance.tsx` was updated in the same pass and says so at
- * `handleCreateInvoiceSuccess`: *"`CreateInvoiceModal` no longer calls
- * `onSuccess`."* This file was not, and asserted the retired behaviour until
- * now.
+ * **Nothing protective is dropped by that.** The three guarantees this file has
+ * always held are asserted against the new screen, and two are now stronger:
  *
- * **"No number is minted" is a strictly stronger guarantee than "the minted
- * number is well-shaped"**, so the protective intent is kept, not weakened: the
- * original defect — a fabricated identifier reaching an operator — is asserted
- * against directly, at the DOM and at the `onSuccess` seam. The registry-shape
- * assertions are kept too, against `data/numbering.ts`, because the ruling that
- * fixed the format still governs the number the database will eventually hand
- * back, and it deserves a guard whether or not this screen is the one issuing.
+ *   1. no invoice identifier reaches the DOM — and there is no longer any code
+ *      path that could produce one, because R-15 mints `invoice_no` at issue;
+ *   2. the modal opens holding no figures of its own — there are no line fields
+ *      left to pre-fill, so the assertion is that no money is rendered at all
+ *      until a booking has been read;
+ *   3. `onSuccess` fires only for an invoice that was actually written — now
+ *      testable in both directions, where before only the negative existed.
+ *
+ * The `data/numbering.ts` shape assertions at the bottom are untouched: they
+ * guard the ruling, not the screen, and the number the database eventually hands
+ * back is still rendered through that format.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { issue, prefixOf, sequence, formatHas } from '../../../data/numbering'
+import { ToastProvider } from '../../../components/ui/Toast'
+import type { InvoicePreview } from '../../../lib/queries/invoicePreview'
+import type { CreateInvoiceResult } from '../../../actions/finance/createInvoice'
+import type { Paisa } from '../../../lib/money'
 
-vi.mock('../../../events/eventBus', () => ({
-  DomainEvents: { emit: async () => {} },
-  EVENT_TYPES: { INVOICE_CREATED: 'invoice.created' },
+/* ── The seams ────────────────────────────────────────────────────────────
+ *
+ * Two, and only two: the READ that builds the preview and the WRITE that
+ * raises the invoice. Everything between them is the component under test.
+ */
+const previewSpy = vi.fn<(bookingNo: string) => Promise<InvoicePreview>>()
+const createInvoiceSpy = vi.fn<(input: unknown, ctx: unknown) => Promise<CreateInvoiceResult>>()
+
+vi.mock('../../../lib/queries/invoicePreview', () => ({
+  previewInvoiceForBooking: (bookingNo: string) => previewSpy(bookingNo),
+}))
+vi.mock('../../../actions/finance/createInvoice', () => ({
+  createInvoice: (input: unknown, ctx: unknown) => createInvoiceSpy(input, ctx),
+}))
+vi.mock('../../../lib/auth', () => ({
+  useAuth: () => ({ user: { id: 'USR-REAL', name: 'Tester', role: 'Owner', isSharedDevice: false } }),
+}))
+/*
+ * The VAT rate is configuration (money.ts:94 — "from Settings ▸ Finance, never
+ * hardcoded"), so it is pinned here rather than read out of a localStorage the
+ * suite does not control. 13 is the spec default; the point of the assertion
+ * below is that the modal uses THIS value and not one of its own.
+ */
+vi.mock('../../../lib/settingsStore', () => ({
+  getSetting: (key: string) => (key === 'vatRatePercent' ? 13 : 0),
 }))
 
 window.matchMedia = ((q: string) => ({
@@ -66,260 +96,421 @@ window.matchMedia = ((q: string) => ({
 
 const { CreateInvoiceModal } = await import('../modals/CreateInvoiceModal')
 
-interface Created { id: string }
+const rs = (n: number) => (n * 100) as Paisa
 
-interface Attempt {
-  /** Every invoice handed to `onSuccess`. The ruling says this stays empty. */
-  created: Created[]
-  /** How many times the modal asked to be closed. The ruling says zero. */
-  closeCalls: number
-  container: HTMLDivElement
-  clientInput: HTMLInputElement
+/**
+ * A booking whose bill exercises every bucket `price()` takes — equipment with a
+ * line discount, crew and transport — so a total that silently dropped one of
+ * them would be visible in the assertion rather than hidden inside a round
+ * number.
+ *
+ *   equipment  2 x 3 x 5,000               = 30,000
+ *            + 1 x 3 x 2,000 less 500      =  5,500
+ *   crew       1 x 3 x 4,000               = 12,000
+ *   transport                              =  3,500
+ *   subtotal                                 51,000
+ *   less 10% booking discount                 5,100  →  taxable 45,900
+ *   plus 13% VAT                              5,967  →  total   51,867
+ */
+const PREVIEW: InvoicePreview = {
+  kind: 'preview',
+  bookingNo: 'B-715',
+  bookingId: '22222222-2222-4222-8222-222222222222',
+  clientName: 'ABC Films Pvt. Ltd.',
+  dueDateAd: '2026-09-22',
+  paymentTerms: '15 days',
+  discountPercent: 10,
+  lines: [
+    {
+      key: 'aaaaaaaa-0000-4000-8000-000000000001',
+      kind: 'Equipment Rental',
+      description: 'Sony FX9 body',
+      qty: 2,
+      days: 3,
+      ratePaisa: rs(5000),
+      discountPaisa: rs(0),
+      netPaisa: rs(30000),
+      sortOrder: 0,
+    },
+    {
+      key: 'aaaaaaaa-0000-4000-8000-000000000002',
+      kind: 'Equipment Rental',
+      description: 'Tripod',
+      qty: 1,
+      days: 3,
+      ratePaisa: rs(2000),
+      discountPaisa: rs(500),
+      netPaisa: rs(5500),
+      sortOrder: 1,
+    },
+    {
+      key: 'bbbbbbbb-0000-4000-8000-000000000001',
+      kind: 'Crew Charges',
+      description: 'Ramesh - Gaffer',
+      qty: 1,
+      days: 3,
+      ratePaisa: rs(4000),
+      discountPaisa: rs(0),
+      netPaisa: rs(12000),
+      sortOrder: 1000,
+    },
+    {
+      key: 'cccccccc-0000-4000-8000-000000000001',
+      kind: 'Transport',
+      description: 'Transport - Mini Truck',
+      qty: 1,
+      days: 1,
+      ratePaisa: rs(3500),
+      discountPaisa: rs(0),
+      netPaisa: rs(3500),
+      sortOrder: 2000,
+    },
+  ],
+  buckets: {
+    equipment: rs(35500),
+    subRental: rs(0),
+    services: rs(0),
+    crew: rs(12000),
+    transport: rs(3500),
+  },
+  transportKnown: true,
 }
 
-function setValue(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
-  setter.call(input, value)
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+const WRITTEN: CreateInvoiceResult = {
+  invoiceId: '99999999-9999-4999-8999-999999999999',
+  bookingId: PREVIEW.kind === 'preview' ? PREVIEW.bookingId : '',
+  bookingNo: 'B-715',
+  clientId: '33333333-3333-4333-8333-333333333333',
+  status: 'Draft',
+  dueDateAd: '2026-09-22',
+  linesWritten: 4,
+  subtotalPaisa: rs(51000),
+  discountPaisa: rs(5100),
+  taxablePaisa: rs(45900),
+  vatPaisa: rs(5967),
+  totalPaisa: rs(51867),
+}
+
+interface Mounted {
+  container: HTMLDivElement
+  created: CreateInvoiceResult[]
+  closeCalls: () => number
+  confirm: () => HTMLButtonElement
 }
 
 /**
- * Fills every required field and presses `Issue Invoice`, then reports what
- * crossed the modal's boundary. Deliberately makes no claim about success — the
- * point of each test below is what did *not* happen.
+ * Every root this file mounts, torn down in `afterEach`.
  *
- * ── Why this fills five fields where it used to fill one ───────────────────
- *
- * It filled only the client, and its comment said so: *"Client is the only
- * required field; the two seeded lines carry the total, so this is a submission
- * that would have succeeded under the old code."* Those two seeded lines were
- * `Camera Package Rental / 150000` and `Grip & Lighting Gear / 35000` — Rs
- * 1,85,000 of billing nobody entered, pre-typed onto the form, and this harness
- * was leaning on them to get past the total guard.
- *
- * They are gone (an invented figure on a money form, the same class as the Rs
- * 50,000 refund default), and `booking`/`dueDate` no longer open holding
- * `B-720` and `15 Aug 2026` either. So the caller now supplies the invoice
- * instead of inheriting it, which is what an operator does.
- *
- * **No assertion below is relaxed by this.** Every one of them is about what the
- * modal does with a submission it considers complete, so a harness that stopped
- * at an earlier validation error would be asserting nothing at all — it would
- * pass on "no number was issued" for the trivial reason that nothing was
- * submitted. Filling the form is what keeps these tests honest.
+ * `Modal.tsx` arms a `window.setTimeout` for its close transition, and a root
+ * that is never unmounted never runs that effect's cleanup — the timer then
+ * fires after vitest has torn the jsdom environment down and React reports
+ * `ReferenceError: window is not defined` against whichever file is unlucky.
+ * `Finance.restricted.test.tsx` records the same trap.
  */
-async function attemptSubmit(): Promise<Attempt> {
-  const created: Created[] = []
+const roots: Array<{ root: Root; container: HTMLElement }> = []
+
+/**
+ * `null`, not `undefined`, is how a caller says "no booking".
+ *
+ * A default parameter fires on an explicit `undefined` too, so
+ * `mount(undefined)` would silently mount the B-715 case and the assertion
+ * "reads nothing until a booking is named" would pass against a screen that had
+ * read one. It did, before this signature changed.
+ */
+async function mount(bookingNo: string | null = 'B-715'): Promise<Mounted> {
+  const created: CreateInvoiceResult[] = []
   let closeCalls = 0
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
+  roots.push({ root, container })
   await act(async () => {
     root.render(
       <StrictMode>
-        <CreateInvoiceModal
-          isOpen
-          onClose={() => { closeCalls += 1 }}
-          onSuccess={((inv: Created) => created.push(inv)) as never}
-        />
+        <ToastProvider>
+          <CreateInvoiceModal
+            isOpen
+            onClose={() => {
+              closeCalls += 1
+            }}
+            {...(bookingNo === null ? {} : { bookingNo })}
+            onSuccess={(inv) => created.push(inv)}
+          />
+        </ToastProvider>
       </StrictMode>,
     )
   })
-
-  const clientInput = container.querySelector(
-    'input[placeholder^="e.g. Manaslu"]',
-  ) as HTMLInputElement
-  const bookingInput = container.querySelector(
-    'input[placeholder="Booking number"]',
-  ) as HTMLInputElement
-  const dueInput = container.querySelector('input[placeholder="dd Mmm yyyy"]') as HTMLInputElement
-  // The single blank line item the form now opens with — description and
-  // amount. There is exactly one `type="number"` box on this form.
-  const lineDesc = container.querySelector(
-    'input[placeholder="Item #1 Description"]',
-  ) as HTMLInputElement
-  const lineAmount = container.querySelector('input[type="number"]') as HTMLInputElement
-  for (const el of [clientInput, bookingInput, dueInput, lineDesc, lineAmount]) {
-    expect(el).toBeTruthy()
-  }
-  await act(async () => {
-    setValue(clientInput, 'Test Client')
-    setValue(bookingInput, 'B-715')
-    setValue(dueInput, '15 Aug 2026')
-    setValue(lineDesc, 'Two-day camera hire')
-    setValue(lineAmount, '1000')
-  })
-
-  const submit = Array.from(container.querySelectorAll('button')).find((b) =>
-    /Issue Invoice/.test(b.textContent ?? ''),
-  )
-  expect(submit).toBeTruthy()
-  await act(async () => { submit!.click() })
-
-  return { created, closeCalls, container, clientInput }
-}
-
-/** Mounts the modal untouched, for the assertions about how it OPENS. */
-async function renderFresh() {
-  const created: Created[] = []
-  const container = document.createElement('div')
-  document.body.appendChild(container)
-  const root = createRoot(container)
-  await act(async () => {
-    root.render(
-      <StrictMode>
-        <CreateInvoiceModal
-          isOpen
-          onClose={() => {}}
-          onSuccess={((inv: Created) => created.push(inv)) as never}
-        />
-      </StrictMode>,
-    )
-  })
-  const q = (sel: string) => container.querySelector(sel) as HTMLInputElement
   return {
-    created,
     container,
-    client: q('input[placeholder^="e.g. Manaslu"]'),
-    booking: q('input[placeholder="Booking number"]'),
-    due: q('input[placeholder="dd Mmm yyyy"]'),
-    lineDesc: q('input[placeholder="Item #1 Description"]'),
-    lineAmount: q('input[type="number"]'),
-    submit: () =>
+    created,
+    closeCalls: () => closeCalls,
+    confirm: () =>
       Array.from(container.querySelectorAll('button')).find((b) =>
-        /Issue Invoice/.test(b.textContent ?? ''),
-      )!,
+        /Create Draft Invoice/.test(b.textContent ?? ''),
+      ) as HTMLButtonElement,
   }
 }
 
-/**
- * The invented line items — the second half of the same defect this file was
- * opened for.
- *
- * The modal stopped minting an invoice NUMBER but went on opening with
- * `Camera Package Rental / 150000` and `Grip & Lighting Gear / 35000` already
- * typed in, and the totals panel rendered the VAT-inclusive Rs 2,09,050 the
- * instant it opened. An operator who filled in the client and pressed
- * `Issue Invoice` was issuing Rs 1,85,000 of line items nobody entered — the
- * same class as the Rs 50,000 refund default and the Rs 5,000 payment.
- *
- * Like the empty amount field in `RecordPaymentModal.test.tsx`, the fix is
- * invisible: nothing on screen says "this used to be pre-filled", so only a
- * test can hold it down.
- */
-describe('CreateInvoiceModal — it opens holding no figures of its own', () => {
-  it('opens with every field empty — no descriptions, no amounts, no booking, no due date', async () => {
-    const f = await renderFresh()
-    expect(f.client.value).toBe('')
-    expect(f.booking.value).toBe('')
-    expect(f.due.value).toBe('')
-    expect(f.lineDesc.value).toBe('')
-    // `value={line.amount || ''}` — 0 renders as an empty box, not a typed "0".
-    expect(f.lineAmount.value).toBe('')
-  })
-
-  it('shows none of the retired placeholder figures anywhere on screen', async () => {
-    const { container } = await renderFresh()
-    const text = container.textContent ?? ''
-    expect(text).not.toContain('Camera Package Rental')
-    expect(text).not.toContain('Grip & Lighting')
-    expect(text).not.toContain('1,85,000') // the seeded subtotal
-    expect(text).not.toContain('2,09,050') // and with VAT, as the panel rendered it
-    expect(container.querySelector('input[placeholder="Booking number"]')).toBeTruthy()
-    expect(text).not.toContain('B-720')
-    expect(text).not.toContain('15 Aug 2026')
-  })
-
-  it('totals an empty form at zero, which is the honest figure for no line items', async () => {
-    const { container } = await renderFresh()
-    expect(container.textContent).toContain('Rs 0')
-  })
-
-  it('refuses to submit while a line item is incomplete, and names the line', async () => {
-    const f = await renderFresh()
-    await act(async () => {
-      setValue(f.client, 'Test Client')
-      setValue(f.booking, 'B-715')
-      setValue(f.due, '15 Aug 2026')
-    })
-    await act(async () => { f.submit().click() })
-    expect(f.created).toEqual([])
-    expect(f.container.textContent).toContain('Line 1 is incomplete')
-  })
-
-  it('refuses a described line carrying no amount — a line the total would silently ignore', async () => {
-    const f = await renderFresh()
-    await act(async () => {
-      setValue(f.client, 'Test Client')
-      setValue(f.booking, 'B-715')
-      setValue(f.due, '15 Aug 2026')
-      setValue(f.lineDesc, 'Two-day camera hire')
-    })
-    await act(async () => { f.submit().click() })
-    expect(f.created).toEqual([])
-    expect(f.container.textContent).toContain('Line 1 is incomplete')
-  })
-
-  it('refuses an amount carrying no description — an unexplained charge on a client’s bill', async () => {
-    const f = await renderFresh()
-    await act(async () => {
-      setValue(f.client, 'Test Client')
-      setValue(f.booking, 'B-715')
-      setValue(f.due, '15 Aug 2026')
-      setValue(f.lineAmount, '1000')
-    })
-    await act(async () => { f.submit().click() })
-    expect(f.created).toEqual([])
-    expect(f.container.textContent).toContain('Line 1 is incomplete')
-  })
-
-  /*
-   * Deliberately NOT tested here: the `NaN` coercion `handleLineChange` now
-   * does. `Number('1.2.3')` is `NaN` and `NaN <= 0` is `false`, so a non-finite
-   * amount used to render "Rs NaN" in the totals panel and slip past the
-   * "total must be greater than 0" guard — a real defect, fixed in the modal.
-   * But jsdom applies the HTML value-sanitization algorithm to
-   * `input[type=number]`, so an invalid string assigned here becomes `''`
-   * before React ever sees it, and the test would pass whether or not the
-   * coercion existed. A test that cannot fail is worse than none, so the
-   * guarantee is stated in `CreateInvoiceModal.tsx` and left unasserted rather
-   * than asserted falsely.
-   */
+beforeEach(() => {
+  previewSpy.mockReset()
+  createInvoiceSpy.mockReset()
+  previewSpy.mockResolvedValue(PREVIEW)
+  createInvoiceSpy.mockResolvedValue(WRITTEN)
 })
 
-describe('CreateInvoiceModal — it issues no number, because it writes no invoice', () => {
-  it('hands nothing back: onSuccess never fires for an invoice that was not written', async () => {
-    const { created } = await attemptSubmit()
-    expect(created).toEqual([])
+afterEach(async () => {
+  await act(async () => {
+    for (const { root, container } of roots.splice(0)) {
+      root.unmount()
+      container.remove()
+    }
   })
+})
 
-  it('keeps the modal open with the operator’s figures intact', async () => {
-    // The register's complaint was that the modal closed on a write that never
-    // happened. Staying open with the form populated is what lets the operator
-    // copy out or correct what they typed.
-    const { closeCalls, clientInput } = await attemptSubmit()
-    expect(closeCalls).toBe(0)
-    expect(clientInput.value).toBe('Test Client')
-  })
-
-  it('discloses inline that nothing was saved', async () => {
-    const { container } = await attemptSubmit()
-    const text = container.textContent ?? ''
-    expect(text).toContain('nothing was saved')
-    expect(text).toContain('No invoice number was issued')
-  })
-
+describe('CreateInvoiceModal — it issues no number, because the database does', () => {
   it('puts no invoice identifier on screen — not even a well-shaped one', async () => {
     // The exact defect this file was opened for: a fabricated identifier that
     // looks like an identifier. Asserted against the rendered DOM, which is the
     // only surface an operator could copy a number off.
-    const { container } = await attemptSubmit()
+    const { container } = await mount()
     const text = container.textContent ?? ''
     expect(text).not.toMatch(/INV-\d/)
     expect(text).not.toMatch(/INV-20\d{2}-/)
     expect(text).not.toContain('2026-')
-    // What it says instead.
-    expect(text).toContain('Assigned by the database on save')
+    // What it says instead — R-15: minted at issue, inside the same transaction.
+    expect(text).toContain('Minted when the invoice is issued')
+  })
+
+  it('sends no number to the action either — the action names the booking, nothing else', async () => {
+    const m = await mount()
+    await act(async () => {
+      m.confirm().click()
+    })
+    const [input] = createInvoiceSpy.mock.calls[0] as [Record<string, unknown>, unknown]
+    expect(input['bookingNo']).toBe('B-715')
+    expect(input).not.toHaveProperty('invoiceNo')
+    expect(input).not.toHaveProperty('invoiceId')
+    expect(input).not.toHaveProperty('status')
+  })
+})
+
+describe('CreateInvoiceModal — it holds no figures of its own', () => {
+  /*
+   * The old form opened with `Camera Package Rental / 150000` and
+   * `Grip & Lighting Gear / 35000` pre-typed, and rendered Rs 2,09,050 the
+   * instant it opened. There are no line fields left to pre-fill, so the
+   * guarantee is now the stronger one: with no booking read, no money is
+   * rendered at all.
+   */
+  it('renders no money before a booking has been read', async () => {
+    previewSpy.mockImplementation(() => new Promise(() => {}))
+    const { container } = await mount()
+    const text = container.textContent ?? ''
+    expect(text).not.toMatch(/Rs\s/)
+    expect(text).not.toContain('Camera Package Rental')
+    expect(text).not.toContain('Grip & Lighting')
+    expect(text).not.toContain('1,85,000')
+    expect(text).not.toContain('2,09,050')
+  })
+
+  it('renders the BOOKING’s own lines, at the booking’s own rates', async () => {
+    const { container } = await mount()
+    const text = container.textContent ?? ''
+    expect(text).toContain('Sony FX9 body')
+    expect(text).toContain('Ramesh - Gaffer')
+    expect(text).toContain('Transport - Mini Truck')
+    // Crew and transport are the two `createInvoice` used to drop entirely, so
+    // their presence in the PREVIEW is what proves the two agree.
+    expect(text).toContain('Crew Charges')
+    expect(text).toContain('4 lines from B-715')
+  })
+
+  it('totals through the engine, at the rate Settings holds — not one of its own', async () => {
+    const { container } = await mount()
+    const text = container.textContent ?? ''
+    expect(text).toContain('Rs 51,000') // subtotal
+    expect(text).toContain('Rs 5,100') // 10% booking discount
+    expect(text).toContain('Rs 45,900') // taxable
+    expect(text).toContain('Rs 5,967') // 13% VAT, half-up at the step
+    expect(text).toContain('Rs 51,867') // total
+    expect(text).toContain('IRD VAT (13%)')
+  })
+
+  it('offers nothing to edit — the bill is the booking’s, not this screen’s', async () => {
+    const { container } = await mount()
+    // One optional notes box, and no money input anywhere.
+    expect(container.querySelectorAll('input[type="number"]').length).toBe(0)
+    expect(container.querySelectorAll('textarea').length).toBe(1)
+  })
+})
+
+describe('CreateInvoiceModal — Confirm writes once, and only a confirmed write is reported', () => {
+  it('dispatches createInvoice with the settings VAT rate and a Law 8 key', async () => {
+    const m = await mount()
+    await act(async () => {
+      m.confirm().click()
+    })
+    expect(createInvoiceSpy).toHaveBeenCalledTimes(1)
+    const [input, ctx] = createInvoiceSpy.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>]
+    expect(input['vatPercent']).toBe(13)
+    expect(typeof input['clientUuid']).toBe('string')
+    expect(input['clientUuid']).not.toBe('')
+    expect(ctx).toEqual({ userId: 'USR-REAL', role: 'Owner', isOnline: true })
+  })
+
+  it('hands back the ACTION’s result and closes, once the write resolved', async () => {
+    const m = await mount()
+    await act(async () => {
+      m.confirm().click()
+    })
+    expect(m.created).toEqual([WRITTEN])
+    expect(m.closeCalls()).toBe(1)
+  })
+
+  it('sends the same Law 8 key on a retry, so a replayed Confirm cannot bill twice', async () => {
+    // A dropped response: the modal must stay open and keep its key, or the
+    // retry raises a SECOND invoice for a booking R-03 allows one.
+    createInvoiceSpy.mockRejectedValueOnce(new Error('Failed to fetch'))
+    const m = await mount()
+    await act(async () => {
+      m.confirm().click()
+    })
+    await act(async () => {
+      m.confirm().click()
+    })
+    expect(createInvoiceSpy).toHaveBeenCalledTimes(2)
+    const first = createInvoiceSpy.mock.calls[0]![0] as Record<string, unknown>
+    const second = createInvoiceSpy.mock.calls[1]![0] as Record<string, unknown>
+    expect(second['clientUuid']).toBe(first['clientUuid'])
+  })
+
+  it('mints a NEW key after a confirmed success, so a second booking is not posted under the first key', async () => {
+    const m = await mount()
+    await act(async () => {
+      m.confirm().click()
+    })
+    const firstKey = (createInvoiceSpy.mock.calls[0]![0] as Record<string, unknown>)['clientUuid']
+    // The modal stays mounted here (the caller closes it); a second Confirm must
+    // not reuse the key that already wrote an invoice.
+    await act(async () => {
+      m.confirm().click()
+    })
+    const secondKey = (createInvoiceSpy.mock.calls[1]![0] as Record<string, unknown>)['clientUuid']
+    expect(secondKey).not.toBe(firstKey)
+  })
+
+  it('keeps the modal open and states the refusal inline when the write fails', async () => {
+    createInvoiceSpy.mockRejectedValueOnce(
+      new Error('B-715 already has an invoice (a Draft, Draft). One invoice per rental.'),
+    )
+    const m = await mount()
+    await act(async () => {
+      m.confirm().click()
+    })
+    expect(m.created).toEqual([])
+    expect(m.closeCalls()).toBe(0)
+    // Law 12 — the database's own sentence, on screen, not a toast.
+    expect(m.container.textContent).toContain('already has an invoice')
+  })
+})
+
+describe('CreateInvoiceModal — a booking that already has one is shown, never offered a second', () => {
+  /*
+   * R-03: one invoice per rental. `createInvoice`'s precondition refuses on ANY
+   * existing invoice, so the modal must refuse on the same set — offering a
+   * control the dispatcher will turn down is the shape MONEY-01 removes.
+   */
+  const ALREADY: InvoicePreview = {
+    kind: 'already-invoiced',
+    bookingNo: 'B-715',
+    clientName: 'ABC Films Pvt. Ltd.',
+    existing: {
+      id: '99999999-9999-4999-8999-999999999999',
+      invoiceNo: null,
+      status: 'Draft',
+      isVoid: false,
+      totalPaisa: rs(51867),
+      paidPaisa: rs(25000),
+      outstandingPaisa: rs(26867),
+      dueDateAd: '2026-09-22',
+    },
+  }
+
+  it('names an unnumbered Draft rather than rendering a blank label', async () => {
+    previewSpy.mockResolvedValue(ALREADY)
+    const { container } = await mount()
+    // R-15 — a Draft genuinely has no number, and an empty label would read as
+    // a rendering fault rather than as a state.
+    expect(container.textContent).toContain('Draft (no number)')
+    expect(container.textContent).toContain('Rs 26,867')
+  })
+
+  it('does not dispatch, and says why the control is unavailable', async () => {
+    previewSpy.mockResolvedValue(ALREADY)
+    const m = await mount()
+    expect(m.confirm().disabled).toBe(true)
+    await act(async () => {
+      m.confirm().click()
+    })
+    expect(createInvoiceSpy).not.toHaveBeenCalled()
+    expect(m.container.textContent).toContain('One invoice per rental')
+  })
+})
+
+describe('CreateInvoiceModal — a partial preview is never presented as a total', () => {
+  /*
+   * `booking_transport_v` excludes Manager and Accounts while R-05 lets both
+   * raise an invoice, and `create_invoice` (SECURITY DEFINER) bills the
+   * transport regardless. So the invoice is right and the PREVIEW is short — and
+   * a figure labelled "Invoice total" that is short by a delivery charge is the
+   * confidently-wrong number this screen exists to stop.
+   */
+  it('renames the total and states the omission when transport could not be read', async () => {
+    previewSpy.mockResolvedValue({ ...PREVIEW, transportKnown: false } as InvoicePreview)
+    const m = await mount()
+    const text = m.container.textContent ?? ''
+    expect(text).toContain('NOT the invoice total')
+    expect(text).not.toContain('Invoice total')
+    expect(text).toContain('Transport charges are not readable by your role')
+  })
+
+  it('still offers Confirm, because the invoice the action writes IS complete', async () => {
+    previewSpy.mockResolvedValue({ ...PREVIEW, transportKnown: false } as InvoicePreview)
+    const m = await mount()
+    expect(m.confirm().disabled).toBe(false)
+    await act(async () => {
+      m.confirm().click()
+    })
+    expect(createInvoiceSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('CreateInvoiceModal — a refusal is stated, never a silent dead end', () => {
+  it('renders the reason the preview gave and disables Confirm', async () => {
+    previewSpy.mockResolvedValue({
+      kind: 'refused',
+      bookingNo: 'B-715',
+      reason: 'B-715 has no billable lines, so an invoice would bill nothing.',
+    })
+    const m = await mount()
+    expect(m.container.textContent).toContain('has no billable lines')
+    expect(m.confirm().disabled).toBe(true)
+    expect(createInvoiceSpy).not.toHaveBeenCalled()
+  })
+
+  it('states a failed read as a read failure, not as "this booking has no lines"', async () => {
+    previewSpy.mockRejectedValue(new Error('column booking_lines_v.rate does not exist'))
+    const m = await mount()
+    expect(m.container.textContent).toContain('could not be read')
+    expect(m.container.textContent).toContain('column booking_lines_v.rate does not exist')
+    expect(m.confirm().disabled).toBe(true)
+  })
+
+  it('asks for a booking when the caller has none, and reads nothing until one is named', async () => {
+    const m = await mount(null)
+    expect(previewSpy).not.toHaveBeenCalled()
+    expect(m.confirm().disabled).toBe(true)
+    expect(m.container.querySelector('#create-invoice-booking')).toBeTruthy()
   })
 })
 

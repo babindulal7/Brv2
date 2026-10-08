@@ -61,14 +61,16 @@ export function BookingNotLoaded({
         >
           <Icon name="info" size={20} />
         </span>
-        <h2 style={{ margin: 0, fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)' }}>
+        {/* This card IS the page when it renders — it replaces the workspace
+            wholesale — so its title is the route's `<h1>`, not a sub-heading. */}
+        <h1 style={{ margin: 0, fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)' }}>
           {job} for <span className="identifier">{bookingNo}</span> is not loaded yet
-        </h2>
+        </h1>
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', maxWidth: '62ch', lineHeight: 1.5 }}>
           This workspace has no per-booking query behind it yet. Its items, sessions and evidence come from a
           single seeded booking, so showing them here would put another booking&apos;s gear under this number —
           which is worse than showing nothing. Spec 03 requires these routes to work for any booking; the
-          missing piece is a floor-lines read on <span className="identifier">lib/queries/bookings.ts</span>,
+          missing piece is a floor-lines read on <span className="identifier">{/* lib/queries/bookings.ts */}shared tools </span>,
           not this screen.
         </p>
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>

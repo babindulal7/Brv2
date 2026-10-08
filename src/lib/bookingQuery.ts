@@ -499,22 +499,24 @@ export interface CanonicalBooking {
   actualReturnAtAd: string | null
   /**
    * `bookings.delivery_type`, the `delivery_type` enum (0002:34, 0001:279):
-   * 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'.
+   * 'Client Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party' — renamed
+   * from 'Customer Pickup' by 0113.
    *
    * ⚠ These are **Postgres enum members, not UI copy.** Law 17 ("the word
    * customer appears nowhere in the UI") governs what the operator READS — the
-   * screens correctly label this option *Client Pickup* — and does not govern
-   * what Postgres STORES. Renaming the literal to match the label requires a
-   * migration that ALTERs the enum. Comparing against `'Client Pickup'` can
-   * never be true and is a booby trap; that exact leak was found in this file
-   * on 11 Aug 2026.
+   * screens label this option *Client Pickup*, and since 0113/0137 Postgres
+   * spells the member the same way. The rename required a migration that ALTERs
+   * the enum (0113 for `delivery_type`, 0137 for the sibling below); comparing
+   * against a member that is not in the enum is a booby trap — that exact leak
+   * was found in this file on 11 Aug 2026.
    *
    * There is NO `bookings.delivery_method` column — `delivery_method`
-   * (0001:33) is a second enum with the same members, used by
-   * `operation_sessions.delivery_method`. 0002:88 calls `delivery_type` "the
-   * single home for delivery mode". The old code here read `delivery_method`
-   * off `bookings`, got `undefined`, and used it to gate whether transport was
-   * charged.
+   * (0001:33) is a second enum with the same members (renamed by 0137 after
+   * 0113 missed it and a live Client Pickup handover failed the enum cast),
+   * used by `operation_sessions.delivery_method`. 0002:88 calls `delivery_type`
+   * "the single home for delivery mode". The old code here read
+   * `delivery_method` off `bookings`, got `undefined`, and used it to gate
+   * whether transport was charged.
    */
   deliveryType: DeliveryTypeDb
   /** `bookings.pickup_location` — free text, nullable (0002:35). Not a branch FK. */

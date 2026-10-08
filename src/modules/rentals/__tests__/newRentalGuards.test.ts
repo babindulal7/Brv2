@@ -1,0 +1,341 @@
+// @vitest-environment jsdom
+/**
+ * # New Rental — the two guards the page is answered by
+ *
+ * Both of these are register defects, and both are the same shape: the screen
+ * held one answer and its own write held another.
+ *
+ *  - **NR-10** — `confirmBlocked` was `critical.length > 0 || days === 0`, and
+ *    the Confirm handler then refused, in its own body, on four conditions that
+ *    were in no list the operator could see. The rail's card said "Nothing is
+ *    blocking this booking · Every requirement for Confirm Booking is met", the
+ *    button was enabled, and the press failed into the inline error line.
+ *    `confirmWriteRefusals` is those four, lifted out so ONE computation
+ *    answers the card and the button.
+ *  - **NR-19** — the booking's length was the difference of the two
+ *    `YYYY-MM-DD` picker values with the times beside them thrown away, so a
+ *    same-day 09:00 → 18:00 hire measured 0 days and was refused, although
+ *    `createRental.validate` refuses only a return strictly BEFORE the pickup
+ *    and the write sends date+time. `bookingDays` measures over the instants
+ *    that are actually stored, and delegates the arithmetic to
+ *    `lib/rentalDays.ts` (Law 1).
+ *
+ * ## Why `lib/supabase` is mocked
+ *
+ * `NewRental.tsx` reaches the client at module load (it imports it for the
+ * branch read, and again through `queries/clients` and `queries/inventory`).
+ * Replaced wholesale, exactly as `rentalsList.test.ts` does. Nothing here
+ * touches a database: every assertion is on a plain object or a number.
+ *
+ * `jsdom` because the module graph under this page is a screen's worth of
+ * components; the functions under test are pure and touch neither.
+ */
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../../lib/supabase', () => ({
+  IS_MOCK: false,
+  supabase: { from: () => ({ select: () => ({}) }) },
+  newClientUuid: () => '00000000-0000-4000-8000-000000000000',
+}))
+
+import { bookingDays, bookingInstant } from '../booking/newRentalUtils'
+import { confirmWriteRefusals, deriveRentalAlertsAndNotices } from '../booking'
+import { MISSING_GOV_ID_TEXT } from '../booking/newRentalGuards'
+import { rupees, type Paisa } from '../../../lib/money'
+import { calculatePricingPipeline, type PricingPipelineResult } from '../../../lib/pricingPipeline'
+
+/** A `products.id`-shaped id — what a live catalogue row carries. */
+const PRODUCT_UUID = '3f1c2b4a-5d6e-4f7a-8b9c-0d1e2f3a4b5c'
+
+/** Everything present and correct: the state in which Confirm may be pressed. */
+const CLEAR = {
+  clientSelected: true,
+  clientDbId: PRODUCT_UUID,
+  clientsAreLive: true,
+  lineCount: 2,
+  sampleLineName: null,
+  canBookingMoney: true,
+} as const
+
+describe('confirmWriteRefusals — NR-10, the card and the button read one list', () => {
+  it('refuses nothing when the write would go through', () => {
+    expect(confirmWriteRefusals({ ...CLEAR })).toEqual([])
+  })
+
+  it('names the client with no database record, and says WHICH of the two cases it is', () => {
+    const live = confirmWriteRefusals({ ...CLEAR, clientDbId: null, clientsAreLive: true })
+    expect(live).toHaveLength(1)
+    expect(live[0]?.text).toContain('sample data')
+    expect(live[0]?.text).toContain('Pick a client from the live list')
+    expect(live[0]?.action).toBe('Select Client')
+
+    const loading = confirmWriteRefusals({ ...CLEAR, clientDbId: null, clientsAreLive: false })
+    expect(loading).toHaveLength(1)
+    expect(loading[0]?.text).toContain('has not loaded from the database yet')
+    /* The two are genuinely different facts and must not collapse into one
+       sentence: one is "you picked the wrong row", the other "wait". */
+    expect(loading[0]?.text).not.toBe(live[0]?.text)
+  })
+
+  it('does NOT repeat "no client" — the alert model already carries that Critical', () => {
+    const none = confirmWriteRefusals({ ...CLEAR, clientSelected: false, clientDbId: null })
+    expect(none.map((n: { text: string }) => n.text).filter((t: string) => t.includes('client'))).toEqual([])
+  })
+
+  it('refuses a booking with no lines, and sends the operator to Equipment', () => {
+    const out = confirmWriteRefusals({ ...CLEAR, lineCount: 0 })
+    expect(out).toHaveLength(1)
+    expect(out[0]?.text).toContain('Add at least one equipment item')
+    expect(out[0]?.action).toBe('Open Equipment')
+  })
+
+  it('refuses a money-blind role — and carries NO action, because there is nowhere to send them', () => {
+    const out = confirmWriteRefusals({ ...CLEAR, canBookingMoney: false })
+    expect(out).toHaveLength(1)
+    expect(out[0]?.text).toContain('Rs 0')
+    expect(out[0]?.action).toBeUndefined()
+  })
+
+  it('names the sample row that cannot be saved', () => {
+    const out = confirmWriteRefusals({ ...CLEAR, sampleLineName: 'ARRI SkyPanel S60-C' })
+    expect(out).toHaveLength(1)
+    expect(out[0]?.text).toContain('"ARRI SkyPanel S60-C"')
+    expect(out[0]?.action).toBe('Open Equipment')
+  })
+
+  it('refuses a blocked client with AUD-026 warning action', () => {
+    const out = confirmWriteRefusals({ ...CLEAR, clientIsBlocked: true })
+    expect(out).toHaveLength(1)
+    expect(out[0]?.text).toContain('Blocked from equipment rentals')
+    expect(out[0]?.action).toBe('View Client')
+  })
+
+  it('reports every refusal at once — the card lists them all, it does not stop at the first', () => {
+    const out = confirmWriteRefusals({
+      clientSelected: true,
+      clientDbId: null,
+      clientsAreLive: true,
+      lineCount: 0,
+      sampleLineName: 'Sample row',
+      canBookingMoney: false,
+    })
+    expect(out).toHaveLength(4)
+  })
+})
+
+describe('bookingDays — NR-19, the length is measured over the instants that get stored', () => {
+  const days = (pd: string, pt: string, rd: string, rt: string) =>
+    bookingDays(bookingInstant(pd, pt), bookingInstant(rd, rt))
+
+  it('a same-day 09:00 → 18:00 hire is ONE rental day, not zero', () => {
+    /* The defect: the two dates were equal, so the old page differenced them to
+       0, called it "Return must be later than pickup" and blocked Confirm. */
+    expect(days('2026-09-05', '09:00', '2026-09-05', '18:00')).toBe(1)
+  })
+
+  it('keeps the plain overnight and multi-day answers unchanged', () => {
+    expect(days('2026-09-05', '09:00', '2026-09-06', '06:00')).toBe(1)
+    expect(days('2026-09-05', '09:00', '2026-09-08', '06:00')).toBe(3)
+  })
+
+  it('rounds the priced span half-up, as lib/rentalDays does — 37 hours is 2 days', () => {
+    expect(days('2026-09-05', '09:00', '2026-09-06', '22:00')).toBe(2)
+  })
+
+  it('answers 0 — the page\'s "not a booking" gate — for a return at or before the pickup', () => {
+    expect(days('2026-09-05', '18:00', '2026-09-05', '09:00')).toBe(0)
+    expect(days('2026-09-05', '09:00', '2026-09-05', '09:00')).toBe(0)
+    expect(days('2026-09-08', '09:00', '2026-09-05', '09:00')).toBe(0)
+  })
+
+  it('answers 0 for an instant it cannot parse, rather than guessing midnight', () => {
+    expect(bookingInstant('not-a-date', '09:00')).toBeNull()
+    expect(days('not-a-date', '09:00', '2026-09-08', '09:00')).toBe(0)
+    expect(days('2026-09-05', '09:00', '2026-09-08', 'noon')).toBe(0)
+  })
+
+  it('the times move the answer — the whole point of NR-19', () => {
+    /* Same two dates, different times: returning by 06:00 is 1 day;
+       returning at 10:00 (crossing 06:00 boundary into next shift) is 2 days. */
+    expect(days('2026-09-05', '09:00', '2026-09-06', '06:00')).toBe(1)
+    expect(days('2026-09-05', '09:00', '2026-09-06', '10:00')).toBe(2)
+    expect(days('2026-09-05', '09:00', '2026-09-06', '23:00')).toBe(2)
+  })
+})
+
+/**
+ * # NR-rpo — the Return Pickup select wrote its labels into the state
+ *
+ * The state is typed `'Client Return' | 'Babin Pickup'`, but the two `<option>`
+ * children carried display sentences and no `value`. A native select's value IS
+ * the option's text content, so choosing "Babin Rentals Pickup from Location"
+ * stored a string that matched NEITHER branch: the address/time/fee block (gated
+ * on `=== 'Babin Pickup'`) never rendered, the return fee stayed 0 in the
+ * transport total, and the Review line answered "Client Returns to Warehouse"
+ * for a Babin pickup. The fix carries explicit `value` attributes in the state
+ * union, display text unchanged.
+ */
+import newRentalLogisticsRaw from '../booking/useNewRentalLogistics.ts?raw'
+import deliverySectionRaw from '../booking/DeliverySection.tsx?raw'
+
+describe('NR-rpo — the Return-Pickup select speaks the state union', () => {
+  it('both options carry an explicit value drawn from the state union', () => {
+    expect(deliverySectionRaw).toContain('<option value="Client Return">Client Returns to Warehouse</option>')
+    expect(deliverySectionRaw).toContain('<option value="Babin Pickup">Babin Rentals Pickup from Location</option>')
+  })
+
+  it('the state union and the branch condition read the same two literals', () => {
+    expect(newRentalLogisticsRaw).toContain("useState<'Client Return' | 'Babin Pickup'>")
+    expect(deliverySectionRaw).toContain("returnPickupType === 'Babin Pickup'")
+  })
+
+  it('the no-value option shape does not return next to Return Pickup', () => {
+    /* The defect was bare `<option>Client Returns to Warehouse</option>`. */
+    expect(deliverySectionRaw).not.toContain('<option>Client Returns to Warehouse</option>')
+    expect(deliverySectionRaw).not.toContain('<option>Babin Rentals Pickup from Location</option>')
+  })
+})
+
+
+/**
+ * # The two half-fixes review caught
+ *
+ * Both are the same failure: the first pass changed one side of a pair and left
+ * the other, so the item read as fixed while the behaviour was still wrong —
+ * and in NR-16's case, wrong in a NEW way.
+ */
+describe('NR-19 — the availability window is the window that gets stored', () => {
+  /*
+   * `bookingWindow` fed `itemCatalogue.ts`'s `validWindow`, which returns null
+   * for `to <= from`. It was built by differencing the two `YYYY-MM-DD` picker
+   * values, so the same-day booking NR-19 had just unblocked produced two equal
+   * midnights, no window at all, and a silent fallback to each unit's unwindowed
+   * reading. The window must be built from the same instants as the length.
+   */
+  it('gives a same-day booking a window with width, where the date-only build gave none', () => {
+    const from = bookingInstant('2026-09-05', '09:00')
+    const to = bookingInstant('2026-09-05', '18:00')
+    expect(from).not.toBeNull()
+    expect(to).not.toBeNull()
+    expect(to!.getTime()).toBeGreaterThan(from!.getTime())
+
+    // What the old build produced for the very same booking:
+    expect(Date.parse('2026-09-05')).toBe(Date.parse('2026-09-05'))
+  })
+
+  it('agrees with the length: a window with width is a booking of at least one day', () => {
+    const from = bookingInstant('2026-09-05', '09:00')
+    const to = bookingInstant('2026-09-05', '18:00')
+    expect(bookingDays(from, to)).toBeGreaterThanOrEqual(1)
+  })
+
+  it('still refuses a window with no width', () => {
+    const at = bookingInstant('2026-09-05', '09:00')
+    expect(bookingDays(at, at)).toBe(0)
+  })
+})
+
+describe('deriveRentalAlertsAndNotices', () => {
+  const dummyPricing: PricingPipelineResult = calculatePricingPipeline({
+    equipmentSubtotalPaisa: rupees(1000) as Paisa,
+    bundleSubtotalPaisa: rupees(0) as Paisa,
+    servicesSubtotalPaisa: rupees(0) as Paisa,
+    crewSubtotalPaisa: rupees(0) as Paisa,
+    deliveryChargePaisa: rupees(0) as Paisa,
+    fuelChargePaisa: rupees(0) as Paisa,
+    vatEnabled: true,
+    vatRatePercent: 13,
+    recommendedDepositPaisa: rupees(5000) as Paisa,
+  })
+
+  const validClient = {
+    id: 'C-01',
+    dbId: PRODUCT_UUID,
+    name: 'Sita Ram',
+    pan: '123456789',
+    phone: '9841000000',
+    email: 'sita@example.com',
+    outstandingPaisa: rupees(0) as Paisa,
+    totalRentals: 5,
+    isBlocked: false,
+  } as any
+
+  it('passes cleanly when all booking inputs are valid', () => {
+    const result = deriveRentalAlertsAndNotices({
+      conflictLines: [],
+      availabilitySource: { state: 'ready', byProduct: new Map() },
+      client: validClient,
+      govId: '123456789',
+      kind: 'Feature Film',
+      discountPct: 0,
+      crew: [],
+      canBookingMoney: true,
+      depositRequiredPaisa: rupees(5000) as Paisa,
+      depositReceivedPaisa: rupees(0) as Paisa,
+      depositPendingPaisa: rupees(5000) as Paisa,
+      outstandingPaisa: rupees(0) as Paisa,
+      days: 2,
+      clientsAreLive: true,
+      lines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      equipmentLines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      pricing: dummyPricing,
+    })
+
+    expect(result.confirmBlocked).toBe(false)
+    expect(result.critical).toHaveLength(0)
+    expect(result.blockingNotices).toHaveLength(0)
+  })
+
+  it('a missing client ID/PAN is an advisory, not a Confirm blocker (ruled 8 Oct 2026)', () => {
+    const result = deriveRentalAlertsAndNotices({
+      conflictLines: [],
+      availabilitySource: { state: 'ready', byProduct: new Map() },
+      client: validClient,
+      govId: '',
+      kind: 'Feature Film',
+      discountPct: 0,
+      crew: [],
+      canBookingMoney: true,
+      depositRequiredPaisa: rupees(0) as Paisa,
+      depositReceivedPaisa: rupees(0) as Paisa,
+      depositPendingPaisa: rupees(0) as Paisa,
+      outstandingPaisa: rupees(0) as Paisa,
+      days: 2,
+      clientsAreLive: true,
+      lines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      equipmentLines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      pricing: dummyPricing,
+    })
+
+    expect(result.confirmBlocked).toBe(false)
+    expect(result.blockingNotices.some((n) => n.text === MISSING_GOV_ID_TEXT)).toBe(false)
+    expect(result.advisories.map((a) => a.text)).toEqual([MISSING_GOV_ID_TEXT])
+  })
+
+  it('blocks confirm when client is missing or project type is empty', () => {
+    const noClient = deriveRentalAlertsAndNotices({
+      conflictLines: [],
+      availabilitySource: { state: 'ready', byProduct: new Map() },
+      client: undefined,
+      govId: '',
+      kind: '',
+      discountPct: 0,
+      crew: [],
+      canBookingMoney: true,
+      depositRequiredPaisa: rupees(0) as Paisa,
+      depositReceivedPaisa: rupees(0) as Paisa,
+      depositPendingPaisa: rupees(0) as Paisa,
+      outstandingPaisa: rupees(0) as Paisa,
+      days: 1,
+      clientsAreLive: true,
+      lines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      equipmentLines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      pricing: dummyPricing,
+    })
+
+    expect(noClient.confirmBlocked).toBe(true)
+    expect(noClient.critical.some((c) => c.text.includes('No client selected'))).toBe(true)
+    expect(noClient.critical.some((c) => c.text.includes('Select a project type'))).toBe(true)
+  })
+})
+

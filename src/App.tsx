@@ -1,5 +1,5 @@
-import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
 import BottomBar, { BAR_BOX } from './components/shell/BottomBar'
@@ -8,9 +8,12 @@ import type { Crumb } from './components/shell/Header'
 import ScannerFab from './components/shell/ScannerFab'
 import { ErrorBoundary } from './components/shell/ErrorBoundary'
 import { LoadingSkeleton, RestrictedState } from './components/ui/StateViews'
+import NotFound from './pages/NotFound'
 import Placeholder from './modules/Placeholder'
-import { NAV, isMoneySurface } from './data/nav'
+import { WelcomeOnboarding } from './lib/WelcomeOnboarding'
+import { NAV, isMoneySurface, isStaffSurface, FLOOR_ROUTE_SUFFIXES } from './data/nav'
 import { ToastProvider } from './components/ui/Toast'
+import { SyncProvider } from './lib/syncContext'
 import { CommandPalette } from './components/shell/CommandPalette'
 import Login from './modules/auth/Login'
 import ForgotPassword from './modules/auth/ForgotPassword'
@@ -18,13 +21,17 @@ import ResetPassword from './modules/auth/ResetPassword'
 import ScreenLock from './modules/auth/ScreenLock'
 import { useAuth } from './lib/auth'
 import { useViewport } from './lib/device'
-import { canViewMoney } from './lib/rbac'
+import { canViewMoney, isStaff } from './lib/rbac'
+import { installRoutePreload } from './lib/routePreload'
+import { OperationsWorkspaceProvider } from './modules/operations/OperationsWorkspaceContext'
+import { WorkspaceProvider, useWorkspace } from './lib/workspaceContext'
+import { SchemaGuardBanner } from './components/shell/SchemaGuardBanner'
+import { ConflictNotificationBanner } from './components/ui/ConflictNotificationBanner'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
 const RentalsList       = lazy(() => import('./modules/rentals/RentalsList'))
 const BookingDetail     = lazy(() => import('./modules/rentals/BookingDetail'))
-const NewRental         = lazy(() => import('./modules/rentals/NewRental'))
 const PackingWorkspace  = lazy(() => import('./modules/rentals/PackingWorkspace'))
 const HandoverWorkspace = lazy(() => import('./modules/rentals/HandoverWorkspace'))
 const ReturnWorkspace   = lazy(() => import('./modules/rentals/ReturnWorkspace'))
@@ -34,10 +41,21 @@ const Pulse             = lazy(() => import('./modules/reports/Pulse'))
 const ExpenseReports    = lazy(() => import('./modules/reports/ExpenseReports'))
 const ClientReports     = lazy(() => import('./modules/reports/ClientReports'))
 const InventoryReports  = lazy(() => import('./modules/reports/InventoryReports'))
+const ProductReports    = lazy(() => import('./modules/reports/ProductReports'))
 const EquipmentPerformance = lazy(() => import('./modules/reports/EquipmentPerformance'))
+const AssetRoiReport    = lazy(() => import('./modules/reports/AssetRoiReport'))
 const PromotionsReports = lazy(() => import('./modules/reports/PromotionsReports'))
 const StaffReports      = lazy(() => import('./modules/reports/StaffReports'))
 const ForecastingReports = lazy(() => import('./modules/reports/ForecastingReports'))
+const RentalReports     = lazy(() => import('./modules/reports/RentalReports'))
+const OperationsReports = lazy(() => import('./modules/reports/OperationsReports'))
+const DamageMaintenanceReports = lazy(() => import('./modules/reports/DamageMaintenanceReports'))
+const RevenueReport     = lazy(() => import('./modules/reports/RevenueReport'))
+const CasesReport       = lazy(() => import('./modules/reports/CasesReport'))
+const CustomReport      = lazy(() => import('./modules/reports/CustomReport'))
+
+const SalesVatReports   = lazy(() => import('./modules/reports/SalesVatReports'))
+const ActivityReports   = lazy(() => import('./modules/reports/ActivityReports'))
 const BackupRestore     = lazy(() => import('./modules/admin/BackupRestore'))
 const AuditSettings     = lazy(() => import('./modules/admin/AuditSettings'))
 const ActivityLog       = lazy(() => import('./modules/admin/ActivityLog'))
@@ -48,55 +66,56 @@ const WorkingCapital    = lazy(() => import('./modules/reports/WorkingCapitalRep
 const CasesReports      = lazy(() => import('./modules/reports/CasesReports'))
 const ProductReports    = lazy(() => import('./modules/reports/ProductReports'))
 const Inventory         = lazy(() => import('./modules/inventory/Inventory'))
-const AddBundle         = lazy(() => import('./modules/inventory/AddBundle').then(m => ({ default: m.AddBundle })))
-/* 06 Inventory renders — these screens existed but were unreachable. */
-const AddEquipment      = lazy(() => import('./modules/inventory/AddEquipment'))
+const BundleDetail      = lazy(() => import('./modules/inventory/BundleDetail'))
 const AssetDetail       = lazy(() => import('./modules/inventory/AssetDetail'))
-const Warehouses        = lazy(() => import('./modules/inventory/Warehouses'))
-const StockCheck        = lazy(() => import('./modules/inventory/StockCheck'))
 const PurchaseRequests  = lazy(() => import('./modules/inventory/PurchaseRequests'))
 const Calendar          = lazy(() => import('./modules/calendar/Calendar'))
-const Documents         = lazy(() => import('./modules/documents/Documents'))
 const OperationsQueues  = lazy(() => import('./modules/operations/OperationsQueues'))
 const Finance           = lazy(() => import('./modules/finance/Finance'))
-/* `09_FINANCE.md` §9.3 — the Payments TAB. Read-only by law: `payments` is
-   immutable (Law 4), so the screen records and reverses but never edits. */
-const Payments          = lazy(() => import('./modules/finance/Payments'))
-/* `09_FINANCE.md` §9.4 — the Expenses TAB. Not the same screen as
-   `/reports/expenses`, which is the Expense *report* over a fixture; this is the
-   ledger, reading `expenses` through `lib/queries/finance.ts`. */
-const Expenses          = lazy(() => import('./modules/finance/Expenses'))
+const DailyClosing      = lazy(() => import('./modules/finance/DailyClosing'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
 const ToolsLanding      = lazy(() => import('./modules/tools/ToolsLanding'))
-const DepreciationCalculator = lazy(() => import('./modules/tools/DepreciationCalculator'))
-const PricingCalculator = lazy(() => import('./modules/tools/PricingCalculator'))
-/* The cinematography calculator suite. Kept by Rulings §6, which also fixes its
-   home at /tools/cinematography; /settings/tools redirects there. */
-const CineTools         = lazy(() => import('./modules/settings/Tools'))
-const Membership        = lazy(() => import('./modules/clients/Membership'))
 const Clients           = lazy(() => import('./modules/clients/Clients'))
-const AddClient         = lazy(() => import('./modules/clients/AddClient'))
 const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
-const DuplicateCenter   = lazy(() => import('./modules/clients/DuplicateCenter'))
-const ImportCenter      = lazy(() => import('./modules/clients/ImportCenter'))
-const GenerateReferralCode = lazy(() => import('./modules/clients/GenerateReferralCode'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/crew/CrewBooking').then(m => ({ default: m.CrewBooking })))
 const SubRental         = lazy(() => import('./modules/operations/SubRental').then(m => ({ default: m.SubRental })))
+const DeliveryWorkspace = lazy(() => import('./modules/operations/DeliveryWorkspace'))
+const TimesheetTab      = lazy(() => import('./modules/crew/TimesheetTab'))
+const ProductionsList   = lazy(() => import('./modules/rentals/ProductionsList'))
+const WarrantyTracker   = lazy(() => import('./modules/inventory/WarrantyTracker'))
+const InternalNotesPage = lazy(() => import('./modules/notes/InternalNotesPage'))
 
-/**
- * Route table follows the ID registry in Navigation & Platform Shells v2.0 §7.
- *   /rentals/B-715      /clients/C-34
- *   /inventory/EQ000234        /cases/CASE-2026-0041
- * Never `BR-` — that is the branch prefix.
- */
+function RentalsNewRedirect() {
+  const [searchParams] = useSearchParams()
+  const params = new URLSearchParams(searchParams)
+  params.set('action', 'new')
+  return <Navigate to={`/rentals?${params.toString()}`} replace />
+}
+
 export default function App() {
+  const location = useLocation()
+  const queryRentalCreation = () => new URLSearchParams(location.search).get('action') === 'new'
   const { user } = useAuth()
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
+  useEffect(() => {
+    installRoutePreload()
+    const completed = localStorage.getItem('babin-onboarding-completed')
+    if (completed !== 'true') {
+      setShowOnboarding(true)
+    }
+  }, [])
+
   return (
     <ToastProvider>
-      <CommandPalette />
-      <Routes>
-        <Route path="/login" element={<Login />} />
+      <SyncProvider>
+        <OperationsWorkspaceProvider>
+          <WorkspaceProvider>
+            <CommandPalette />
+            {showOnboarding && <WelcomeOnboarding onClose={() => setShowOnboarding(false)} />}
+            <Routes>
+          <Route path="/login" element={<Login />} />
         {/*
           Password reset, built 15 Aug 2026. Mounted beside /login and outside
           <Shell> for the same reason: a locked-out operator has no session, so
@@ -147,19 +166,17 @@ export default function App() {
 
         {/* Declared before nothing needs it — /new is a static segment, not a
             client ID, so there is no :id route to collide with. */}
+        <Route path="/clients/new" element={<Navigate to="/clients?tab=new" replace />} />
+
         <Route
-          path="/clients/new"
-          element={
-            <Shell crumbs={[{ label: 'Clients', to: '/clients' }, { label: 'Add New Client' }]} search="Search client, company, PAN, phone…">
-              <AddClient />
-            </Shell>
-          }
+          path="/dashboard"
+          element={<Navigate to="/today" replace />}
         />
 
         <Route
           path="/today"
           element={
-            <Shell crumbs={[{ label: 'Today Operations' }]} search="Search booking no, client, equipment…">
+            <Shell crumbs={[{ label: 'Today' }]} search="Search booking no, client, equipment…">
               <Today />
             </Shell>
           }
@@ -168,21 +185,23 @@ export default function App() {
         <Route
           path="/rentals"
           element={
-            <Shell crumbs={[{ label: 'Rentals List' }]} search="Search booking, client, equipment, invoice…">
+            <Shell crumbs={[{ label: queryRentalCreation() ? 'New Rental' : 'Rentals' }]} search="Search booking, client, equipment, invoice…">
               <RentalsList />
             </Shell>
           }
         />
 
-        {/* Declared before /rentals/:bookingNo so "new" is not read as an ID. */}
         <Route
-          path="/rentals/new"
+          path="/rentals/productions"
           element={
-            <Shell crumbs={[{ label: 'Rentals List', to: '/rentals' }, { label: 'New Rental' }]} search="Search client, equipment…">
-              <NewRental />
+            <Shell crumbs={[{ label: 'Rentals', to: '/rentals' }, { label: 'Productions Hub' }]} search="Search productions, client, shoot…">
+              <ProductionsList />
             </Shell>
           }
         />
+
+        {/* Declared before /rentals/:bookingNo so "new" is not read as an ID. */}
+        <Route path="/rentals/new" element={<RentalsNewRedirect />} />
 
         {/* §4.3 — operations are full-screen routes, never modals. */}
         <Route
@@ -266,6 +285,15 @@ export default function App() {
         />
 
         <Route
+          path="/crew/timesheet"
+          element={
+            <Shell crumbs={[{ label: 'Crew Assist', to: '/crew' }, { label: 'Timesheet' }]} search="Search staff, role…">
+              <TimesheetTab />
+            </Shell>
+          }
+        />
+
+        <Route
           path="/inventory"
           element={
             <Shell crumbs={[{ label: 'Inventory' }]} search="Search equipment, serial, SKU, category…">
@@ -274,36 +302,30 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/inventory/warranty"
+          element={
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Warranty & RMA Tracker' }]} search="Search equipment, serial, provider…">
+              <WarrantyTracker />
+            </Shell>
+          }
+        />
+
         {/*
-          `06 Inventory` renders. Declared before `/inventory/:code` so a word
-          like "new" is never read as an equipment code.
+          Integrated in-page: /inventory/new redirects to /inventory?tab=new so
+          operators remain inside the Inventory module workspace without detached shortcuts.
         */}
-        <Route
-          path="/inventory/new"
-          element={
-            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Add Equipment' }]} search="Search equipment, serial, SKU, category…">
-              <AddEquipment />
-            </Shell>
-          }
-        />
+        <Route path="/inventory/new" element={<Navigate to="/inventory?tab=new" replace />} />
 
-        <Route
-          path="/inventory/warehouses"
-          element={
-            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Warehouses' }]} search="Search warehouse, zone, bay…">
-              <Warehouses />
-            </Shell>
-          }
-        />
+        {/*
+          Integrated in-page: Warehouses moved to Settings ▸ Branches & Warehouses (§11.3).
+          /inventory/warehouses redirects to /settings?tab=branches&view=warehouses.
+        */}
+        <Route path="/inventory/warehouses" element={<Navigate to="/settings?tab=branches&view=warehouses" replace />} />
 
-        <Route
-          path="/inventory/stock-check"
-          element={
-            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Stock Check' }]} search="Scan or search equipment, serial…">
-              <StockCheck />
-            </Shell>
-          }
-        />
+        <Route path="/inventory/stock-check" element={<Navigate to="/inventory?tab=stock-check" replace />} />
+        <Route path="/inventory/sub-rentals" element={<Navigate to="/inventory?tab=sub-rentals" replace />} />
+        <Route path="/inventory/sub-rental" element={<Navigate to="/inventory?tab=sub-rentals" replace />} />
 
         <Route
           path="/inventory/purchase-requests"
@@ -330,61 +352,97 @@ export default function App() {
           }
         />
 
+        {/*
+          Integrated in-page: /inventory/bundles/new redirects to /inventory?tab=bundles&action=new
+          so operators create bundles in-page within the Bundles workspace.
+        */}
+        <Route path="/inventory/bundles/new" element={<Navigate to="/inventory?tab=bundles&action=new" replace />} />
+
+        {/*
+          Declared after `/inventory/bundles/new` to match this file's grouping
+          convention, NOT to protect it: react-router 7 ranks by specificity
+          (static segment 10, dynamic 3), so `/inventory/bundles/new` (35) beats
+          `/inventory/bundles/:bundleRef` (28) whatever the declaration order,
+          and `/inventory/:assetId` is a two-segment pattern that cannot match a
+          three-segment path at all.
+
+          The param is a REF, not an id: `queries/bundleRecords.ts` maps
+          `id: b.bundleCode` and drops the uuid, so every link carries `BND-…`.
+          The query dispatches on shape anyway, per the 4 Sep ruling that a
+          uuid-only lookup for a code-only caller is a P0 waiting to happen.
+        */}
         <Route
-          path="/inventory/bundles/new"
+          path="/inventory/bundles/:bundleRef"
           element={
-            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Bundles', to: '/inventory' }, { label: 'New Bundle' }]} search="Search inventory, category…">
-              <AddBundle />
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Bundles', to: '/inventory?tab=bundles' }, { label: 'Bundle' }]} search="Search inventory, category…">
+              <BundleDetail />
             </Shell>
           }
+        />
+
+        {/*
+          `/inventory/bundles/:bundleRef/edit` — four segments, so it cannot
+          collide with the three-segment detail route above under any ranking.
+          The ref is the same one the detail page was opened with, and the edit
+          screen reads it the same way (code or uuid), so the two never disagree
+          about which bundle is on screen.
+        */}
+        {/*
+          Integrated in-page: /inventory/bundles/:bundleRef/edit redirects to
+          /inventory/bundles/:bundleRef?action=edit so operators edit bundles
+          in-place within BundleDetail without isolated shortcut sub-pages.
+        */}
+        <Route
+          path="/inventory/bundles/:bundleRef/edit"
+          element={<BundleEditRedirect />}
         />
 
         <Route
           path="/calendar"
           element={
-            <Shell crumbs={[{ label: 'Calendar & Dispatch' }]} search="Search events, bookings, equipment…">
+            <Shell crumbs={[{ label: 'Calendar' }]} search="Search events, bookings, equipment…">
               <Calendar />
             </Shell>
           }
         />
 
-        <Route
-          path="/documents"
-          element={
-            <Shell crumbs={[{ label: 'Documents & Registry' }]} search="Search contracts, invoices, gate passes…">
-              <Documents />
-            </Shell>
-          }
-        />
+        <Route path="/documents" element={<Navigate to="/finance?tab=documents" replace />} />
 
         <Route
           path="/operations"
           element={
-            <Shell crumbs={[{ label: 'Operations Queues' }]} search="Search job, booking, client, kit…">
+            <Shell crumbs={[{ label: 'Operation' }]} search="Search job, booking, client, kit…">
               <OperationsQueues />
             </Shell>
           }
         />
 
+        {/* Moved under Inventory 30 Aug — a case is a finding about GEAR (missing,
+            damaged), so it files with the assets it concerns. The Operation page
+            keeps its Cases chip; only the address moved. */}
         <Route
-          path="/operations/cases"
+          path="/inventory/cases"
           element={
-            <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Cases' }]} search="Search case ID, title, client…">
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
               <CasesWorkspace />
             </Shell>
           }
         />
 
-        {/* Dynamic sibling of /operations/cases, same convention as /clients/:id
+        {/* Dynamic sibling of /inventory/cases, same convention as /clients/:id
             and /inventory/:assetId — declared right after its static parent. */}
         <Route
-          path="/operations/cases/:id"
+          path="/inventory/cases/:id"
           element={
-            <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Cases', to: '/operations/cases' }]} search="Search case ID, title, client…">
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
               <CasesWorkspace />
             </Shell>
           }
         />
+
+        {/* Legacy addresses — Cases lived under /operations until 30 Aug. */}
+        <Route path="/operations/cases" element={<Navigate to="/inventory/cases" replace />} />
+        <Route path="/operations/cases/:id" element={<CasesLegacyRedirect />} />
 
         {/* Moved to a top-level route 9 Aug 2026 (Crew Booking spec v3.2 §1) —
             Crew Assist is its own sidebar module, not an Operations queue. */}
@@ -400,6 +458,26 @@ export default function App() {
         />
 
         <Route
+          path="/operations/delivery"
+          element={
+            <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Delivery & Logistics' }]} search="Search dispatch, booking, address, rider…">
+              <DeliveryWorkspace />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/notes"
+          element={
+            <Shell crumbs={[{ label: 'Team Notes' }]} search="Search shift notes, gear alerts, staff…">
+              <InternalNotesPage />
+            </Shell>
+          }
+        />
+        <Route path="/team/notes" element={<Navigate to="/notes" replace />} />
+        <Route path="/operations/notes" element={<Navigate to="/notes" replace />} />
+
+        <Route
           path="/finance"
           element={
             <Shell crumbs={[{ label: 'Finance' }]} search="Search invoice, payment, client…">
@@ -413,40 +491,29 @@ export default function App() {
             for a money-blind role without `MONEY_ROUTES` gaining an entry. The
             screen spreads `financeRestriction()` too: the guard is a route table,
             that one is the query's own contract. */}
+        {/* §5.4. Money surface by prefix — `isMoneySurface('/finance/closing')`
+            matches on `/finance`, so the Shell guard already refuses a typed
+            URL for a money-blind role; the screen carries its own Law 6 guard
+            too, because a route table and a screen answer different questions. */}
         <Route
-          path="/finance/payments"
+          path="/finance/closing"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Payments' }]} search="Search payment no, transaction ref…">
-              <Payments />
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Daily Closing' }]}>
+              <DailyClosing />
             </Shell>
           }
         />
 
-        {/* §9.4. Money surface by prefix — `isMoneySurface('/finance/expenses')`
-            already matches on `/finance`, so the Shell guard refuses a typed URL
-            for a money-blind role without `MONEY_ROUTES` gaining an entry. */}
-        <Route
-          path="/finance/expenses"
-          element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Expenses' }]} search="Search expense no, vendor, description…">
-              <Expenses />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/finance/documents"
-          element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Tax & Invoices' }]} search="Search tax invoices…">
-              <Documents />
-            </Shell>
-          }
-        />
+        <Route path="/finance/invoices" element={<Navigate to="/finance?tab=invoices" replace />} />
+        <Route path="/finance/payments" element={<Navigate to="/finance?tab=payments" replace />} />
+        <Route path="/finance/expenses" element={<Navigate to="/finance?tab=expenses" replace />} />
+        <Route path="/finance/documents" element={<Navigate to="/finance?tab=documents" replace />} />
+        <Route path="/finance/reports" element={<Navigate to="/finance?tab=reports" replace />} />
 
         <Route
           path="/reports/pulse"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Pulse' }]} search="Search reports…">
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Pulse' }]} search="Search reports…">
               <Pulse />
             </Shell>
           }
@@ -456,7 +523,7 @@ export default function App() {
           path="/reports/expenses"
           element={
             <Shell
-              crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Expense Reports' }]}
+              crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Expense Reports' }]}
               search="Search expense, vendor, category, staff, note…"
             >
               <ExpenseReports />
@@ -467,7 +534,7 @@ export default function App() {
         <Route
           path="/reports/clients"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Client Ledger' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Client Ledger' }]}>
               <ClientReports />
             </Shell>
           }
@@ -476,7 +543,7 @@ export default function App() {
         <Route
           path="/reports/promotions"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Promotions' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Promotions' }]}>
               <PromotionsReports />
             </Shell>
           }
@@ -485,7 +552,7 @@ export default function App() {
         <Route
           path="/reports/staff"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Staff Performance' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Staff Performance' }]}>
               <StaffReports />
             </Shell>
           }
@@ -494,8 +561,21 @@ export default function App() {
         <Route
           path="/reports/inventory"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Inventory Reports' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Inventory Reports' }]}>
               <InventoryReports />
+            </Shell>
+          }
+        />
+
+        {/* §4.41(a) ruling, 2 Sep 2026: this content lived at /reports/inventory
+            until 6fb1c62 replaced it in place with a different report. Routed
+            back at its own path; /reports/inventory links across. Not in the
+            §9.6 register — its 43-count is pinned by rulings §11.3. */}
+        <Route
+          path="/reports/products"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Product Reports' }]}>
+              <ProductReports />
             </Shell>
           }
         />
@@ -503,8 +583,17 @@ export default function App() {
         <Route
           path="/reports/equipment-performance"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Equipment Performance' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Equipment Performance' }]}>
               <EquipmentPerformance />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/asset-roi"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Asset ROI' }]}>
+              <AssetRoiReport />
             </Shell>
           }
         />
@@ -512,7 +601,7 @@ export default function App() {
         <Route
           path="/reports/forecasting"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Forecasting & AI' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Forecasting & AI' }]}>
               <ForecastingReports />
             </Shell>
           }
@@ -521,7 +610,7 @@ export default function App() {
         <Route
           path="/reports/cash-flow"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Cash Flow' }]} search="Search reports…">
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Cash Flow' }]} search="Search reports…">
               <CashFlowReport />
             </Shell>
           }
@@ -530,65 +619,95 @@ export default function App() {
         <Route
           path="/reports/working-capital"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Working Capital' }]} search="Search reports…">
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Working Capital' }]} search="Search reports…">
               <WorkingCapital />
             </Shell>
           }
         />
 
         <Route
+          path="/reports/rentals"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Rental Reports' }]}>
+              <RentalReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/operations"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Operations Reports' }]}>
+              <OperationsReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/damage-maintenance"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Damage & Maintenance' }]}>
+              <DamageMaintenanceReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/sales"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Sales Reports' }]}>
+              <SalesVatReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/vat-tax"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'VAT / Tax Reports' }]}>
+              <SalesVatReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/activity"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Activity Reports' }]}>
+              <ActivityReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/revenue"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Revenue Reports' }]} search="Search reports…">
+              <RevenueReport />
+            </Shell>
+          }
+        />
+        <Route
           path="/reports/cases"
           element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Cases Reports' }]} search="Search reports…">
-              <CasesReports />
+            <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Cases Reports' }]} search="Search cases, counterparty, damage…">
+              <CasesReport />
+            </Shell>
+          }
+        />
+        <Route
+          path="/reports/custom"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Custom Report Builder' }]} search="Search reports…">
+              <CustomReport />
             </Shell>
           }
         />
 
-        <Route
-          path="/reports/products"
-          element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance' }, { label: 'Product Performance' }]} search="Search reports…">
-              <ProductReports />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/clients/memberships"
-          element={
-            <Shell crumbs={[{ label: 'Clients', to: '/clients' }, { label: 'Directory & Membership' }]}>
-              <Membership />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/clients/import"
-          element={
-            <Shell crumbs={[{ label: 'Clients', to: '/clients' }, { label: 'Import Clients' }]}>
-              <ImportCenter />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/clients/duplicates"
-          element={
-            <Shell crumbs={[{ label: 'Clients', to: '/clients' }, { label: 'Duplicate & Merge Center' }]}>
-              <DuplicateCenter />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/clients/referral/new"
-          element={
-            <Shell crumbs={[{ label: 'Clients', to: '/clients' }, { label: 'Referral', to: '/clients' }, { label: 'Generate Referral Code' }]}>
-              <GenerateReferralCode />
-            </Shell>
-          }
-        />
+        <Route path="/clients/memberships" element={<Navigate to="/clients?tab=membership" replace />} />
+        <Route path="/clients/import" element={<Navigate to="/clients?tab=import" replace />} />
+        <Route path="/clients/duplicates" element={<Navigate to="/clients?tab=duplicates" replace />} />
+        <Route path="/clients/referral/new" element={<Navigate to="/clients?tab=referral" replace />} />
 
         {/* Last of the /clients/* group, same reasoning as /inventory/:code —
             a bare segment here is a client ID, so it's declared after every
@@ -622,7 +741,7 @@ export default function App() {
         <Route
           path="/admin/audit"
           element={
-            <Shell crumbs={[{ label: 'Administration', to: '/settings' }, { label: 'Immutable Audit Trail' }]}>
+            <Shell crumbs={[{ label: 'Administration', to: '/settings?tab=system' }, { label: 'Immutable Audit Trail' }]}>
               <AuditSettings />
             </Shell>
           }
@@ -631,7 +750,7 @@ export default function App() {
         <Route
           path="/admin/audit-settings"
           element={
-            <Shell crumbs={[{ label: 'Admin', to: '/settings' }, { label: 'Audit Settings' }]}>
+            <Shell crumbs={[{ label: 'Admin', to: '/settings?tab=system' }, { label: 'Audit Settings' }]}>
               <AuditSettings />
             </Shell>
           }
@@ -650,23 +769,8 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/tools/depreciation"
-          element={
-            <Shell crumbs={[{ label: 'Tools', to: '/tools' }, { label: 'Depreciation' }]}>
-              <DepreciationCalculator />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/tools/pricing"
-          element={
-            <Shell crumbs={[{ label: 'Tools', to: '/tools' }, { label: 'Pricing' }]}>
-              <PricingCalculator />
-            </Shell>
-          }
-        />
+        <Route path="/tools/depreciation" element={<Navigate to="/tools?tab=depreciation" replace />} />
+        <Route path="/tools/pricing" element={<Navigate to="/tools?tab=pricing" replace />} />
 
         <Route
           path="/admin/audit-log"
@@ -710,15 +814,8 @@ export default function App() {
             either spec. Law 3 — nothing is deleted, so the old path still
             resolves as a `replace` redirect, the same treatment the four
             `/admin/*` URLs get above. */}
-        <Route
-          path="/tools/cinematography"
-          element={
-            <Shell crumbs={[{ label: 'Tools', to: '/tools' }, { label: 'Cinematography' }]} search="Search tools, formulas…">
-              <CineTools />
-            </Shell>
-          }
-        />
-        <Route path="/settings/tools" element={<Navigate to="/tools/cinematography" replace />} />
+        <Route path="/tools/cinematography" element={<Navigate to="/tools?tab=cinematography" replace />} />
+        <Route path="/settings/tools" element={<Navigate to="/tools?tab=cinematography" replace />} />
 
         {UNBUILT.map((u) => (
           <Route
@@ -736,81 +833,52 @@ export default function App() {
           path="*"
           element={
             <Shell crumbs={[{ label: '404' }]}>
-              <div style={{ maxWidth: 440, margin: '80px auto', textAlign: 'center' }}>
-                <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>Page not found</h1>
-                <p style={{ color: 'var(--muted)', marginBottom: 20 }}>The URL does not exist in Babin Rentals OS.</p>
-                <a
-                  href="/today"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    background: 'var(--nav-active-accent)',
-                    color: '#fff',
-                    textDecoration: 'none',
-                    fontWeight: 600,
-                    fontSize: 13,
-                  }}
-                >
-                  Return to Today
-                </a>
-              </div>
+              <NotFound />
             </Shell>
           }
         />
       </Routes>
+          </WorkspaceProvider>
+        </OperationsWorkspaceProvider>
+      </SyncProvider>
     </ToastProvider>
   )
 }
 
-/** Nav destinations that have a route but no screen yet. Derived, not hand-listed. */
-const BUILT = new Set([
-  '/today',
-  '/rentals',
-  '/reports/expenses',
-  '/admin/backup',
-  '/clients/memberships',
-  '/admin/audit',
-  '/reports/clients',
-  '/reports/inventory',
-  '/admin/numbering',
-  '/crew',
-  '/inventory',
-  '/calendar',
-  '/documents',
-  '/operations',
-  '/finance',
-  '/settings',
-  '/clients',
-  '/clients/new',
-  '/clients/C-1',
-  '/clients/duplicates',
-  '/clients/import',
-  '/clients/referral/new',
-  '/reports',
-  /* Nav item 10. Must be listed, or `UNBUILT` below derives a second `/tools`
-     route from NAV and mounts a Placeholder against the real landing page. */
-  '/tools',
-  '/tools/depreciation',
-  '/tools/pricing',
-  '/admin/audit-log',
-  '/admin/activity-log',
-  '/tools/cinematography',
-  '/settings/tools',
-  '/finance/documents',
-  '/reports/pulse',
-  '/reports/cash-flow',
-  '/reports/working-capital',
-  '/reports/cases',
-  '/reports/products',
-  '/rentals/new',
-  '/rentals/B-715/packing',
-  '/rentals/B-715/handover',
-  '/rentals/B-715/return',
-  '/rentals/B-715/reset',
-  '/rentals/B-715/evidence',
-])
+/**
+ * Which of NAV's destinations already mount a real screen, so `UNBUILT` below
+ * knows not to shadow them with a Placeholder route.
+ *
+ * INVARIANT — an entry here is only meaningful if the `UNBUILT` derivation can
+ * produce its path. That derivation walks `NAV`, and `NAV` is **flat** (the
+ * fixed 11, no `children` anywhere — `data/nav.ts` keeps `NavChild` as a type
+ * only), so the only paths it can ever yield are the eleven top-level `to`s
+ * listed below. Nothing else belongs in this set.
+ *
+ * It held ~30 other entries until 22 Aug 2026 ('/clients/C-1',
+ * '/rentals/B-715/packing', '/reports/expenses', …) — fossils from when NAV
+ * had children. They could never match anything `UNBUILT` produces, but they
+ * read as routing config and invited the next author to "register" a new
+ * screen here to no effect. Audit item 3.5 cut the set to the producible
+ * eleven. All eleven are built today, so `UNBUILT` is empty; the machinery
+ * stays for the day a nav item ships before its screen — and if NAV ever
+ * regains children, their paths join this set the day their screens exist.
+ */
+const BUILT = new Set(
+  [
+    '/rentals/new', //  1  New Rental
+    '/dashboard', //    2  Dashboard
+    '/operations', //   3  Operation
+    '/rentals', //      4  Rentals
+    '/calendar', //     5  Calendar
+    '/crew', //         6  Crew Assist
+    '/inventory', //    7  Inventory
+    '/clients', //      8  Clients
+    '/finance', //      9  Finance
+    '/tools', //       10  Tools
+    '/settings', //    11  Settings
+  ],
+)
 
 const UNBUILT: Array<{ to: string; title: string; crumbs: Crumb[] }> = NAV.flatMap((s) => {
   const self = { to: s.to, title: s.label, crumbs: [{ label: s.label }] }
@@ -837,8 +905,22 @@ function OfflineBanner() {
 
   return (
     <div style={{
-      background: 'var(--warning-bg, #4d3a00)', // fallback brown/yellow
-      color: 'var(--warning-text, #ffc833)', // fallback yellow
+      /*
+       * The yellow status pair, not a literal — and deliberately the SAME pair
+       * every "waiting / needs attention" surface uses, so the offline bar
+       * cannot drift into a colour of its own.
+       *
+       * History, because this line has been wrong twice: it originally read the
+       * legacy warning-bg / warning-text alias pair with hard-coded fallbacks,
+       * and warning-bg was never defined in theme.css — so the fallback WAS the
+       * colour, in both themes. Fixed 16 Aug by moving to --st-progress-*. Under
+       * DESIGN_DIRECTION_SPEC_v4.1 (25 Aug) the legacy --warning* aliases are
+       * deleted outright and --st-progress-* now resolves to the v4.1 yellow
+       * (--ready / --on-ready), which is the "waiting / in-house" hue. Offline
+       * is exactly that: work is paused, not broken, so yellow and not red.
+       */
+      background: 'var(--st-progress-bg)',
+      color: 'var(--st-progress-fg)',
       padding: '8px 16px',
       fontSize: 'var(--t-meta)',
       fontWeight: 500,
@@ -879,37 +961,70 @@ function MockBanner() {
       style={{
         background: 'var(--st-progress-bg)',
         color: 'var(--st-progress-fg)',
-        padding: '8px 16px',
+        padding: '6px 16px',
         fontSize: 'var(--t-meta)',
         fontWeight: 600,
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'space-between',
         gap: 8,
         borderBottom: '1px solid var(--border)',
       }}
     >
-      <Icon name="error" size={16} />
-      <span style={{ minWidth: 0 }}>
-        Mock data — local corpus, not your Supabase project. Nothing here is real
-        and nothing you change leaves this browser.
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <Icon name="error" size={16} />
+        <span style={{ minWidth: 0 }}>
+          Mock mode (clean database) — all user data & AI-generated records removed. Login with owner@babinrentals.com.
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          try {
+            localStorage.setItem('babin_data_wiped', 'true')
+            localStorage.setItem('babin_internal_notes_v1', JSON.stringify([]))
+            const toRemove: string[] = []
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i)
+              if (k && (k.startsWith('babin.mock.') || k.startsWith('sb-') || k.startsWith('babin-active-') || k.startsWith('babin-today-'))) {
+                toRemove.push(k)
+              }
+            }
+            toRemove.forEach((k) => localStorage.removeItem(k))
+            if (typeof indexedDB !== 'undefined') {
+              try { indexedDB.deleteDatabase('babin.mock.storage.v1') } catch {}
+              try { indexedDB.deleteDatabase('BabinOfflineQueue') } catch {}
+            }
+            window.location.reload()
+          } catch {
+            /* ignore */
+          }
+        }}
+        style={{
+          background: 'transparent',
+          border: '1px solid currentColor',
+          color: 'inherit',
+          padding: '2px 8px',
+          borderRadius: 4,
+          cursor: 'pointer',
+          fontSize: '11px',
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Wipe All User Data
+      </button>
     </div>
   )
 }
 
-/**
- * DEVICES.md §7 build order item 3 — "apply `FLOOR_UI_SCALE` on Pack /
- * Handover / Return / Reset / Scanner rather than leaving it a manual
- * preference." These five suffixes are the one place that decides "is this a
- * floor screen" — previously each workspace hardcoded its own
- * `data-floor="true"` on its root div, which meant a screen renamed or a new
- * floor route added could silently lose the scale. Evidence carries it too:
- * it was already opted in from earlier work and belongs to the same
- * pack/return/reset family read at arm's length. Scanner needs no entry here
- * — `ScannerFab` is a single global component, not a route, and already
- * carries its own `data-floor="true"` correctly.
+/*
+ * FLOOR_ROUTE_SUFFIXES moved to `data/nav.ts` on 22 Aug 2026 — it gained a
+ * second reader (`isStaffSurface`, the Client route-reach guard) and two
+ * copies of the same five suffixes would drift. The DEVICES.md §7 rationale
+ * ("apply FLOOR_UI_SCALE on Pack/Handover/Return/Reset rather than leaving it
+ * a manual preference") travels with the constant.
  */
-const FLOOR_ROUTE_SUFFIXES = ['/packing', '/handover', '/return', '/reset', '/evidence']
 
 /**
  * **The crumb reads the route, not a literal.**
@@ -926,6 +1041,23 @@ const FLOOR_ROUTE_SUFFIXES = ['/packing', '/handover', '/return', '/reset', '/ev
  * the crumb four lines below it restated it anyway. Reading `useParams` is the
  * fix that cannot drift, because there is nowhere left to write the number down.
  */
+/**
+ * `/operations/cases/:id` → `/inventory/cases/:id` (the 30 Aug move). A plain
+ * `<Navigate>` cannot carry a param across, so this one-liner reads it.
+ */
+function CasesLegacyRedirect() {
+  const { id } = useParams()
+  return <Navigate to={id ? `/inventory/cases/${id}` : '/inventory/cases'} replace />
+}
+
+function BundleEditRedirect() {
+  const { bundleRef } = useParams<{ bundleRef: string }>()
+  const [searchParams] = useSearchParams()
+  const p = new URLSearchParams(searchParams)
+  p.set('action', 'edit')
+  return <Navigate to={`/inventory/bundles/${bundleRef}?${p.toString()}`} replace />
+}
+
 function BookingShell({
   tail,
   search,
@@ -937,12 +1069,11 @@ function BookingShell({
   children: ReactNode
 }) {
   const { bookingNo } = useParams()
+  // Non-last crumbs link; the current page (the booking itself, or its
+  // workspace step) keeps no `to` — Header renders the last one inert.
   const crumbs: Crumb[] = [
-    { label: 'Rentals List', to: '/rentals' },
-    { label: 'Bookings', to: '/rentals' },
-    tail && bookingNo
-      ? { label: bookingNo, to: `/rentals/${bookingNo}` }
-      : { label: bookingNo ?? 'Booking' },
+    { label: 'Rentals', to: '/rentals' },
+    { label: bookingNo ?? 'Booking' },
     ...(tail ? [{ label: tail }] : []),
   ]
   return (
@@ -969,14 +1100,15 @@ function Shell({
   const viewport = useViewport()
   const phone = viewport === 'phone'
   const isFloor = FLOOR_ROUTE_SUFFIXES.some((s) => pathname.endsWith(s))
+  const hasElevatedStickyBar = isFloor || pathname === '/rentals/new'
 
   // Restoring a persisted Supabase session is async. Redirecting during that
   // window would flash /login on every refresh and throw away the route the
   // user actually asked for, so hold until the first session lookup resolves.
   if (authLoading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--app)', color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
-        Restoring session…
+      <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--app)', color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+        <div role="status" style={{ width: 240, textAlign: 'center' }}><div style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, color: 'var(--text)' }}>Babin Rentals</div><p>Restoring session…</p><div aria-hidden style={{ height: 4, borderRadius: 4, background: 'var(--card2)', overflow: 'hidden' }}><div style={{ height: '100%', width: '100%', background: 'var(--accent)', animation: 'skeletonShimmer 1.8s ease-in-out infinite' }} /></div></div>
       </div>
     )
   }
@@ -1001,53 +1133,139 @@ function Shell({
    * The report screens each drop their own figures via `useCanViewMoney()`, so
    * this is defence in depth rather than the only gate — but a money-blind role
    * should not reach a hollowed-out Finance report at all.
+   *
+   * The second clause is the same backstop for the external role (22 Aug 2026,
+   * audit theme 3 #7): a Client session typing a floor URL, /clients/import,
+   * /clients/duplicates or /crew used to get the screen with RLS-emptied data
+   * — reachable-but-hollowed, exactly what `lib/rbac.ts:isStaff`'s own doc
+   * ("guard every staff surface with this") forbids. Nav omission is handled
+   * in `permittedNav()` over the same `isStaffSurface()` list, so the two
+   * gates cannot disagree.
    */
-  const isForbidden = !canViewMoney(user.role) && isMoneySurface(pathname)
+  const isForbidden =
+    (!canViewMoney(user.role) && isMoneySurface(pathname)) ||
+    (!isStaff(user.role) && isStaffSurface(pathname))
 
   return (
     <div
       style={{
         display: 'flex',
-        minHeight: '100vh',
-        background: 'var(--app)',
-        transition: 'background-color var(--dur-theme) ease',
+        flexDirection: 'column',
+        height: '100dvh',
+        overflow: 'hidden',
+        /* v4.2 §3 — the shell is TRANSPARENT so <body>'s fixed canvas gradient
+           is the app's backdrop. Painting --app here was hiding the canvas
+           behind an opaque flat fill, which also left the glass surfaces
+           nothing to blur. Theme transition moved to body (theme.css). */
+        background: 'transparent',
       }}
     >
-      {!phone && <Sidebar active={pathname + query} />}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <MockBanner />
-        <OfflineBanner />
-        <ConflictNotificationBanner />
-        <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
-        <main
-          data-floor={isFloor ? 'true' : undefined}
-          style={{
-            flex: 1,
-            /* `BAR_BOX`, not `BOTTOM_BAR_HEIGHT`: the bar occupies its 58px plus
-               the home-indicator inset, so reserving only the 58 leaves the last
-               row of content under the bar on a notched phone. One expression,
-               owned by `BottomBar.tsx`, so the two cannot drift. */
-            padding: phone ? `16px 20px calc(24px + ${BAR_BOX})` : '16px 20px 24px',
-          }}
-        >
-          {isForbidden ? (
-            <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>
-              <RestrictedState reason={`Your role (${user.role}) does not have access to this module.`} />
-            </div>
-          ) : (
-            <ErrorBoundary>
-              <Suspense fallback={<LoadingSkeleton type="card" label="Loading…" />}>
-                {children}
-              </Suspense>
-            </ErrorBoundary>
-          )}
-        </main>
+      <a className="skip-to-content" href="#main-content">Skip to content</a>
+      <MockBanner />
+      <OfflineBanner />
+      <ConflictNotificationBanner />
+      <SchemaGuardBanner />
+
+      <div className="app-shell-layout" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        {!phone && <Sidebar active={pathname + query} />}
+        <div className="app-shell-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+          <WorkspaceContextConsumer search={search} crumbs={crumbs} />
+          <div className="app-workspace" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+            <WorkspaceContent isForbidden={isForbidden} user={user} phone={phone} hasElevatedStickyBar={hasElevatedStickyBar} isFloor={isFloor}>
+              {children}
+            </WorkspaceContent>
+          </div>
+        </div>
       </div>
+
       {phone && <BottomBar active={pathname + query} />}
       <ScannerFab />
 
       {/* Screen Lock Overlay */}
       {isLocked && <ScreenLock onUnlock={() => setLocked(false)} />}
+    </div>
+  )
+}
+
+function WorkspaceContextConsumer({ crumbs, search }: { crumbs: Crumb[], search?: string | undefined }) {
+  return (
+    <HeaderBar
+      crumbs={crumbs}
+      {...(search !== undefined ? { searchPlaceholder: search } : {})}
+    />
+  )
+}
+
+interface WorkspaceContentProps {
+  isForbidden: boolean
+  user: ReturnType<typeof useAuth>['user']
+  phone: boolean
+  hasElevatedStickyBar: boolean
+  isFloor: boolean
+  children: ReactNode
+}
+
+function WorkspaceContent({
+  isForbidden,
+  user,
+  phone,
+  hasElevatedStickyBar,
+  isFloor,
+  children
+}: WorkspaceContentProps) {
+  const { setLeftPanelElement, setRightPanelElement } = useWorkspace()
+  const { pathname } = useLocation()
+  const mainRef = useRef<HTMLElement>(null)
+
+  // The workspace is the scroll container, not window. Without this reset a
+  // shorter destination page can inherit the previous page's scroll position and
+  // render its title underneath the fixed shell header.
+  useLayoutEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = 0
+  }, [pathname])
+
+  return (
+    <div className="workspace-content" style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
+      {/* Left Panel Mount Point */}
+      <div ref={setLeftPanelElement} style={{ display: 'contents' }} />
+
+      <main
+        ref={mainRef}
+        id="main-content"
+        className="app-workspace-main"
+        tabIndex={-1}
+        data-floor={isFloor ? 'true' : undefined}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: phone
+            ? `var(--page-padding) var(--page-padding) calc(${hasElevatedStickyBar ? '88px' : '24px'} + ${BAR_BOX})`
+            : 'var(--page-padding)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          /* Reserve the scrollbar gutter so a page with a scrollbar and a
+             page without one keep the identical content width — otherwise
+             centered header content and page columns shift on navigation. */
+          scrollbarGutter: 'stable',
+        }}
+      >
+        {isForbidden ? (
+          <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>
+            <RestrictedState reason={`Your role (${user?.role ?? 'unknown'}) does not have access to this module.`} />
+          </div>
+        ) : (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton type="card" label="Loading…" />}>
+              {children}
+            </Suspense>
+          </ErrorBoundary>
+        )}
+      </main>
+
+      {/* Right Panel Mount Point */}
+      <div ref={setRightPanelElement} style={{ display: 'contents' }} />
     </div>
   )
 }

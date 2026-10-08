@@ -28,7 +28,7 @@
 
   --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --font-mono: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
 }
 
 html {
@@ -57,6 +57,25 @@ body {
 
 .marquee-track {
   animation: marquee 42s linear infinite;
+}
+
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes quoteFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.quote-enter {
+  animation: quoteFadeIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes marquee {

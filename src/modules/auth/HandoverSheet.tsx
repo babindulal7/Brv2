@@ -139,6 +139,7 @@ export default function HandoverSheet({
           </p>
           <textarea
             value={note}
+            aria-label="Optional notes for the next shift"
             onChange={(e) => setNote(e.target.value)}
             placeholder="Optional notes for the next shift..."
             style={{

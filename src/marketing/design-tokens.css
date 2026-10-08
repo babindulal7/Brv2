@@ -1,0 +1,274 @@
+/**
+ * Babin Rentals Design Tokens — CSS Custom Properties
+ * Auto-generated from @babin-rentals/design-tokens
+ * Import this in marketing page to use design tokens as CSS custom properties
+ */
+
+:root {
+  /* Light theme (default) */
+  --color-bg: #f5f7fb;
+  --color-bg-glow: #edf2f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #edf3fa;
+  --color-card: #ffffff;
+  --color-card-2: #faf8f4;
+  --color-inset: #f5f3ee;
+  --color-inset-2: #eae6de;
+  --color-border: #cbd5e1;
+  --color-border-2: #d8e2ee;
+  --color-divider: #cbd5e1;
+
+  /* Translucent alpha scale */
+  --color-alpha-02: rgba(15, 23, 42, 0.02);
+  --color-alpha-04: rgba(15, 23, 42, 0.04);
+  --color-alpha-05: rgba(15, 23, 42, 0.05);
+  --color-alpha-08: rgba(15, 23, 42, 0.08);
+  --color-alpha-10: rgba(15, 23, 42, 0.10);
+  --color-alpha-12: rgba(15, 23, 42, 0.12);
+  --color-alpha-15: rgba(15, 23, 42, 0.15);
+  --color-alpha-20: rgba(15, 23, 42, 0.20);
+  --color-alpha-30: rgba(15, 23, 42, 0.30);
+  --color-alpha-40: rgba(15, 23, 42, 0.40);
+
+  /* Brand colors */
+  --color-primary: #2456d6;
+  --color-primary-text: #1e49b8;
+  --color-on-primary: #ffffff;
+  --color-brand: #2456d6;
+  --color-gold: #2456d6;
+  --color-brand-mark: #2456d6;
+
+  /* Status colors */
+  --color-success: #1e864a;
+  --color-success-text: #15683a;
+  --color-on-success: #ffffff;
+
+  --color-danger: #c73a3a;
+  --color-danger-text: #a82f2f;
+  --color-on-danger: #ffffff;
+
+  --color-warn: #c45d16;
+  --color-warn-text: #a05818;
+  --color-on-warn: #231a05;
+
+  --color-ready: #d4a315;
+  --color-ready-text: #8a6b0b;
+  --color-on-ready: #231a05;
+
+  --color-neutral: #72757e;
+  --color-neutral-text: #ffffff;
+  --color-on-neutral: #ffffff;
+
+  --color-dim: #dddcd6;
+  --color-dim-text: #5a5d63;
+  --color-on-dim: #8b8e96;
+
+  /* Text colors */
+  --color-text: #1c1e22;
+  --color-text-2: #4b4e54;
+  --color-muted: #6d7076;
+  --color-disabled: #9b9ea4;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 8px 20px -3px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.05), 0 4px 6px -2px rgba(15, 23, 42, 0.025);
+  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.10), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
+  --shadow-modal: 0 20px 48px rgba(15, 23, 42, 0.16);
+  --shadow-primary-glow: 0 8px 20px -4px rgba(36, 86, 214, 0.25);
+
+  /* Border radius */
+  --radius-btn: 8px;
+  --radius-card: 10px;
+  --radius-input: 8px;
+  --radius-modal: 12px;
+  --radius-chip: 6px;
+  --radius-badge: 999px;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 40px;
+
+  /* Typography */
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Outfit', 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Source Sans 3', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Type scale */
+  --text-display: clamp(2.6rem, 5.2vw, 5.5rem);
+  --text-h1: clamp(2.4rem, 4.8vw, 5rem);
+  --text-h2: clamp(2rem, 3.8vw, 3.6rem);
+  --text-h3: clamp(1.6rem, 3.2vw, 3rem);
+  --text-body: 1rem;
+  --text-body-lg: 1.125rem;
+  --text-ui: 0.9375rem;
+  --text-meta: 0.875rem;
+  --text-caption: 0.75rem;
+
+  /* Transitions */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 200ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Z-index */
+  --z-dropdown: 1100;
+  --z-sticky-nav: 1200;
+  --z-overlay: 1300;
+  --z-drawer: 1350;
+  --z-modal: 1400;
+  --z-toast: 9000;
+  --z-system: 10500;
+}
+
+/* Dark theme */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #050b12;
+    --color-bg-glow: #0a1826;
+    --color-surface: #0b1622;
+    --color-surface-2: #0d1a29;
+    --color-card: #0b1622;
+    --color-card-2: #0d1a29;
+    --color-inset: #081522;
+    --color-inset-2: #0b1b2c;
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-2: rgba(255, 255, 255, 0.12);
+    --color-divider: rgba(255, 255, 255, 0.08);
+
+    --color-alpha-02: rgba(255, 255, 255, 0.02);
+    --color-alpha-04: rgba(255, 255, 255, 0.04);
+    --color-alpha-05: rgba(255, 255, 255, 0.05);
+    --color-alpha-08: rgba(255, 255, 255, 0.08);
+    --color-alpha-10: rgba(255, 255, 255, 0.10);
+    --color-alpha-12: rgba(255, 255, 255, 0.12);
+    --color-alpha-15: rgba(255, 255, 255, 0.15);
+    --color-alpha-20: rgba(255, 255, 255, 0.20);
+    --color-alpha-30: rgba(255, 255, 255, 0.30);
+    --color-alpha-40: rgba(255, 255, 255, 0.40);
+
+    --color-primary: #386af7;
+    --color-primary-text: #7ea2ff;
+    --color-on-primary: #ffffff;
+    --color-brand: #386af7;
+    --color-gold: #386af7;
+    --color-brand-mark: #85b2ff;
+
+    --color-success: #1e864a;
+    --color-success-text: #4ade80;
+    --color-on-success: #ffffff;
+
+    --color-danger: #c73a3a;
+    --color-danger-text: #f08a8a;
+    --color-on-danger: #ffffff;
+
+    --color-warn: #d47026;
+    --color-warn-text: #e8a06e;
+    --color-on-warn: #1c1005;
+
+    --color-ready: #d4a824;
+    --color-ready-text: #d4a824;
+    --color-on-ready: #1c1405;
+
+    --color-neutral: #3a3e47;
+    --color-neutral-text: #c9cbd1;
+    --color-on-neutral: #c9cbd1;
+
+    --color-dim: #24262c;
+    --color-dim-text: #8b8e96;
+    --color-on-dim: #8b8e96;
+
+    --color-text: #f1f5f9;
+    --color-text-2: #94a3b8;
+    --color-muted: #8b8e96;
+    --color-disabled: #475569;
+
+    --shadow-xs: 0 1px 2px 0 rgba(2, 6, 11, 0.35);
+    --shadow-sm: 0 1px 3px 0 rgba(2, 6, 11, 0.4), 0 1px 2px -1px rgba(2, 6, 11, 0.3);
+    --shadow: 0 4px 14px -2px rgba(2, 6, 11, 0.5), 0 2px 6px -1px rgba(2, 6, 11, 0.3);
+    --shadow-md: 0 14px 28px -4px rgba(2, 6, 11, 0.6), 0 6px 12px -2px rgba(2, 6, 11, 0.4);
+    --shadow-lg: 0 20px 36px -6px rgba(2, 6, 11, 0.65), 0 8px 14px -3px rgba(2, 6, 11, 0.45);
+    --shadow-xl: 0 28px 56px -8px rgba(2, 6, 11, 0.75), 0 12px 18px -4px rgba(2, 6, 11, 0.5);
+    --shadow-modal: 0 28px 72px -12px rgba(2, 6, 11, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --shadow-primary-glow: 0 8px 28px -4px rgba(56, 106, 247, 0.45);
+
+    --color-warn: #d47026;
+    --color-warn-text: #e8a06e;
+    --color-on-warn: #1c1005;
+
+    --color-ready: #d4a824;
+    --color-ready-text: #d4a824;
+    --color-on-ready: #1c1405;
+
+    --color-neutral: #3a3e47;
+    --color-neutral-text: #c9cbd1;
+    --color-on-neutral: #c9cbd1;
+
+    --color-dim: #24262c;
+    --color-dim-text: #8b8e96;
+    --color-on-dim: #8b8e96;
+
+    --color-text: #f1f5f9;
+    --color-text-2: #94a3b8;
+    --color-muted: #8b8e96;
+    --color-disabled: #475569;
+  }
+}
+
+/* High contrast theme */
+@media (prefers-contrast: more) {
+  :root {
+    --color-bg: #0a0a0a;
+    --color-surface: #0a0a0a;
+    --color-border: #facc15;
+    --color-text: #ffffff;
+    --color-primary: #facc15;
+    --color-on-primary: #000000;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus visible */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Utility classes for marketing page */
+.token-bg { background-color: var(--color-bg); }
+.token-surface { background-color: var(--color-surface); }
+.token-card { background-color: var(--color-card); }
+.token-text { color: var(--color-text); }
+.token-text-2 { color: var(--color-text-2); }
+.token-muted { color: var(--color-muted); }
+.token-primary { color: var(--color-primary); }
+.token-bg-primary { background-color: var(--color-primary); }
+.token-text-primary { color: var(--color-on-primary); }
+.token-gold { color: var(--color-gold); }
+.token-bg-gold { background-color: var(--color-gold); }
+.token-text-gold { color: var(--color-on-primary); }
+.token-border { border-color: var(--color-border); }
+.token-border-primary { border-color: var(--color-primary); }
+.token-shadow { box-shadow: var(--shadow); }
+.token-shadow-lg { box-shadow: var(--shadow-lg); }
+.token-radius { border-radius: var(--radius-card); }
+.token-radius-btn { border-radius: var(--radius-btn); }
+.token-radius-full { border-radius: var(--radius-badge); }
+.token-font-display { font-family: var(--font-display); }
+.token-font-body { font-family: var(--font-body); }
+.token-font-mono { font-family: var(--font-mono); }

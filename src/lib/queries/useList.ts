@@ -51,7 +51,12 @@ export interface ListResult<T> {
   /** Total matching rows when the query asked for a count; null when it did not. */
   total: number | null
   refetch: () => void
-  /** Timestamp when rows were last successfully loaded (Plan §Phase 9). */
+  /**
+   * When `rows` last came back from a SUCCESSFUL read; null until the first.
+   * A failed refresh leaves it alone — the rows on screen are that old. Read
+   * by `DataAgeBadge` (PLAN.md Phase 9, "network-first reads with an age
+   * badge"). From main's Phase 9 work, ported 8 Oct 2026.
+   */
   lastFetchedAt: Date | null
 }
 

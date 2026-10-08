@@ -1,10 +1,21 @@
 import { useCallback, useState } from 'react'
+import { readLocal, writeLocal } from './safeStorage'
 
 const PREFIX = 'br-collapsed:'
 
+/*
+ * ⛔ This module white-screened the iPad, and only the iPad.
+ *
+ * `useCollapsed` is called by `Sidebar`, which renders at tablet width and up,
+ * and it read `window.localStorage` during render, unguarded, OUTSIDE any
+ * ErrorBoundary. WebKit throws SecurityError on that access under Lockdown
+ * Mode or "Block All Cookies" — so an iPad blanked on the first authenticated
+ * paint while a phone-width device, which never renders the Sidebar, did not.
+ * That asymmetry is exactly what made the bug look like a network problem.
+ */
 function readCollapsed(key: string, defaultValue: boolean): boolean {
   if (typeof window === 'undefined') return defaultValue
-  const raw = window.localStorage.getItem(PREFIX + key)
+  const raw = readLocal(PREFIX + key)
   return raw === null ? defaultValue : raw === '1'
 }
 
@@ -19,7 +30,8 @@ export function useCollapsed(key: string, defaultValue = false): [boolean, () =>
   const toggle = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev
-      window.localStorage.setItem(PREFIX + key, next ? '1' : '0')
+      /* The panel still collapses on a device that cannot remember it. */
+      writeLocal(PREFIX + key, next ? '1' : '0')
       return next
     })
   }, [key])

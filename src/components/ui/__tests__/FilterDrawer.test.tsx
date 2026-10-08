@@ -23,7 +23,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { ActiveFilterChips, FilterDrawer, FilterOptionList, type ActiveFilter } from '../FilterDrawer'
+import { ActiveFilterChips, FilterDrawer, FilterOptionList, FilterSection, type ActiveFilter } from '../FilterDrawer'
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
@@ -79,6 +79,25 @@ describe('FilterDrawer — what it costs the page', () => {
     mount(<FilterDrawer id="f" open onClose={() => {}}><p>facets</p></FilterDrawer>)
     const wrapper = container.firstElementChild as HTMLElement
     expect(wrapper.style.position).toBe('fixed')
+  })
+})
+
+describe('FilterDrawer — Booqable desktop rail mode', () => {
+  it('participates in layout as a sticky labelled region', () => {
+    mount(<FilterDrawer id="f" open onClose={() => {}} desktopMode="rail" width={280}><p>facets</p></FilterDrawer>)
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.className).toBe('filter-rail')
+    expect(wrapper.style.position).toBe('sticky')
+    expect(wrapper.style.width).toBe('280px')
+    expect(container.querySelector('[role="region"]')).not.toBeNull()
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('falls back to the modal sheet on phone', () => {
+    setWidth(420)
+    mount(<FilterDrawer id="f" open onClose={() => {}} desktopMode="rail"><p>facets</p></FilterDrawer>)
+    expect((container.firstElementChild as HTMLElement).style.position).toBe('fixed')
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')
   })
 })
 
@@ -188,6 +207,36 @@ describe('FilterDrawer — the header count and the footer', () => {
     )
     expect(container.querySelector('footer')?.textContent).toBe('Apply Filters (3)')
   })
+
+  it('renders standard Booqable dual footer with Clear all and Apply', () => {
+    let cleared = false
+    let applied = false
+    mount(
+      <FilterDrawer
+        id="f"
+        open
+        onClose={() => {}}
+        activeCount={2}
+        resultCount={15}
+        noun="rentals"
+        onClearAll={() => (cleared = true)}
+        standardFooter
+        onApply={() => (applied = true)}
+      >
+        <p>f</p>
+      </FilterDrawer>,
+    )
+    const footerButtons = container.querySelectorAll('footer button')
+    expect(footerButtons).toHaveLength(2)
+    expect(footerButtons[0]?.textContent).toContain('Clear all (2)')
+    expect(footerButtons[1]?.textContent).toContain('Show 15 Results')
+
+    act(() => (footerButtons[0] as HTMLButtonElement).click())
+    expect(cleared).toBe(true)
+
+    act(() => (footerButtons[1] as HTMLButtonElement).click())
+    expect(applied).toBe(true)
+  })
 })
 
 const OPTIONS = ['Booked', 'Packed', 'Out', 'Returned', 'Closed', 'Cancelled'].map((value) => ({ value }))
@@ -284,3 +333,96 @@ describe('ActiveFilterChips — §8', () => {
     expect(removed).toBe(1)
   })
 })
+
+describe('FilterSection — Collapsible Filter Group', () => {
+  it('renders expanded by default with title, chevron and content', () => {
+    mount(
+      <FilterSection title="Status" id="sec-status">
+        <p id="child-content">Active items</p>
+      </FilterSection>,
+    )
+    const btn = container.querySelector('button#sec-status-heading')
+    expect(btn?.getAttribute('aria-expanded')).toBe('true')
+    expect(btn?.textContent).toContain('Status')
+    expect(container.querySelector('#child-content')).not.toBeNull()
+  })
+
+  it('toggles collapsed on click', () => {
+    mount(
+      <FilterSection title="Date Range" id="sec-date" defaultOpen={true}>
+        <p id="date-content">Date picker</p>
+      </FilterSection>,
+    )
+    const btn = container.querySelector<HTMLButtonElement>('button#sec-date-heading')!
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#date-content')).not.toBeNull()
+
+    act(() => btn.click())
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('#date-content')).toBeNull()
+
+    act(() => btn.click())
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#date-content')).not.toBeNull()
+  })
+
+  it('renders badge and action if provided', () => {
+    let actionFired = false
+    mount(
+      <FilterSection
+        title="Client"
+        badge={<span>3 active</span>}
+        action={<button type="button" onClick={() => (actionFired = true)}>Reset</button>}
+      >
+        <p>content</p>
+      </FilterSection>,
+    )
+    expect(container.textContent).toContain('3 active')
+    const resetBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Reset')
+    expect(resetBtn).toBeDefined()
+    act(() => resetBtn!.click())
+    expect(actionFired).toBe(true)
+  })
+})
+
+describe('FilterDrawer — positioning, portal, and overflow containment', () => {
+  it('portals to document.body when portal is true', () => {
+    mount(<FilterDrawer id="f" open onClose={() => {}} portal={true}><p>facets</p></FilterDrawer>)
+    expect(container.innerHTML).toBe('')
+    const portaled = document.body.querySelector('.filter-overlay')
+    expect(portaled).not.toBeNull()
+    expect((portaled as HTMLElement).style.position).toBe('fixed')
+  })
+
+  it('contains overflow so panel animation does not spill over navigation', () => {
+    mount(<FilterDrawer id="f" open onClose={() => {}}><p>facets</p></FilterDrawer>)
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.style.overflow).toBe('hidden')
+  })
+
+  it('measures header bottom when app-global-header exists in DOM', () => {
+    const fakeHeader = document.createElement('header')
+    fakeHeader.className = 'app-global-header'
+    fakeHeader.getBoundingClientRect = () => ({
+      bottom: 75,
+      top: 15,
+      height: 60,
+      width: 1000,
+      left: 0,
+      right: 1000,
+      x: 0,
+      y: 15,
+      toJSON: () => {},
+    })
+    document.body.appendChild(fakeHeader)
+
+    try {
+      mount(<FilterDrawer id="f" open onClose={() => {}}><p>facets</p></FilterDrawer>)
+      const wrapper = container.firstElementChild as HTMLElement
+      expect(wrapper.style.top).toBe('75px')
+    } finally {
+      fakeHeader.remove()
+    }
+  })
+})
+

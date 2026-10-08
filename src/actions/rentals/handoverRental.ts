@@ -6,6 +6,7 @@ import {
   type FloorLineInput,
   type FloorVerbResult,
 } from './floorVerb';
+import type { SignatureInput } from './floorVerb';
 
 /**
  * **Handover — the second floor verb.** Runs at `JOBS.Handover.runsAt` =
@@ -35,8 +36,25 @@ export type HandoverRentalInput = {
   clientUuid?: string;
   /** Free text onto `operation_sessions.notes`. */
   notes?: string;
+  /**
+   * **R-06.** The named reason for handing over while the rental balance or the
+   * security deposit is unpaid. Without it the database still refuses; with it
+   * the handover proceeds and the reason is recorded in `audit_events` against
+   * the person who gave it, with both amounts as they stood.
+   */
+  overrideReason?: string;
   /** AD/UTC. Defaults to now. */
   occurredAt?: string;
+  /**
+   * The receiver and warehouse-staff signatures captured at session close.
+   * Written to the `signatures` table before the stage-gate trigger fires so
+   * the DB gate at `0115:320-326` passes. Without these rows the booking cannot
+   * advance to On Rent.
+   */
+  signatures?: readonly SignatureInput[];
+  /** Gate 1 — checked against the receiver's physical ID at the counter. Written to `operation_sessions`. */
+  governmentIdVerified?: boolean;
+  bookingAuthorizationVerified?: boolean;
 };
 
 export const handoverRental = createAction<HandoverRentalInput, FloorVerbResult>({
@@ -60,7 +78,13 @@ export const handoverRental = createAction<HandoverRentalInput, FloorVerbResult>
         ...(input.lines === undefined ? {} : { lines: input.lines }),
         ...(input.clientUuid === undefined ? {} : { clientUuid: input.clientUuid }),
         ...(input.notes === undefined ? {} : { notes: input.notes }),
+        ...(input.overrideReason === undefined ? {} : { overrideReason: input.overrideReason }),
         ...(input.occurredAt === undefined ? {} : { occurredAt: input.occurredAt }),
+        ...(input.governmentIdVerified === undefined ? {} : { governmentIdVerified: input.governmentIdVerified }),
+        ...(input.bookingAuthorizationVerified === undefined
+          ? {}
+          : { bookingAuthorizationVerified: input.bookingAuthorizationVerified }),
+        ...(input.signatures === undefined || input.signatures.length === 0 ? {} : { signatures: input.signatures }),
       },
       ctx,
     );

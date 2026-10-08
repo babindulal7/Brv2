@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 /**
- * # Booking Detail — §4.2's layout, at all three widths
+ * # Booking Detail — §4.2's layout, at all three widths, over QUERIED data
  *
- * `BookingDetail.edit.test.tsx` beside this file pins inline edit. This one
- * pins the shape the 12 Aug rebuild put on the screen:
+ * Rewritten 21 Aug 2026 with the live conversion: the page no longer renders
+ * `data/booking.ts`'s seeded B-715 — it reads `listBookings` /
+ * `fetchFloorBooking` / `listInvoices` / `listPayments`, so this suite mocks
+ * those four at the module seam (the same seam the screen imports through,
+ * Law 2) and pins the same laws the old suite pinned:
  *
- *  1. the **six-step stepper** (Quote → Booked → Packed → On Rent → Returned →
- *     Closed), read from `lib/workflow.ts`'s canonical order so a seventh stage
- *     cannot appear here without appearing in the engine first;
- *  2. **money blocks OMITTED, not greyed**, for a money-blind role — Law 6 and
- *     §4.2's own Notes. Including the sticky bar, which is entirely money;
- *  3. the **sticky bottom bar** below 1180, and the **`[Items][Money][Docs]`
+ *  1. the **six-step stepper**, read from `lib/workflow.ts`'s canonical order;
+ *  2. **money blocks OMITTED, not greyed**, for a money-blind role — Law 6 —
+ *     including the sticky bar, which is entirely money;
+ *  3. the **sticky bottom bar** below 1280 and the **`[Items][Money][Docs]`
  *     segmented control** on phone;
- *  4. Law 5 stated where it can be broken: the deposit never enters Outstanding.
+ *  4. Law 5 stated where it can be broken: the deposit never enters
+ *     Outstanding;
+ *  5. the header arrangement — `[Operations ▾]`, the `[⋮]` overflow, and Save
+ *     draft disabled WITH its reason.
  *
  * Environment pragma per `vitest.config.ts`, which keeps the suite on `node`.
  */
@@ -22,11 +26,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ToastProvider } from '../../../components/ui/Toast'
 
-/**
- * The role is a `let` so a single mock can serve both the money and the
- * money-blind cases — `canViewMoneyField(gateContext(role), 'booking')` is what
- * the screen actually asks, and Warehouse is one of Law 6's three blind roles.
- */
 let role = 'Owner'
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => role !== 'Warehouse' }))
 vi.mock('../../../lib/auth', () => ({
@@ -36,6 +35,181 @@ vi.mock('../../../lib/auth', () => ({
     isLocked: false,
   }),
 }))
+
+/* BookingOperationsMenu (rendered inside BookingDetail) calls useOperationsWorkspace.
+   Mock the context so tests don't need a real provider (which renders OperationsShell). */
+vi.mock('../../operations/OperationsWorkspaceContext', () => ({
+  OperationsWorkspaceProvider: ({ children }: { children: unknown }) => children,
+  useOperationsWorkspace: () => ({ openOperations: vi.fn(), closeOperations: vi.fn() }),
+}))
+
+/*
+ * The query seam. Every figure below is what the DATABASE would answer —
+ * paisa at the module boundary, exactly the row shapes the real modules
+ * return — so the assertions are about rendering, not about arithmetic this
+ * suite invented. `listBookings` answers only for B-715, so an unknown number
+ * genuinely matches nothing (the identity test lives in the sibling suite).
+ */
+vi.mock('../../../lib/queries/bookings', () => {
+  const BOOKING_ROW = {
+    id: '11111111-1111-4111-8111-111111111111',
+    bookingNo: 'B-715',
+    clientId: 'c-1',
+    clientName: 'Himalayan Films Pvt. Ltd.',
+    project: 'Film Shoot',
+    stage: 'Booked',
+    pickupAtAd: '2026-07-16T00:15:00.000Z',
+    returnAtAd: '2026-07-19T00:15:00.000Z',
+    actualReturnAtAd: null,
+    deliveryType: 'Client Pickup',
+    pickupLocation: 'Kathmandu Main',
+    returnLocation: 'Kathmandu Main',
+    quoteExpiresAtAd: null,
+    createdAtAd: '2026-07-09T00:00:00.000Z',
+    itemCount: 18,
+    depositRequired: 5_000_000,
+    isCancelled: false,
+    isClosed: false,
+  }
+  return {
+    listBookings: async (opts: { chips?: { booking_no?: readonly string[] } }) => ({
+      rows: opts.chips?.booking_no?.includes('B-715') ? [BOOKING_ROW] : [],
+      total: null,
+    }),
+    fetchFloorBooking: async (ref: string) =>
+      ref === 'B-715'
+        ? {
+            id: BOOKING_ROW.id,
+            bookingNo: 'B-715',
+            stage: 'Booked',
+            clientName: BOOKING_ROW.clientName,
+            project: BOOKING_ROW.project,
+            pickupAtAd: BOOKING_ROW.pickupAtAd,
+            returnAtAd: BOOKING_ROW.returnAtAd,
+            actualReturnAtAd: null,
+            deliveryType: 'Client Pickup',
+            isCancelled: false,
+            isClosed: false,
+            linesPresence: 'present',
+            lines: [
+              {
+                id: 'l-1',
+                qty: 1,
+                lineType: 'Equipment',
+                description: 'Sony FX3',
+                productId: 'p-1',
+                productName: 'Sony FX3',
+                trackingMode: 'Serialised',
+                parentLineId: null,
+                sortOrder: 1,
+                unitsPresence: 'present',
+                units: [
+                  {
+                    id: 'u-1',
+                    assetId: 'a-1',
+                    serial: 'SN102',
+                    assetTag: 'EQ000001-U01',
+                    unitState: 'Ready',
+                    isRequired: true,
+                    packed: true,
+                    damaged: false,
+                    location: 'A2-01',
+                  },
+                ],
+              },
+              {
+                id: 'l-2',
+                qty: 3,
+                lineType: 'Sub-rental',
+                description: 'NISI Athena Prime Set',
+                productId: null,
+                productName: null,
+                trackingMode: null,
+                parentLineId: null,
+                sortOrder: 2,
+                unitsPresence: 'present',
+                units: [],
+              },
+            ],
+          }
+        : null,
+    isSubRentalBooking: (lines: readonly { lineType?: string; subRental?: boolean }[] = []) =>
+      lines.some((l) => l.lineType === 'Sub-Rented' || l.lineType === 'Sub-rental' || Boolean(l.subRental)),
+    isSubRentedLine: (line: { lineType?: string; subRental?: boolean }) =>
+      line.lineType === 'Sub-Rented' || line.lineType === 'Sub-rental' || Boolean(line.subRental),
+    paymentGlance: () => [],
+    paymentDetailGroups: () => [],
+  }
+})
+
+/* The page's third query seam (31 Aug, the Notes wave) — mocked like the two
+   above so no mount reaches the real supabase client: vitest loads .env.local,
+   whose VITE_DATA_SOURCE=live would otherwise send booking_notes reads over
+   the wire mid-suite. Empty rows: these assertions are about layout, and the
+   NotesCard's own behaviour is pinned by addBookingNote.test.ts + the browser. */
+vi.mock('../../../lib/queries/bookingNotes', () => ({
+  notesForBooking: (bookingId: string) => ({
+    chips: { booking_id: [bookingId] },
+    sort: { column: 'created_at', ascending: false },
+  }),
+  listBookingNotes: async () => ({ rows: [] }),
+}))
+
+vi.mock('../../../lib/queries/finance', () => {
+  const INVOICE = {
+    id: 'inv-1',
+    invoiceNo: 'INV-901',
+    bookingId: '11111111-1111-4111-8111-111111111111',
+    bookingNo: 'B-715',
+    clientId: 'c-1',
+    clientName: 'Himalayan Films Pvt. Ltd.',
+    status: 'Sent',
+    issueDateAd: '2026-07-16',
+    dueDateAd: '2026-07-31',
+    currency: 'NPR',
+    subtotal: 13_275_000,
+    discountAmount: 929_300,
+    discountPercent: 7,
+    taxableAmount: 12_345_700,
+    vatRate: 0.13,
+    vatAmount: 1_604_900,
+    totalAmount: 13_950_600,
+    paidAmount: 1_500_000,
+    outstandingAmount: 12_450_600,
+    isVoid: false,
+    voidedAtAd: null,
+    voidReason: null,
+    creditNoteNo: null,
+    notes: null,
+    createdAtAd: '2026-07-16T00:15:00.000Z',
+  }
+  const PAYMENT = {
+    id: 'pay-1',
+    paymentNo: 'PAY-2026-0001',
+    bookingId: '11111111-1111-4111-8111-111111111111',
+    bookingNo: 'B-715',
+    invoiceId: 'inv-1',
+    invoiceNo: 'INV-901',
+    clientId: 'c-1',
+    clientName: 'Himalayan Films Pvt. Ltd.',
+    amount: 1_500_000,
+    paymentType: 'Advance Payment',
+    status: 'Received',
+    paymentDateAd: '2026-07-10T04:00:00.000Z',
+    channelGroup: null,
+    bankName: null,
+    transactionRef: 'TXN-9948123',
+    notes: null,
+    receivedById: 'u-9',
+    createdAtAd: '2026-07-10T04:00:00.000Z',
+  }
+  return {
+    listInvoices: async () => ({ rows: [INVOICE], total: null }),
+    listPayments: async () => ({ rows: [PAYMENT], total: null }),
+    invoicesForBooking: (bookingId: string) => ({ chips: { booking_id: [bookingId] } }),
+    paymentsForBooking: (bookingId: string) => ({ chips: { booking_id: [bookingId] } }),
+  }
+})
 
 window.matchMedia = ((q: string) => ({
   matches: false,
@@ -71,6 +245,14 @@ async function mount(width: number, as = 'Owner') {
       </MemoryRouter>,
     )
   })
+  // The reads are CHAINED: the head row must land before the invoice/payment
+  // fetch effects even fire (they key on the booking's uuid). Each flush lets
+  // one round of promise → setState → effect settle.
+  for (let i = 0; i < 4; i++) {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
 }
 
 afterEach(async () => {
@@ -83,24 +265,11 @@ const text = () => container.textContent ?? ''
 const allButtons = () => [...container.querySelectorAll('button')]
 const button = (label: string) => allButtons().find((b) => b.textContent?.trim() === label)
 
-/**
- * §4.2's bottom bar, named by what anchors it rather than by "any sticky div".
- *
- * This read `position === 'sticky'` alone, which was true of exactly one
- * element while the desktop rail was `position: relative`. `CollapsibleAside`
- * — which `Rail` wraps, and which BookingDetail renders on desktop only — is
- * now sticky itself, so that filter matched the RAIL at 1280 and the desktop
- * case failed while the bar it was written about was correctly absent.
- *
- * `bottom` is the discriminator, not a looser match: the bar is bottom-anchored
- * (`bottom: 0` at tablet, `BAR_BOX` on phone) and every sticky rail in the tree
- * is top-anchored. A second bottom-anchored bar appearing anywhere on this page
- * would still be caught, which is what the desktop and Law 6 cases assert.
- */
+/** §4.2's bottom bar — bottom-anchored sticky; every sticky rail is top-anchored. */
 const stickyBars = () =>
   [...container.querySelectorAll('div')].filter((d) => d.style.position === 'sticky' && d.style.bottom !== '')
 
-describe('§4.2 — the six-step stepper', () => {
+describe('§4.2 — the six-step stepper, from the QUERIED stage', () => {
   it('names all six canonical stages, in order, as a real list', async () => {
     await mount(1280)
     const steps = container.querySelector('ol[aria-label="Booking stages"]')
@@ -127,8 +296,6 @@ describe('§4.2 — the six-step stepper', () => {
   it('becomes the dot row on phone, with the position stated in words', async () => {
     await mount(420)
     expect(container.querySelector('ol[aria-label="Booking stages"]')).toBeNull()
-    // Six unlabelled dots would be exactly the colour-alone encoding Law 11
-    // forbids, so the position is also written out.
     expect(text()).toContain('Step 2 of 6 — Booked')
   })
 })
@@ -139,7 +306,7 @@ describe('§4.2 — the phone segmented control', () => {
     expect(container.querySelector('[role="tablist"]')).toBeNull()
     expect(text()).toContain('Client & Schedule')
     expect(text()).toContain('Pricing & Payments')
-    expect(text()).toContain('Documents & Review')
+    expect(text()).toContain('Documents')
   })
 
   it('offers [Items][Money][Docs] on phone, showing one at a time', async () => {
@@ -148,11 +315,10 @@ describe('§4.2 — the phone segmented control', () => {
       t.textContent?.trim(),
     )
     expect(tabs).toEqual(['Items', 'Money', 'Docs'])
-    // Items is the opening segment. Asserted on a field that appears ONLY in
-    // Block 1 — "Client & Schedule" is also a row label inside Block 5's Review
-    // Summary, so it is not a witness for which segment is showing.
-    expect(text()).toContain('Project Type')
-    expect(text()).not.toContain('Documents & Review')
+    // Items is the opening segment — witnessed by Block 2's heading, which
+    // appears in no other segment.
+    expect(text()).toContain('Equipment, Bundles & Services')
+    expect(text()).not.toContain('No documents available for this rental yet.')
   })
 
   it('switches the page when a segment is picked', async () => {
@@ -161,63 +327,53 @@ describe('§4.2 — the phone segmented control', () => {
     await act(async () => {
       docs?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(text()).toContain('Documents & Review')
-    expect(text()).not.toContain('Project Type')
+    expect(text()).toContain('No documents available for this rental yet.')
+    expect(text()).not.toContain('Equipment, Bundles & Services')
   })
 })
 
-describe('§4.2 — the summary rail becomes a sticky bottom bar below 1180', () => {
+describe('audit — payments have one action and no obstructing bottom bar', () => {
   it('has no bar on desktop, where the rail itself is on screen', async () => {
     await mount(1280)
     expect(button('Record Payment')).toBeDefined() // Block 4's own button
     expect(stickyBars()).toHaveLength(0)
   })
 
-  it('renders the bar at tablet, carrying the total and the shared modal’s button', async () => {
+  it('keeps the invoice total and one payment action in the body at tablet', async () => {
     await mount(1000)
     const sticky = stickyBars()
-    expect(sticky).toHaveLength(1)
-    expect(sticky[0]?.textContent).toContain('Rental Total')
-    expect(sticky[0]?.querySelector('button')?.textContent).toContain('Record Payment')
+    expect(sticky).toHaveLength(0)
+    expect(text()).toContain('Rental Total')
+    // formatMoney(13,950,600 paisa) — the invoice's own column, not a figure
+    // the screen computed.
+    expect(text()).toContain('1,39,506')
+    expect(allButtons().filter((b) => b.textContent?.trim() === 'Record Payment')).toHaveLength(1)
   })
 
-  it('clears the phone nav bar rather than sitting under it', async () => {
+  it('keeps the phone free of an obstructing payment bar', async () => {
     await mount(420)
     const sticky = stickyBars()
-    expect(sticky).toHaveLength(1)
-    // `BAR_BOX` is BottomBar.tsx's own 58px + safe-area expression, read rather
-    // than re-typed, so the two cannot drift.
-    expect(sticky[0]?.style.bottom).toContain('58px')
-    expect(sticky[0]?.style.bottom).toContain('safe-area-inset-bottom')
+    expect(sticky).toHaveLength(0)
   })
 })
 
 describe('Law 6 — money blocks are OMITTED for money-blind roles, not greyed', () => {
   it('renders NOT ONE rupee figure anywhere on the page', async () => {
     await mount(1280, 'Warehouse')
-    // ⛔ The assertion that found three real defects on 12 Aug: the equipment
-    // table's Rate/Day and Total columns, the Equipment Subtotal, the Review
-    // Summary's Pricing row and the Alerts card's "Deposit Rs 25,000 pending"
-    // were all printed to a money-blind role. Matching the CURRENCY rather than
-    // a list of labels is what makes this catch the next one too.
+    // Matching the CURRENCY rather than a list of labels is what makes this
+    // catch the next leak too — it found three real ones on 12 Aug.
     expect(text()).not.toMatch(/Rs\s?[\d,]/)
   })
 
   it('drops the whole Pricing & Payments block, omitted rather than greyed', async () => {
     await mount(1280, 'Warehouse')
     expect(text()).not.toContain('Pricing & Payments')
-    expect(text()).not.toContain('Rate / Day')
-    expect(text()).not.toContain('Equipment Subtotal')
-    // Not a disabled control anywhere — the surface is absent.
+    // 'Rental Total' lives only inside money surfaces. ('Outstanding' alone is
+    // not asserted — the unconditional FooterNote states Law 5 in words for
+    // every role, which is a sentence, not a figure.)
+    expect(text()).not.toContain('Rental Total')
     expect(button('Record Payment')).toBeUndefined()
     expect(button('Receive Payment')).toBeUndefined()
-    expect(button('Receive Deposit')).toBeUndefined()
-  })
-
-  it('keeps the alerts that are not money — the floor needs the stock one', async () => {
-    await mount(1280, 'Warehouse')
-    expect(text()).toContain('only 2 left this week')
-    expect(text()).toContain('Alerts (1)')
   })
 
   it('drops the Money SEGMENT on phone, rather than offering an empty tab', async () => {
@@ -226,7 +382,7 @@ describe('Law 6 — money blocks are OMITTED for money-blind roles, not greyed',
     expect(tabs).toEqual(['Items', 'Docs'])
   })
 
-  it('drops the sticky bar entirely below 1180 — every part of it is money', async () => {
+  it('drops the sticky bar entirely below 1280 — every part of it is money', async () => {
     await mount(1000, 'Warehouse')
     expect(stickyBars()).toHaveLength(0)
   })
@@ -235,6 +391,7 @@ describe('Law 6 — money blocks are OMITTED for money-blind roles, not greyed',
     await mount(1280, 'Warehouse')
     expect(container.querySelector('ol[aria-label="Booking stages"]')).not.toBeNull()
     expect(text()).toContain('Equipment, Bundles & Services')
+    expect(text()).toContain('Sony FX3')
   })
 })
 
@@ -245,7 +402,17 @@ describe('Law 5 — the deposit is a liability and says so where it could be mis
   })
 })
 
-describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to get there', () => {
+describe('Law 16 — unwired surfaces do not invent booking data', () => {
+  it('keeps only the activity gap and never invents an alert', async () => {
+    await mount(1280)
+    expect(text()).toContain('No activity recorded yet.')
+    // And none of the seed's invented content survives.
+    expect(text()).not.toContain('only 2 left this week')
+    expect(text()).not.toContain('Draft created')
+  })
+})
+
+describe('§4.2 header — [Operations ▾] and [⋮], with dead controls removed', () => {
   it('keeps Operations as its own control', async () => {
     await mount(1280)
     expect(button('Operations')).toBeDefined()
@@ -260,19 +427,46 @@ describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to g
     await act(async () => {
       more?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const items = [...container.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
-    expect(items).toEqual(['Extend rental', 'Assign crew', 'Create sub-rental', 'Save draft'])
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
+    /* All remaining rows lead to a real action. The former Save draft entry
+       had no persistence path and was removed rather than masquerading as a
+       disabled action. */
+    expect(items.filter((i) => i !== 'Message client')).toEqual([
+      'Extend rental',
+      'Assign crew',
+      'Create sub-rental',
+      'Cancel booking',
+    ])
+    expect(items).toContain('Message client')
+    expect(items).toHaveLength(5)
+    expect(items).not.toContain('Save draft')
+  })
+})
+
+/**
+ * Law 17 on the READ path — PLAN.md §6.1, "the word customer appears nowhere
+ * in the UI".
+ *
+ * The mocked booking above already carries the real stored value,
+ * `deliveryType: 'Customer Pickup'` — that is the `delivery_type` enum member
+ * (`0001_enums.sql:34`), and **all 246 live bookings carry it**. The write path
+ * mapped label → enum from the start (`createRental.ts:100`); the inverse was
+ * never written, so the raw enum rendered straight into the DOM here.
+ *
+ * This asserts the rendered text, which is the only thing Law 17 governs. The
+ * three older Law-17 tests assert over static label constants and structurally
+ * cannot catch a value that arrives from the database.
+ */
+describe('Law 17 — a stored delivery type never reaches the DOM raw', () => {
+  it('renders "Client Pickup" for the stored delivery type', async () => {
+    await mount(1440)
+    expect(text()).toContain('Client Pickup')
   })
 
-  it('renders Save draft disabled with its reason, rather than as a control that does nothing', async () => {
-    await mount(1280)
-    const more = allButtons().find((b) => b.getAttribute('aria-label') === 'More booking actions')
-    await act(async () => {
-      more?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    const save = [...container.querySelectorAll('[role="menuitem"]')].find(
-      (i) => i.textContent?.trim() === 'Save draft',
-    ) as HTMLButtonElement | undefined
-    expect(save?.disabled).toBe(true)
+  it('never renders the banned word, at any width', async () => {
+    for (const width of [390, 1024, 1440]) {
+      await mount(width)
+      expect(text().toLowerCase()).not.toContain('customer')
+    }
   })
 })

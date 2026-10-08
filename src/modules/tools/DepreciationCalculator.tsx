@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
+import { Card, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { LineChart } from '../../components/ui/Charts'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { useViewport } from '../../lib/device'
 import { formatMoney, parseMoney, rupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -10,9 +13,11 @@ import {
   straightLineSchedule,
   DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON,
   IRD_POOL_BLOCKED_REASON,
-} from '../../data/tools'
-import type { DepreciationYear } from '../../data/tools'
-import { PARENTS } from '../../data/inventory'
+  getDepreciableAssets,
+  type DepreciationYear,
+  type DepreciableAsset,
+} from '../../lib/queries/depreciation'
+import { DateField } from '../../components/ui/DateField'
 
 /**
  * **Depreciation Calculator — `10_TOOLS.md` §10.2.**
@@ -69,12 +74,24 @@ type Tab = 'book' | 'ird'
 
 const WHOLE_FLEET = '__fleet__'
 
-/** Parents whose purchase price is a recorded fact rather than a blank. */
-const PRICED_ASSETS = PARENTS.filter((p) => p.purchasePricePaisa !== undefined)
+export interface DepreciationCalculatorProps {
+  embedded?: boolean
+}
 
-export default function DepreciationCalculator() {
+export default function DepreciationCalculator({ embedded = false }: DepreciationCalculatorProps = {}) {
   const viewport = useViewport()
   const [tab, setTab] = useState<Tab>('book')
+  const [assets, setAssets] = useState<DepreciableAsset[]>([])
+
+  useEffect(() => {
+    let active = true
+    void getDepreciableAssets().then((res) => {
+      if (active) setAssets(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const [assetName, setAssetName] = useState('')
   const [purchaseDate, setPurchaseDate] = useState('')
@@ -115,7 +132,8 @@ export default function DepreciationCalculator() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="chart"
         title="Depreciation"
         description="Book and IRD pool views. Nothing here is saved against an asset — it is a working sheet."
@@ -133,7 +151,7 @@ export default function DepreciationCalculator() {
         <div
           style={{
             display: 'grid',
-            /* Desktop puts inputs beside the result; below 1180 the result
+            /* Desktop puts inputs beside the result; below 1280 the result
                reflows underneath — Rulings §7, "collapse means reflow, not
                hide". Nothing here is wrapped in CollapsibleAside. */
             gridTemplateColumns: viewport === 'desktop' ? 'minmax(320px, 380px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
@@ -150,14 +168,14 @@ export default function DepreciationCalculator() {
                   onChange={(e) => {
                     const v = e.target.value
                     setAssetName(v)
-                    const row = PRICED_ASSETS.find((p) => p.name === v)
+                    const row = assets.find((p) => p.name === v)
                     if (row?.purchasePricePaisa !== undefined) setCost(String(row.purchasePricePaisa / 100))
                   }}
                   style={controlStyle}
                 >
                   <option value="">Not selected — enter figures by hand</option>
                   <option value={WHOLE_FLEET}>Whole fleet</option>
-                  {PRICED_ASSETS.map((p) => (
+                  {assets.map((p) => (
                     <option key={p.name} value={p.name}>
                       {p.name}
                     </option>
@@ -170,11 +188,10 @@ export default function DepreciationCalculator() {
                 required
                 hint="No item in the master carries a purchase date, so this is never prefilled."
               >
-                <input
-                  type="date"
-                  aria-label="Purchase date"
+                <DateField
+                  ariaLabel="Purchase date"
                   value={purchaseDate}
-                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  onChange={setPurchaseDate}
                   style={controlStyle}
                 />
               </Field>
@@ -287,7 +304,7 @@ export default function DepreciationCalculator() {
                       ))}
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <DataTableShell ariaLabel="Depreciation schedule" data-table-scroll style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
                         <thead>
                           <tr style={{ background: 'var(--th-bg)' }}>
@@ -329,7 +346,7 @@ export default function DepreciationCalculator() {
                           </tr>
                         </tfoot>
                       </table>
-                    </div>
+                    </DataTableShell>
                   )}
                 </Card>
 
@@ -467,12 +484,14 @@ function Field({
 }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-        {label}
-        {required && <span style={{ color: 'var(--danger-text)' }}> *</span>}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          {label}
+          {required && <span style={{ color: 'var(--danger-text)' }}> *</span>}
+        </span>
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
-      {hint && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</span>}
     </label>
   )
 }
@@ -512,7 +531,22 @@ const thStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
+/*
+ * §7.3's row floor ("rows >= 56px"), taken from the token rather than built out
+ * of padding: `height` on a `<td>` acts as a MINIMUM, so the schedule's rows
+ * come up to the floor without the horizontal padding or the totals row moving.
+ *
+ * The schedule is a read-only projection with no row controls, so no tap can be
+ * misfiled here today. The floor is applied anyway because it is the guarantee
+ * that a 44px hit area fits inside its own row instead of overhanging the
+ * neighbour — and a table of near-identical numeric rows is the worst place to
+ * discover later that a control was added to rows too short to hold its target,
+ * since every row looks like every other one and a wrong-row press reads as
+ * plausible output. The phone branch above renders the same data as cards and
+ * is unaffected; this is the desktop table only.
+ */
 const tdStyle: React.CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '10px 12px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

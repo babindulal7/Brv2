@@ -82,7 +82,9 @@ export {
   bundleAvailability,
   bundleResults,
   componentSummaryOf,
+  equipmentConflicts,
   equipmentLineDraft,
+  equipmentResultsFrom,
   groupEquipmentResults,
   inCategory,
   normalise,
@@ -97,8 +99,13 @@ export type {
   BookingWindow,
   BundleResult,
   CatalogueResult,
+  ConflictCheckLine,
+  EquipmentAvailabilitySource,
+  EquipmentConflict,
+  EquipmentConflictSummary,
   EquipmentModelGroup,
   EquipmentResult,
+  LiveEquipmentRow,
   QueryGroup,
   QueryOptions,
   QueryOutcome,
@@ -119,8 +126,144 @@ export type { BundlePreviewProps } from './BundlePreview'
 export { DateTimeField, parseDateInput, parseTimeInput } from './DateTimeField'
 export type { DateTimeFieldProps } from './DateTimeField'
 
-/* redesign v1 §5 — draft-only, review-before-send email composer. Comms are
-   never auto-sent (21 Jul lock); nothing here dispatches to a real backend,
-   since none exists yet — `onSend` is the page's own stub. */
-export { DraftEmailModal } from './DraftEmailModal'
+/* Quick date presets for New Rental — one-tap common durations. */
+export { DatePresets, DEFAULT_PRESETS, usePricingHints } from './DatePresets'
+export type { DatePreset, DatePresetsProps } from './DatePresets'
+
+/* redesign v1 §5 — draft-only email composer. Comms are never auto-sent
+   (21 Jul lock). No email backend exists in this build, so the send control
+   is Unavailable with the named reason below — the draft is reviewable and
+   editable, and nothing pretends to queue. */
+export { DraftEmailModal, EMAIL_SEND_UNAVAILABLE_REASON } from './DraftEmailModal'
 export type { DraftEmailModalProps } from './DraftEmailModal'
+
+/* Form controls and widgets for rental booking */
+export {
+  AddClientButton,
+  Field,
+  MoneyRow,
+  NumberStepper,
+  RowMenu,
+  Section,
+  TouchInset,
+  inputStyle,
+  srOnly,
+} from './BookingFormWidgets'
+
+export { VatToggle } from './VatToggle'
+export type { VatToggleProps } from './VatToggle'
+
+export { DISCOUNT_PRESETS, DiscountChips } from './DiscountChips'
+export type { DiscountChipsProps, DiscountPresetMeta } from './DiscountChips'
+
+export {
+  CrewSearch,
+  ROLES_ACCEPTED_BY_DB,
+  dbRejectsRole,
+  rejectionNote,
+} from './CrewSearch'
+export type { CrewSearchProps, RoleRejectedByDb } from './CrewSearch'
+
+export {
+  PRODUCT_ID_RE,
+  SHOOT_PRESETS,
+  bookingDays,
+  bookingInstant,
+  stableJson,
+} from './newRentalUtils'
+
+export {
+  confirmWriteRefusals,
+  deriveRentalAlertsAndNotices,
+} from './newRentalGuards'
+export type {
+  BlockingNotice,
+  ConfirmWriteState,
+  RentalAlertItem,
+  RentalAlertsInput,
+  RentalAlertsResult,
+} from './newRentalGuards'
+
+export { BookingDatesSection } from './BookingDatesSection'
+export type { BookingDatesSectionProps } from './BookingDatesSection'
+
+export { DeliverySection } from './DeliverySection'
+export type { DeliverySectionProps } from './DeliverySection'
+
+export { BookingSummaryCard } from './BookingSummaryCard'
+export type { BookingSummaryCardProps } from './BookingSummaryCard'
+
+/* New Rental Section 5 — Pricing & Terms rail (Item 13 decomposition).
+ * Read-only pipeline breakdown + controlled discount/promo/VAT/deposit
+ * inputs. No arithmetic inside; Law 5/Law 6 enforced at the root. */
+export { RentalFinancialRail } from './RentalFinancialRail'
+export type { PromoNotice, RentalFinancialRailProps } from './RentalFinancialRail'
+
+export { RentalLineItemsTree, groupLines, isNested, lineAmountPaisa } from './RentalLineItemsTree'
+export type { Line, LineGroup, RentalLineItemsTreeProps } from './RentalLineItemsTree'
+
+export { CrewSection } from './CrewSection'
+export type { CrewLine, CrewSectionProps } from './CrewSection'
+
+export { RentalPricingSection } from './RentalPricingSection'
+export type { RentalPricingSectionProps } from './RentalPricingSection'
+
+export { CrewAndTransportSection } from './CrewAndTransportSection'
+export type {
+  CrewAndTransportSectionProps,
+  TransportDetails,
+} from './CrewAndTransportSection'
+
+export { BookingClientSection } from './BookingClientSection'
+export type { BookingClientSectionProps } from './BookingClientSection'
+
+export { BookingModals } from './BookingModals'
+export type { BookingModalsProps } from './BookingModals'
+
+export { BookingEquipmentSection } from './BookingEquipmentSection'
+export type { BookingEquipmentSectionProps } from './BookingEquipmentSection'
+
+export { useNewRentalCatalogue } from './useNewRentalCatalogue'
+export type {
+  UseNewRentalCatalogueOptions,
+  UseNewRentalCatalogueResult,
+} from './useNewRentalCatalogue'
+
+export { useNewRentalDraft } from './useNewRentalDraft'
+export type { UseNewRentalDraftOptions } from './useNewRentalDraft'
+
+export { useNewRentalSubmit } from './useNewRentalSubmit'
+export type { UseNewRentalSubmitOptions } from './useNewRentalSubmit'
+
+export { useNewRentalTiming } from './useNewRentalTiming'
+export type {
+  UseNewRentalTimingOptions,
+  UseNewRentalTimingResult,
+} from './useNewRentalTiming'
+
+export { useNewRentalLogistics } from './useNewRentalLogistics'
+export type {
+  UseNewRentalLogisticsOptions,
+  UseNewRentalLogisticsResult,
+} from './useNewRentalLogistics'
+
+export { useNewRentalPricing } from './useNewRentalPricing'
+export type {
+  PricingBreakdown,
+  UseNewRentalPricingOptions,
+  UseNewRentalPricingResult,
+} from './useNewRentalPricing'
+
+export { useNewRentalClient } from './useNewRentalClient'
+export type {
+  UseNewRentalClientOptions,
+  UseNewRentalClientResult,
+} from './useNewRentalClient'
+
+export { useNewRentalNavigation } from './useNewRentalNavigation'
+export type {
+  UseNewRentalNavigationOptions,
+  UseNewRentalNavigationResult,
+} from './useNewRentalNavigation'
+
+

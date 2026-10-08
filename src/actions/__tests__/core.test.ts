@@ -146,7 +146,20 @@ describe('createAction — fails closed', () => {
    * all the work and a flat list of 21 would hide that.
    */
   describe('the 21 capabilities ruled 16 Aug 2026', () => {
-    const probe = (capability: string, role: 'Owner' | 'Coordinator' | 'Warehouse' | 'Driver' | 'Client') => {
+    const probe = (
+      capability: string,
+      role:
+        | 'Owner'
+        | 'Admin'
+        | 'Manager'
+        | 'Coordinator'
+        | 'Accounts'
+        | 'Warehouse'
+        | 'Technician'
+        | 'Driver'
+        | 'Client',
+      isOnline?: boolean,
+    ) => {
       const execute = vi.fn(async () => ({ result: { ok: true }, events: [] }))
       const action = createAction({
         name: `PROBE_${capability}`,
@@ -155,7 +168,7 @@ describe('createAction — fails closed', () => {
         validate: () => {},
         execute,
       })
-      return { run: () => action({}, { userId: 'u-1', role }), execute }
+      return { run: () => action({}, { userId: 'u-1', role, ...(isOnline === undefined ? {} : { isOnline }) }), execute }
     }
 
     const DESK = [
@@ -181,6 +194,16 @@ describe('createAction — fails closed', () => {
     ]
     const TRIAGE = ['case.resolve', 'crew.assign', 'purchase.approve']
 
+    it.each(['Owner', 'Admin', 'Manager'] as const)('allows %s to adjust bulk stock', async (role) => {
+      await expect(probe('inventory.stock_adjust', role, true).run()).resolves.toEqual({ ok: true })
+    })
+
+    it.each(['Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client'] as const)(
+      'refuses %s a bulk stock adjustment', async (role) => {
+        await expect(probe('inventory.stock_adjust', role).run()).rejects.toBeInstanceOf(ActionPermissionError)
+      },
+    )
+
     it.each([...DESK, ...FLOOR, ...TRIAGE, 'client.merge'])(
       'resolves %s for Owner instead of denying it',
       async (capability) => {
@@ -202,6 +225,42 @@ describe('createAction — fails closed', () => {
       expect(execute).not.toHaveBeenCalled()
     })
 
+    /* RULING 2026-09-08 (R-25) — `case.resolve` sets a damage disposition AND a
+       cost, so it is a money write. It used to resolve to `isStaff()`, which
+       admitted the three money-blind roles (P4, N-1). The suite above never
+       caught it because TRIAGE is only asserted for Owner, and Owner passes
+       under either rule. These lock the roles, not just the happy path. */
+    const MONEY_BLIND_ROLES = ['Warehouse', 'Technician', 'Driver'] as const
+
+    it.each(MONEY_BLIND_ROLES)(
+      'denies %s case.resolve — a money-blind role may not price damage (P4/N-1)',
+      async (role) => {
+        const { run, execute } = probe('case.resolve', role)
+        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+        expect(execute).not.toHaveBeenCalled()
+      },
+    )
+
+    it('admits Manager to case.resolve — PERMISSIONS.md §4.3 as corrected', async () => {
+      await expect(probe('case.resolve', 'Manager').run()).resolves.toEqual({ ok: true })
+    })
+
+    it.each(['Admin', 'Coordinator', 'Accounts'] as const)(
+      'denies %s case.resolve — the damage ladder is Owner · Manager, not M+',
+      async (role) => {
+        // §16 V-3: `auth_can_approve_damage()` refuses Admin at every amount,
+        // identically in 0057 and on live. The doc's original "M+" was wrong.
+        const { run } = probe('case.resolve', role)
+        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+      },
+    )
+
+    it('still admits every staff role to crew.assign — FILED, not fixed (R-25)', async () => {
+      // Documents the known gap so the day it is narrowed to C+ this test fails
+      // and is updated deliberately rather than by accident.
+      await expect(probe('crew.assign', 'Warehouse').run()).resolves.toEqual({ ok: true })
+    })
+
     it('denies client.merge to Warehouse, whom client.update admits', async () => {
       await expect(probe('client.update', 'Warehouse').run()).resolves.toEqual({ ok: true })
       await expect(probe('client.merge', 'Warehouse').run()).rejects.toBeInstanceOf(ActionPermissionError)
@@ -216,20 +275,54 @@ describe('createAction — fails closed', () => {
     })
 
     /*
-     * ⚠ Pinned known-broad, matching lib/rbac's note. purchase_requests_all is
-     * auth_is_staff() live, so mirroring it lets a Driver approve a purchase
-     * request. Tighten the RLS policy first and let this test fail — that
-     * failure is the intended signal, not a defect in this file. PLAN.md §4.29.
+     * The old pin here admitted Driver on purpose so an RLS narrowing would
+     * fail loudly. It did: purchase_requests_approval_rank (0064, RESTRICTIVE)
+     * went live 23 Aug 2026 and purchase.approve moved to canApprovePurchase —
+     * the finance/admin five. Same pinning discipline, new rule.
      */
-    it('admits Driver to purchase.approve — broad because the RLS policy is', async () => {
-      await expect(probe('purchase.approve', 'Driver').run()).resolves.toEqual({ ok: true })
-    })
-
-    it('still denies inspection.* to Owner — nothing in the schema to mirror', async () => {
-      for (const capability of ['inspection.create', 'inspection.pass', 'inspection.fail']) {
-        const { run, execute } = probe(capability, 'Owner')
+    it('denies Driver, Technician and Warehouse purchase.approve — 0064 live since 23 Aug 2026', async () => {
+      for (const role of ['Driver', 'Technician', 'Warehouse'] as const) {
+        const { run, execute } = probe('purchase.approve', role)
         await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
         expect(execute).not.toHaveBeenCalled()
+      }
+    })
+
+    it('admits only Owner and Manager to purchase.approve — mirroring 0069', async () => {
+      for (const role of ['Owner', 'Manager'] as const) {
+        await expect(probe('purchase.approve', role).run()).resolves.toEqual({ ok: true })
+      }
+    })
+
+    /*
+     * 0069 (25 Aug 2026) narrowed past the money-visibility tier. These three
+     * may SEE the cost and do every non-deciding verb, but landing the request
+     * on Approved or Rejected is an owner/manager act.
+     */
+    it('denies Admin, Coordinator and Accounts purchase.approve — 0069 live since 25 Aug 2026', async () => {
+      for (const role of ['Admin', 'Coordinator', 'Accounts'] as const) {
+        const { run, execute } = probe('purchase.approve', role)
+        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+        expect(execute).not.toHaveBeenCalled()
+      }
+    })
+
+    it('allows inspection.* to floor roles and denies to non-floor roles (PLAN.md §4.29)', async () => {
+      const floorRoles = ['Owner', 'Admin', 'Manager', 'Warehouse'] as const
+      const nonFloorRoles = ['Driver', 'Technician', 'Accounts', 'Coordinator'] as const
+
+      for (const capability of ['inspection.create', 'inspection.pass', 'inspection.fail']) {
+        for (const role of floorRoles) {
+          const { run, execute } = probe(capability, role)
+          await expect(run()).resolves.toEqual({ ok: true })
+          expect(execute).toHaveBeenCalledTimes(1)
+        }
+
+        for (const role of nonFloorRoles) {
+          const { run, execute } = probe(capability, role)
+          await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+          expect(execute).not.toHaveBeenCalled()
+        }
       }
     })
   })
@@ -289,15 +382,10 @@ describe('every declared capability resolves to a rule', () => {
   const actionSources = Object.entries(sources).filter(([path]) => !path.includes('__tests__'))
 
   /**
-   * Deliberately open, and each must stay open until its question is answered.
-   * There is no `inspections` table anywhere in the schema and
-   * `operation_session_type` is `Packing | Handover | Return | Reset |
-   * Cleaning` — Inspection is not a member — so there is no policy to mirror
-   * and any role set would be invented (CLAUDE.md forbids it). PLAN.md §4.29.
-   *
-   * **Shrinking this list is the point.** Adding to it needs a ruling.
+   * Closed 2026-09-12 per PLAN.md §4.29(a) and migration 0122.
+   * All declared capabilities under src/actions now resolve to an RBAC rule.
    */
-  const KNOWN_OPEN = ['inspection.create', 'inspection.pass', 'inspection.fail']
+  const KNOWN_OPEN: string[] = []
 
   /**
    * Comments must come out before either scan.

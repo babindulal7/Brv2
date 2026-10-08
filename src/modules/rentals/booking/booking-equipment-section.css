@@ -1,0 +1,188 @@
+/* RULING 2026-10-08: keep the catalogue first and optional charges beside
+   the selected items they create. Width follows this card, not the screen. */
+.new-rental-equipment-picker {
+  container: equipment-picker / inline-size;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.new-rental-equipment-picker div:has(> input[role="combobox"]) {
+  min-width: 0;
+}
+
+.new-rental-equipment-selection {
+  container: equipment-selection / inline-size;
+  min-width: 0;
+}
+
+.new-rental-equipment-label {
+  margin: 0;
+  color: var(--text2);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.new-rental-equipment-selection > .new-rental-equipment-label {
+  margin-bottom: 10px;
+}
+
+.new-rental-equipment-selection .new-rental-empty-products {
+  min-height: 76px;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-input);
+  background: var(--surface);
+}
+
+.new-rental-equipment-selection .data-table-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--r-input);
+}
+
+/* Names and row actions remain available while the wide line table scrolls. */
+.new-rental-equipment-selection th:first-child,
+.new-rental-equipment-selection td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 180px;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+}
+
+.new-rental-equipment-selection th:last-child,
+.new-rental-equipment-selection td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  min-width: 44px;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+}
+
+.new-rental-equipment-selection th:first-child,
+.new-rental-equipment-selection th:last-child {
+  background: var(--th-bg);
+}
+
+.new-rental-equipment-extras {
+  container: equipment-extras / inline-size;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.new-rental-equipment-extras-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.new-rental-equipment-extras-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.new-rental-equipment-line-form {
+  scroll-margin-top: var(--new-rental-scroll-clearance, 16px);
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.new-rental-equipment-line-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px;
+}
+
+.new-rental-equipment-line-description {
+  grid-column: 1 / -1;
+}
+
+.new-rental-equipment-line-details {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.new-rental-equipment-line-details.has-supplier {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.new-rental-equipment-line-details.has-supplier + .new-rental-equipment-line-amounts {
+  grid-column: 1 / -1;
+}
+
+.new-rental-equipment-line-amounts {
+  display: grid;
+  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.new-rental-equipment-line-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+@container equipment-picker (max-width: 480px) {
+  /* AddItemPanel owns these controls. Only their wrapping changes here;
+     its inline catalogue and measured height continue to clear the shell. */
+  .new-rental-equipment-picker div:has(> div > input[role="combobox"]) {
+    flex-wrap: wrap;
+  }
+
+  .new-rental-equipment-picker div:has(> input[role="combobox"]) {
+    flex-basis: 100% !important;
+  }
+
+  .new-rental-equipment-picker button[aria-label="Scan barcode or serial"],
+  .new-rental-equipment-picker button[aria-label="Browse catalogue"],
+  .new-rental-equipment-picker button[aria-label="Hide catalogue"] {
+    flex: 1 1 0;
+  }
+}
+
+@container equipment-extras (max-width: 480px) {
+  .new-rental-equipment-extras-actions {
+    width: 100%;
+  }
+
+  .new-rental-equipment-extras-actions > button {
+    flex: 1 1 auto;
+  }
+
+  .new-rental-equipment-line-form {
+    padding: 12px;
+  }
+
+  .new-rental-equipment-line-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .new-rental-equipment-line-details.has-supplier {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container equipment-selection (max-width: 480px) {
+  .new-rental-equipment-selection th:first-child,
+  .new-rental-equipment-selection td:first-child {
+    min-width: 140px;
+    max-width: 160px !important;
+  }
+}

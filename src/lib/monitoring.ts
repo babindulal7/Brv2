@@ -253,3 +253,76 @@ export function captureError(err: unknown, context?: ErrorContext): void {
     /* a report that cannot be built is dropped, never surfaced */
   }
 }
+
+/**
+ * Guards against a second install. `main.tsx` runs once, but Vite's HMR
+ * re-executes this module on edit and React 18 StrictMode double-invokes
+ * effects in development — either would otherwise stack a duplicate pair of
+ * listeners and file every async crash twice.
+ */
+let handlersInstalled = false
+
+/**
+ * Attach the two global listeners: `error` and `unhandledrejection`.
+ *
+ * `components/shell/ErrorBoundary` catches one narrow thing — a component
+ * throwing *during render*. That is not where most of this app fails. A
+ * Supabase call rejecting inside a `useEffect`, a scan handler throwing off a
+ * `@zxing/browser` event, a `void`-ed promise in the offline sync queue: none
+ * of those pass through React's render path, so none of them ever reached
+ * `captureError`. On a warehouse tablet they surfaced as a button that did
+ * nothing, which is the hardest possible bug to report and the easiest to
+ * dismiss as "the tablet is slow".
+ *
+ * ## Why `addEventListener` and not `window.onerror`
+ *
+ * `onerror` is a single slot. Assigning it silently evicts whatever else set
+ * it — a browser extension, a future SDK, the Vite dev overlay that shows
+ * errors on screen while developing. Listeners compose; the assignment does
+ * not.
+ *
+ * ## Resource failures are not reported
+ *
+ * The `error` event also fires for a `<img>` or `<script>` that failed to
+ * load, with `event.error` null and the element as target. On a metered Nepali
+ * connection behind a flaky tower that is *normal*, not a defect, and
+ * reporting it would drown the real crashes in the 25-event session budget.
+ * Only events carrying a real thrown value are filed.
+ *
+ * ## Not installed when there is no DSN
+ *
+ * The module header promises "no listeners" when `VITE_SENTRY_DSN` is unset —
+ * the state of every dev machine and of this repo. That is honoured here
+ * rather than by leaning on `captureError`'s early return, so an unconfigured
+ * build attaches nothing to `window` at all.
+ *
+ * Safe to call more than once. Never throws.
+ */
+export function installGlobalErrorHandlers(): void {
+  if (handlersInstalled) return
+  if (!DSN) return
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+
+  try {
+    window.addEventListener('error', (event: ErrorEvent) => {
+      // Resource load failure — see the note above.
+      if (!event.error) return
+      captureError(event.error, {
+        handler: 'window.error',
+        source: typeof event.filename === 'string' ? event.filename : null,
+        line: typeof event.lineno === 'number' ? event.lineno : null,
+      })
+    })
+
+    window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+      // `reason` is whatever was passed to `reject` — often an Error, but a
+      // bare string or a Supabase error object just as often. `describe`
+      // inside `captureError` already handles all three.
+      captureError(event.reason, { handler: 'unhandledrejection' })
+    })
+
+    handlersInstalled = true
+  } catch {
+    /* monitoring never becomes the outage */
+  }
+}

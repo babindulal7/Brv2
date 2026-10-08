@@ -1,9 +1,14 @@
-import { useState } from 'react'
+import { useEffect } from 'react'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
+import { Unavailable } from '../../components/ui/Unavailable'
+import { useAuth } from '../../lib/auth'
+import { canManageSettings } from '../../lib/rbac'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import {
+  getAuditSettingsSummary,
   KPIS,
   LOG_EVENTS,
   CATEGORIES,
@@ -22,7 +27,7 @@ import {
   ALERTS,
   QUICK_ACTIONS,
   ACTIVITY,
-} from '../../data/audit'
+} from '../../lib/queries/audit'
 
 const th = {
   textAlign: 'left' as const,
@@ -33,33 +38,101 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * §7.3's row floor ("rows >= 56px") written with the token rather than as
+ * padding arithmetic — `height` on a `<td>` behaves as a MINIMUM, so the short
+ * rows come up to the floor and nothing else on the row moves.
+ *
+ * Why this is data integrity and not taste: one object dresses BOTH tables here
+ * and they are not the same shape. Audit Rules ends every row with a 44x44
+ * actions target, so those rows already pitch around 62 and satisfy the floor
+ * incidentally. Retention Policies carries only a status pill and pitches
+ * around 38 — precisely the shape where a 44px target overhangs its neighbours
+ * by a few pixels at each edge and the LATER row in the DOM takes a tap landing
+ * in that band. Retention Policies has no row control today, but it sits one
+ * ungated "Add Retention Policy" away from having one, and a floor that holds
+ * only on the table that already has actions is not a floor.
+ */
+const td = { height: 'var(--row-min-h)', padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
 
-function Toggle({ on, label }: { on: boolean; label: string }) {
-  const [state, setState] = useState(on)
+/* ── Phase 2.7 named reasons ──────────────────────────────────────────────
+   Two different sentences on purpose: a Coordinator or Accounts session is
+   stopped by the GATE; the settings tier is stopped by the missing WRITE
+   PATH. Reading the wrong one would misstate why the control is parked. */
+
+/**
+ * The settings gate — `canManageSettings`, the same tier Settings edits under
+ * (Owner today; the role set lives in `rbac.ts`, not here). Audit
+ * configuration decides what is logged and how long it is kept for every
+ * role, so reaching this page (any money-sighted role can) is not the same
+ * as being allowed to change it.
+ */
+const SETTINGS_ONLY_UNAVAILABLE =
+  'Gated by canManageSettings — the same tier Settings edits under (Owner today). ' +
+  'Audit configuration decides what is logged and how long it is kept for every role.'
+
+/** The wiring reason the settings tier reads on every write-shaped control. */
+const AUDIT_WRITES_UNAVAILABLE =
+  'Not available in this build — no audit-settings table or action path exists yet, ' +
+  'so nothing this control changed would persist.'
+
+/** Read-shaped controls (verify, export, report) with no service behind them. */
+const NOT_BUILT_UNAVAILABLE = 'Specified but not built — this build has no audit-settings service to run it against.'
+
+/** Refresh — same sentence the Numbering seed build used before its conversion. */
+const NOTHING_TO_REFRESH =
+  'Nothing to refresh — every figure on this page is still the transcribed seed; a live read arrives with this screen’s conversion.'
+
+/** The per-row overflow menu on Audit Rules. */
+const ROW_MENU_UNAVAILABLE = 'The rule row menu is specified but not built yet.'
+
+/** Law 16 — no AI panel until it is backed by a validated computation. */
+const ASSISTANT_UNAVAILABLE =
+  /* No AI assistant runs in this build (Law 16 — no AI panel until it is backed by a validated computation), so this box would send the question nowhere. */ "The audit assistant is not available yet."
+
+/**
+ * The one stored fact the "Global Audit Logging" row claims. A seed value
+ * today — when an audit-settings table exists this becomes a live read. The
+ * switch and the word beside it BOTH derive from this constant, so they can
+ * never disagree again (the old build hard-coded the word "Enabled" beside a
+ * switch that could be flipped off).
+ */
+const GLOBAL_AUDIT_ON = true
+
+/**
+ * A read-only switch indicator. Phase 2.7: no audit-settings table or action
+ * path exists in this build, so an operable switch here would flip local
+ * state and persist nothing — the previous build did exactly that, and a
+ * remount silently restored the seed. Every toggle now renders inert inside
+ * `Unavailable`; the caller's reason says whether the operator is stopped by
+ * the settings gate or by the missing write path.
+ */
+function GatedToggle({ on, label, reason }: { on: boolean; label: string; reason: string }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={state}
-      aria-label={label}
-      onClick={() => setState((s) => !s)}
-      style={{
-        width: 30,
-        height: 17,
-        borderRadius: 'var(--r-badge)',
-        border: 'none',
-        padding: 2,
-        background: state ? 'var(--success)' : 'var(--disabled)',
-        cursor: 'pointer',
-        flexShrink: 0,
-        display: 'flex',
-        justifyContent: state ? 'flex-end' : 'flex-start',
-      }}
-    >
-      <span aria-hidden style={{ width: 13, height: 13, borderRadius: 'var(--r-badge)', background: '#fff', display: 'block' }} />
-    </button>
+    /* Law 15 — the wrapper is the focus/long-press target, so it is the thing
+       that must reach 44px, not the drawn 30×17 track. */
+    <Unavailable reason={reason} style={{ minHeight: 44, alignItems: 'center', flexShrink: 0 }}>
+      <span
+        role="switch"
+        aria-checked={on}
+        aria-disabled
+        aria-label={label}
+        style={{
+          width: 30,
+          height: 17,
+          borderRadius: 'var(--r-badge)',
+          padding: 2,
+          background: on ? 'var(--success)' : 'var(--disabled)',
+          opacity: 0.7,
+          flexShrink: 0,
+          display: 'flex',
+          justifyContent: on ? 'flex-end' : 'flex-start',
+        }}
+      >
+        <span aria-hidden style={{ width: 13, height: 13, borderRadius: 'var(--r-badge)', background: 'var(--on-accent)', display: 'block' }} />
+      </span>
+    </Unavailable>
   )
 }
 
@@ -161,8 +234,37 @@ function MiniLine({ d, tone }: { d: { yTicks: string[]; labels: string[]; points
  * The Audit Logs retention row reads "Forever / Never Delete" and is the one
  * row with no expiry — that is Foundation's "nothing is deleted" rule showing
  * up in the retention table, not a data-entry accident.
+ *
+ * ## Phase 2.7 — the gate, and the end of the working-looking controls
+ *
+ * The route guard admits every money-sighted role (`/admin` is a money
+ * surface), so Coordinator and Accounts sessions reach this screen. Before
+ * this pass they found 16 operable toggles and nine manage buttons — the
+ * toggles flipped local state that persisted nowhere, and the buttons had no
+ * handler at all. Every write-shaped control is now inert inside
+ * `Unavailable`: a non-settings role reads the gate
+ * (`SETTINGS_ONLY_UNAVAILABLE`); the settings tier reads the missing write
+ * path (`AUDIT_WRITES_UNAVAILABLE`). The figures on the page are still the
+ * transcribed seed — converting the reads is later wiring, not this pass's.
+ *
+ * ## Phase 3.1 — reflow, not hide
+ *
+ * The rail is `ReflowRail` over `useRailGridColumns()` (Rulings §7, binding):
+ * below 1280 the five rail cards reflow underneath as a plain column instead
+ * of collapsing to a 44px handle on the warehouse tablet.
  */
 export default function AuditSettings() {
+  const { user } = useAuth()
+  /** Phase 2.7 — the same tier Settings edits under. The role set lives in `rbac.ts`. */
+  const mayManage = canManageSettings(user?.role ?? 'Client')
+  /** Which sentence a write-shaped control states: the gate outranks the wiring gap. */
+  const whyNoWrite = mayManage ? AUDIT_WRITES_UNAVAILABLE : SETTINGS_ONLY_UNAVAILABLE
+  const railGridColumns = useRailGridColumns()
+
+  useEffect(() => {
+    getAuditSettingsSummary().catch(() => {})
+  }, [])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -171,17 +273,31 @@ export default function AuditSettings() {
         description="Configure audit logging, retention policies and compliance rules to ensure accountability and data integrity."
         actions={
           <>
-            <Button icon="plus" variant="primary">
-              Create Audit Rule
-            </Button>
-            <Button icon="download">Export</Button>
-            <Button icon="checklist">Verify Logs</Button>
-            <Button icon="refresh">Refresh</Button>
+            <Unavailable reason={whyNoWrite}>
+              <Button icon="plus" variant="primary" disabled>
+                Create Audit Rule
+              </Button>
+            </Unavailable>
+            <Unavailable reason={NOT_BUILT_UNAVAILABLE}>
+              <Button icon="download" disabled>
+                Export
+              </Button>
+            </Unavailable>
+            <Unavailable reason={NOT_BUILT_UNAVAILABLE}>
+              <Button icon="checklist" disabled>
+                Verify Logs
+              </Button>
+            </Unavailable>
+            <Unavailable reason={NOTHING_TO_REFRESH}>
+              <Button icon="refresh" disabled>
+                Refresh
+              </Button>
+            </Unavailable>
           </>
         }
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={KPIS} columns={6} />
 
@@ -199,34 +315,46 @@ export default function AuditSettings() {
                 }}
               >
                 <span style={{ flex: 1, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Global Audit Logging</span>
-                <Toggle on label="Global audit logging" />
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)', fontWeight: 600 }}>Enabled</span>
+                <GatedToggle on={GLOBAL_AUDIT_ON} label="Global audit logging" reason={whyNoWrite} />
+                {/* Derived from the same constant as the switch — the old
+                    hard-coded "Enabled" could sit beside an off switch. */}
+                <span
+                  style={{
+                    fontSize: 'var(--t-meta)',
+                    color: GLOBAL_AUDIT_ON ? 'var(--success-text)' : 'var(--muted)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {GLOBAL_AUDIT_ON ? 'Enabled' : 'Disabled'}
+                </span>
               </div>
 
               <div style={{ marginTop: 11 }}>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Audit Level (Granularity)</div>
-                <button
-                  type="button"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    width: '100%',
-                    height: 30,
-                    marginTop: 5,
-                    padding: '0 9px',
-                    borderRadius: 'var(--r-input)',
-                    border: '1px solid var(--input-border)',
-                    background: 'var(--input-bg)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <span style={{ flex: 1, textAlign: 'left' }}>Detailed</span>
-                  <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />
-                </button>
+                <Unavailable reason={whyNoWrite} style={{ width: '100%' }}>
+                  <span
+                    aria-label="Audit level: Detailed"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      width: '100%',
+                      /* Law 15 — 44px, matching every other gated field. */
+                      minHeight: 44,
+                      marginTop: 5,
+                      padding: '0 9px',
+                      borderRadius: 'var(--r-input)',
+                      border: '1px solid var(--input-border)',
+                      background: 'var(--input-bg)',
+                      color: 'var(--text2)',
+                      fontSize: 'var(--t-meta)',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <span style={{ flex: 1, textAlign: 'left' }}>Detailed</span>
+                    <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />
+                  </span>
+                </Unavailable>
                 <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                   Captures detailed context for all critical actions.
                 </p>
@@ -243,7 +371,7 @@ export default function AuditSettings() {
                       >
                         {e.label}
                       </span>
-                      <Toggle on={e.on} label={e.label} />
+                      <GatedToggle on={e.on} label={e.label} reason={whyNoWrite} />
                     </span>
                   ))}
                 </div>
@@ -261,14 +389,14 @@ export default function AuditSettings() {
               >
                 <span style={{ flex: 1, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Exclude System Heartbeat Logs</span>
                 <Icon name="info" size={12} style={{ color: 'var(--muted)' }} />
-                <Toggle on={false} label="Exclude system heartbeat logs" />
+                <GatedToggle on={false} label="Exclude system heartbeat logs" reason={whyNoWrite} />
               </div>
             </Card>
 
             <Card
               title="Audit Categories"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View all →
                 </span>
               }
@@ -302,13 +430,13 @@ export default function AuditSettings() {
             <Card
               title="Retention Policies"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   Manage Policies →
                 </span>
               }
               bodyStyle={{ padding: 0 }}
             >
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Retention policies" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 380 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -340,9 +468,13 @@ export default function AuditSettings() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)' }}>
-                <Button icon="plus">Add Retention Policy</Button>
+                <Unavailable reason={whyNoWrite}>
+                  <Button icon="plus" disabled>
+                    Add Retention Policy
+                  </Button>
+                </Unavailable>
               </div>
             </Card>
           </div>
@@ -351,13 +483,13 @@ export default function AuditSettings() {
             <Card
               title="Audit Rules"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View all rules →
                 </span>
               }
               bodyStyle={{ padding: 0 }}
             >
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Audit rules" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -379,23 +511,32 @@ export default function AuditSettings() {
                           <StatusPill text="Active" />
                         </td>
                         <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{r.at}</td>
-                        <td style={{ ...td, color: 'var(--muted)', width: 26 }}>
-                          <Icon name="more_vert" size={14} />
+                        <td style={{ ...td, color: 'var(--muted)' }}>
+                          <Unavailable reason={ROW_MENU_UNAVAILABLE}>
+                            {/* Law 15 — 44×44; the render drew a bare 14px glyph. */}
+                            <span aria-label={`Actions for rule ${r.name}`} style={{ display: 'grid', placeItems: 'center', minWidth: 44, minHeight: 44 }}>
+                              <Icon name="more_vert" size={14} />
+                            </span>
+                          </Unavailable>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)' }}>
-                <Button icon="plus">Create Audit Rule</Button>
+                <Unavailable reason={whyNoWrite}>
+                  <Button icon="plus" disabled>
+                    Create Audit Rule
+                  </Button>
+                </Unavailable>
               </div>
             </Card>
 
             <Card
               title="Compliance Rules"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View all →
                 </span>
               }
@@ -413,7 +554,11 @@ export default function AuditSettings() {
                 ))}
               </div>
               <div style={{ marginTop: 11 }}>
-                <Button icon="plus">Create Compliance Rule</Button>
+                <Unavailable reason={whyNoWrite}>
+                  <Button icon="plus" disabled>
+                    Create Compliance Rule
+                  </Button>
+                </Unavailable>
               </div>
             </Card>
 
@@ -424,7 +569,9 @@ export default function AuditSettings() {
                 {LEGAL_HOLD.active}
               </div>
               <div style={{ marginTop: 11 }}>
-                <Button>Manage Legal Holds</Button>
+                <Unavailable reason={whyNoWrite}>
+                  <Button disabled>Manage Legal Holds</Button>
+                </Unavailable>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'var(--sp-sm)', marginTop: 'var(--sp-md)', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                 {[
@@ -484,7 +631,7 @@ export default function AuditSettings() {
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={sub}>AI Audit Insights</span>
-                  <span style={{ ...link, marginLeft: 'auto', fontSize: 'var(--t-meta)' }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                  <span style={{ ...link, marginLeft: 'auto', fontSize: 'var(--t-meta)' }} aria-disabled title="Not built yet">
                     View Insights →
                   </span>
                 </div>
@@ -501,7 +648,9 @@ export default function AuditSettings() {
           </Card>
         </div>
 
-        <Rail>
+        {/* Rulings §7 (binding) — "reflow, not hide": below 1280 these five
+            cards land underneath as a plain column, never behind a handle. */}
+        <ReflowRail>
           <Card title="Audit Summary">
             <SummaryRows rows={SUMMARY} />
             <div aria-hidden style={{ height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 10, overflow: 'hidden' }}>
@@ -512,7 +661,7 @@ export default function AuditSettings() {
           <Card
             title="Alerts"
             action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={link} aria-disabled title="Not built yet">
                 View all →
               </span>
             }
@@ -529,31 +678,42 @@ export default function AuditSettings() {
           </Card>
 
           <Card title="Quick Actions">
+            {/* Previously four live buttons with no handler — a press did
+                nothing, silently. Each tile now states its reason: Create Rule
+                is a write (gate, then wiring); the other three have no service
+                behind them in any role's hands. */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {QUICK_ACTIONS.map((q) => (
-                <button
+                <Unavailable
                   key={q.label}
-                  type="button"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '12px 6px',
-                    borderRadius: 'var(--r-btn)',
-                    border: '1px solid var(--border)',
-                    background: 'var(--card2)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    textAlign: 'center',
-                  }}
+                  reason={q.label === 'Create Rule' ? whyNoWrite : NOT_BUILT_UNAVAILABLE}
+                  style={{ width: '100%' }}
                 >
-                  <Icon name={q.icon} size={17} style={{ color: BRAND[q.tone] }} />
-                  {q.label}
-                </button>
+                  <span
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      width: '100%',
+                      /* Law 15 — 44×44 at every width. */
+                      minHeight: 44,
+                      padding: '12px 6px',
+                      borderRadius: 'var(--r-btn)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      color: 'var(--muted)',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <Icon name={q.icon} size={17} style={{ color: BRAND[q.tone] }} />
+                    {q.label}
+                  </span>
+                </Unavailable>
               ))}
             </div>
           </Card>
@@ -561,7 +721,7 @@ export default function AuditSettings() {
           <Card
             title="Recent Activity"
             action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={link} aria-disabled title="Not built yet">
                 View all →
               </span>
             }
@@ -581,27 +741,36 @@ export default function AuditSettings() {
           </Card>
 
           <Card title="AI Audit Assistant">
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                height: 32,
-                padding: '0 9px',
-                borderRadius: 'var(--r-input)',
-                border: '1px solid var(--input-border)',
-                background: 'var(--input-bg)',
-              }}
-            >
-              <input
-                aria-label="Ask AI about audit settings"
-                placeholder="Ask AI about audit settings…"
-                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 'var(--t-meta)', color: 'var(--text)', fontFamily: 'inherit' }}
-              />
-              <Icon name="arrow_right" size={14} style={{ color: 'var(--muted)' }} />
-            </div>
+            {/* Previously a live text box wired to nothing — it accepted a
+                question and sent it nowhere. Inert with a stated Law 16 reason
+                until a validated computation backs it (the same law that
+                removed Backup's and Numbering's AI cards outright). */}
+            <Unavailable reason={ASSISTANT_UNAVAILABLE} style={{ width: '100%' }}>
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  width: '100%',
+                  /* Law 15 — 44px, like every other gated field. */
+                  minHeight: 44,
+                  padding: '0 9px',
+                  borderRadius: 'var(--r-input)',
+                  border: '1px solid var(--input-border)',
+                  background: 'var(--input-bg)',
+                }}
+              >
+                <input
+                  disabled
+                  aria-label="Ask AI about audit settings"
+                  placeholder="Ask AI about audit settings…"
+                  style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontFamily: 'inherit' }}
+                />
+                <Icon name="arrow_right" size={14} style={{ color: 'var(--muted)' }} />
+              </span>
+            </Unavailable>
           </Card>
-        </Rail>
+        </ReflowRail>
       </div>
 
       <FooterNote extra={['All audit logs are immutable and tamper-proof']} />

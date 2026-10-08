@@ -5,6 +5,9 @@ import { applyListFilters, type ListFilters } from './listQuery'
 import type { ListQueryResult } from './useList'
 import type { Database } from '../../types/supabase'
 
+/** A bare calendar date, `YYYY-MM-DD` — what a date picker emits. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
 /**
  * # The finance list queries — invoices, payments, expenses
  *
@@ -532,6 +535,45 @@ export function outstandingInvoices(): ListFilters {
 }
 
 /**
+ * The statuses a payment may be recorded against.
+ *
+ * Deliberately a **different set from `UNSETTLED_INVOICE_STATUSES`**, and the
+ * difference is exactly one member: 'Draft'.
+ *
+ * `outstandingInvoices()` answers *"what is the business owed"*, and a Draft is
+ * not a receivable — it has not been issued to anybody, so counting it would
+ * overstate the ledger. That reasoning is correct and is left standing.
+ *
+ * *"What may money be taken against"* is a different question and the 4 September
+ * rulings answer it the other way:
+ *
+ *  · **R-02** — an invoice *"is created as **Draft** and stays Draft for the whole
+ *    rental"*, and is *"issued once, at return, when the final figure is known"*.
+ *  · **R-14** — while `status = 'Draft'`, a payment updates `paid_amount` and
+ *    `outstanding_amount` but **does not change status**, so a Draft carries a
+ *    true running balance through the whole rental. Draft is a payable state by
+ *    ruling, not by accident.
+ *  · **SPEC-P0-1 §5** — the acceptance case is *"Record a 50% advance; the
+ *    invoice **stays Draft**; `outstanding_amount` halves."*
+ *
+ * A payment picker built on the receivables set therefore offered nothing for
+ * every rental in progress. 'Paid' is still excluded (settled) and voided rows
+ * are still excluded by timestamp, for the reasons `outstandingInvoices` gives.
+ *
+ * ⚠ Same limitation as that function: this is a STATUS set, not
+ * `outstanding_amount > 0`, because `ListFilters` cannot express a numeric bound
+ * without lying about a field named `fromAd`. A Draft whose balance is already
+ * zero appears here; the modal's own guards refuse a Rs 0 payment.
+ */
+export function payableInvoices(): ListFilters {
+  return {
+    chips: { status: ['Draft', ...UNSETTLED_INVOICE_STATUSES] },
+    presence: { voided_at: false },
+    sort: { column: 'due_date', ascending: true },
+  }
+}
+
+/**
  * Overdue invoices — issued, unsettled, and past their due date.
  *
  * `todayAd` takes either a `YYYY-MM-DD` Nepal calendar day (what a date picker
@@ -561,6 +603,42 @@ export function outstandingInvoices(): ListFilters {
 export function overdueInvoices(todayAd: string): ListFilters {
   return {
     dateRange: { column: 'due_date', toAd: previousDay(nepalDay(todayAd)) },
+    chips: { status: [...UNSETTLED_INVOICE_STATUSES] },
+    presence: { voided_at: false },
+    sort: { column: 'due_date', ascending: true },
+  }
+}
+
+/**
+ * Invoices falling DUE inside an AD day window — the forward-looking half of
+ * `overdueInvoices`.
+ *
+ * Same unsettled-status set and same void exclusion as `outstandingInvoices`;
+ * the only addition is the `due_date` window. That makes it the answer to
+ * "what has to be paid between these two days", which is the question the
+ * Calendar's *Upcoming (Next 7 Days)* rail asks and the Today rail's Payment
+ * Due row will ask after it.
+ *
+ * **Day granularity is exact.** `due_date` is a `date` (0006:82), not a
+ * `timestamptz`, so both bounds are bare `YYYY-MM-DD` and no `+05:45` arithmetic
+ * is involved — the same reasoning `overdueInvoices` above records. Both ends
+ * are inclusive, matching `applyListFilters`' `gte`/`lte` contract and matching
+ * how an operator reads "the next seven days".
+ *
+ * ⚠ Like every set in this module it answers with ROWS, and RLS decides which
+ * rows a session may see: a money-blind session gets `{ rows: [], total: 0 }`,
+ * which is a permission answer and not an emptiness. Gate the call site with
+ * `financeRestriction()` / `useCanViewMoney()` and omit the figure rather than
+ * rendering the zero — Law 6 is omission, not masking.
+ *
+ * ⚠ It does NOT compare an amount. `outstandingInvoices` records why the numeric
+ * bound is not expressible in `ListFilters` and why faking it through a field
+ * named `fromAd` would be a lie in the code; the same limit applies here, so a
+ * 'Sent' invoice whose outstanding figure is already 0 is counted.
+ */
+export function invoicesDueInPeriod(fromDayAd: string, toDayAd: string): ListFilters {
+  return {
+    dateRange: { column: 'due_date', fromAd: nepalDay(fromDayAd), toAd: nepalDay(toDayAd) },
     chips: { status: [...UNSETTLED_INVOICE_STATUSES] },
     presence: { voided_at: false },
     sort: { column: 'due_date', ascending: true },
@@ -875,11 +953,29 @@ export function paymentsForClient(clientId: string): ListFilters {
  * Postgres read it as midnight UTC, which is 05:45 the same morning in
  * Kathmandu — so a month's takings would start 5h45m late on the 1st and stop
  * 5h45m early on the last day, silently. See the DAY BOUNDARIES block below.
+ *
+ * ## Money taken, not money handed back (FI-03)
+ *
+ * This is the set behind the Received KPI, the method donut, the collections
+ * chart and the Daily Closing's `collected.*` — every one of them a "takings"
+ * figure. `payment_type` is pinned to 'Advance Payment' because a 'Refund' row
+ * is also `status = 'Received'` with `amount > 0` (`payments_amount_positive`,
+ * 0006:197): left in, a refund would be ADDED to the day's takings rather than
+ * kept out of them. 'Security Deposit' is not listed because the table CHECK
+ * `payments_no_security_deposit` (0006:198) makes it unreachable, so the pin
+ * and the CHECK together leave exactly the one type that is money taken.
+ *
+ * ⚠ This is not "refunds are subtracted" — a refund's sign and its home in the
+ * ledger are `payment_reversals` questions (Law 4), and nothing here nets one
+ * against a receipt. It is only that a refund is not a receipt.
  */
 export function paymentsInPeriod(fromDayAd: string, toDayAd: string): ListFilters {
   return {
     dateRange: { column: 'payment_date', fromAd: startOfDay(fromDayAd), toAd: endOfDay(toDayAd) },
-    chips: { status: ['Received'] satisfies PaymentStatusDb[] },
+    chips: {
+      status: ['Received'] satisfies PaymentStatusDb[],
+      payment_type: ['Advance Payment'] satisfies PaymentTypeDb[],
+    },
     sort: { column: 'payment_date', ascending: false },
   }
 }
@@ -1477,8 +1573,6 @@ const NPT_OFFSET = `${NPT_OFFSET_MIN < 0 ? '-' : '+'}${String(Math.floor(Math.ab
   '0',
 )}:${String(Math.abs(NPT_OFFSET_MIN) % 60).padStart(2, '0')}`
 
-/** A bare calendar date, `YYYY-MM-DD` — what a date picker emits. */
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 /**
  * The **Nepal** calendar day an argument names.
@@ -1537,3 +1631,53 @@ function startOfDay(dayAd: string): string {
 function endOfDay(dayAd: string): string {
   return `${nepalDay(dayAd)}T23:59:59.999${NPT_OFFSET}`
 }
+
+export {
+  INVOICE_STATUSES,
+  type InvoiceStatus,
+  INVOICE_TOKEN,
+  type InvoiceRow,
+  invoiceGlance,
+  invoiceDetailGroups,
+} from '../../data/invoiceIntel'
+
+export { SPEC_TABS } from '../../data/nav'
+export { businessDayAd, businessNowAd, todayDate } from '../../data/today'
+
+export interface InvoiceLineItem {
+  id: string
+  description: string
+  quantity: number
+  days: number
+  unitRate: number
+  discountPercent: number
+  lineTotal: number
+  sortOrder: number
+  lineKind: string
+}
+
+/**
+ * Fetch persisted line items for an invoice.
+ */
+export async function fetchInvoiceLines(invoiceId: string): Promise<InvoiceLineItem[]> {
+  const { data, error } = await supabase
+    .from('invoice_lines')
+    .select('id, description, quantity, days, unit_rate, discount_percent, line_total, sort_order, line_kind')
+    .eq('invoice_id', invoiceId)
+    .order('sort_order', { ascending: true })
+
+  if (error || !data) return []
+  return (data as Array<Record<string, unknown>>).map((r) => ({
+    id: String(r.id),
+    description: String(r.description),
+    quantity: Number(r.quantity ?? 1),
+    days: Number(r.days ?? 1),
+    unitRate: Number(r.unit_rate ?? 0),
+    discountPercent: Number(r.discount_percent ?? 0),
+    lineTotal: Number(r.line_total ?? 0),
+    sortOrder: Number(r.sort_order ?? 0),
+    lineKind: String(r.line_kind ?? 'Equipment Rental'),
+  }))
+}
+
+

@@ -1,41 +1,107 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useId } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  IconSearch,
-  IconCalendar,
-  IconPackage,
-  IconUsers,
-  IconReceipt,
-  IconSettings,
-  IconTruck,
-  IconBarcode,
-  IconPlus,
-  IconSun,
-  IconMoon,
-  IconX,
-  IconArrowRight,
-} from '@tabler/icons-react'
+import Icon from '../ui/Icon'
+import type { IconName } from '../ui/Icon'
+import * as nav from '../../data/nav'
+import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
+import { toggleScanner } from './ScannerFab'
+import { quickCreateActions } from './QuickCreateMenu'
+import { searchRecords, type GlobalSearchResult } from '../../lib/queries/globalSearch'
+import { useCurrentLanguage, toggleLanguage } from '../../lib/i18n'
+import { isStaff } from '../../lib/rbac'
 
-export interface PaletteAction {
+/**
+ * The global ⌘K / Ctrl-K palette.
+ *
+ * Rewritten 22 Aug 2026 (audit item 3.5d) — this was the one shell component
+ * never migrated off Tailwind, so its `bg-slate-900 …` classes compiled to
+ * nothing and the palette rendered unstyled, hard-coded to a dark slate that
+ * ignored the theme system every other shell file uses. It now paints with
+ * inline styles over `theme.css` tokens like the rest of the shell.
+ *
+ * Two structural fixes landed with the restyle:
+ *
+ *  1. **Navigation comes from `data/nav.ts:permittedNav(role)`, not a hand
+ *     list.** The old list had drifted from the fixed 11 ('Dashboard' → `/`,
+ *     no Today, no Calendar, stale subtitles) and skipped role gating
+ *     entirely, so a money-blind role got Finance in the palette with only
+ *     the Shell guard behind it — the drift `permittedNav`'s own doc warns
+ *     about. One source, so the sidebar, the phone bar, the More sheet and
+ *     this palette cannot disagree.
+ *
+ *  2. **The fabricated shortcut chrome is gone.** 'G D', 'G B', '⌘ N', '⌘ B'
+ *     had no handlers anywhere — decorative keybindings are exactly the
+ *     "static literals presented as live state" the audit calls out on
+ *     Header.tsx. Only ⌘K survives, because only ⌘K works.
+ *
+ * The scanner action goes through `toggleScanner()` — the one way any surface
+ * opens the single scanner — instead of the old `document.querySelector` reach
+ * into the FAB's DOM.
+ *
+ * Signed-out sessions get nothing: the palette is navigation over a role's
+ * permitted nav, and without a session there is no role to permit anything.
+ */
+
+interface PaletteAction {
   id: string
   title: string
-  subtitle?: string
-  category: 'Navigation' | 'Actions' | 'Operations' | 'Finance'
-  icon: React.ReactNode
-  shortcut?: string
+  subtitle?: string | undefined
+  category: 'Navigation' | 'Actions' | 'Records'
+  icon: IconName
+  shortcut?: string | undefined
+  keywords?: string[] | undefined
   onSelect: () => void
+}
+
+export function openCommandPalette() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('open-command-palette'))
+  }
+}
+
+const NAV_SHORTCUTS: Record<string, { shortcut: string; keywords: string[] }> = {
+  '/dashboard': { shortcut: 'today', keywords: ['today', 'td', 'dash'] },
+  '/today': { shortcut: 'today', keywords: ['today', 'td', 'dash'] },
+  '/rentals/new': { shortcut: 'nr', keywords: ['nr', 'new', 'booking'] },
+  '/rentals': { shortcut: 'rentals', keywords: ['rentals', 'bk', 'list'] },
+  '/calendar': { shortcut: 'cal', keywords: ['cal', 'schedule', 'dates'] },
+  '/inventory': { shortcut: 'inv', keywords: ['inv', 'gear', 'stock'] },
+  '/clients': { shortcut: 'cl', keywords: ['cl', 'client', 'directory'] },
+  '/finance': { shortcut: 'fin', keywords: ['fin', 'money', 'invoices', 'closing'] },
+  '/notes': { shortcut: 'notes', keywords: ['notes', 'internal', 'shift', 'handover', 'dispatch', 'gear', 'alert'] },
+  '/tools': { shortcut: 'tools', keywords: ['tools', 'calc', 'pricing'] },
+  '/settings': { shortcut: 'set', keywords: ['set', 'settings', 'config'] },
 }
 
 export const CommandPalette: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [recordSearch, setRecordSearch] = useState<{
+    term: string
+    role: string
+    status: 'loading' | 'ready' | 'error'
+    rows: GlobalSearchResult[]
+  } | null>(null)
+  const [retry, setRetry] = useState(0)
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const hasUser = Boolean(user)
   const { theme, toggle } = useTheme()
+  const currentLang = useCurrentLanguage()
   const inputRef = useRef<HTMLInputElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const resultsId = useId()
+  const term = search.trim().toLowerCase()
+  const canSearchRecords = Boolean(user && isStaff(user.role) && term.length >= 2)
+  const currentSearch = recordSearch?.term === term && recordSearch.role === user?.role ? recordSearch : null
+  const recordResults = canSearchRecords ? currentSearch?.rows ?? [] : []
+  const searching = canSearchRecords && (!currentSearch || currentSearch.status === 'loading')
+  const searchFailed = canSearchRecords && currentSearch?.status === 'error'
 
-  // Listen for ⌘K or Ctrl+K
+  // Listen for ⌘K or Ctrl+K or custom open command
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -47,238 +113,433 @@ export const CommandPalette: React.FC = () => {
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen])
+    const handleCustomOpen = () => setIsOpen(true)
 
-  useEffect(() => {
-    if (isOpen) {
-      setSearch('')
-      setSelectedIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('open-command-palette', handleCustomOpen)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('open-command-palette', handleCustomOpen)
     }
   }, [isOpen])
 
-  const actions: PaletteAction[] = [
-    // Navigation
-    {
-      id: 'nav-dashboard',
-      title: 'Dashboard',
-      subtitle: 'Overview KPIs, activity feed, and fiscal metrics',
-      category: 'Navigation',
-      icon: <IconCalendar className="w-4 h-4" />,
-      shortcut: 'G D',
-      onSelect: () => navigate('/'),
-    },
-    {
-      id: 'nav-bookings',
-      title: 'Bookings & Quotes',
-      subtitle: 'Canonical booking list and pipeline',
-      category: 'Navigation',
-      icon: <IconCalendar className="w-4 h-4" />,
-      shortcut: 'G B',
-      onSelect: () => navigate('/rentals'),
-    },
-    {
-      id: 'nav-operations',
-      title: 'Operations Hub',
-      subtitle: 'Packing, Handover, Return, Reset queues',
-      category: 'Operations',
-      icon: <IconPackage className="w-4 h-4" />,
-      shortcut: 'G O',
-      onSelect: () => navigate('/operations'),
-    },
-    {
-      id: 'nav-inventory',
-      title: 'Inventory & Catalog',
-      subtitle: 'Serialised assets, consumables, bundles, and stock',
-      category: 'Navigation',
-      icon: <IconPackage className="w-4 h-4" />,
-      shortcut: 'G I',
-      onSelect: () => navigate('/inventory'),
-    },
-    {
-      id: 'nav-warehouses',
-      title: 'Warehouses',
-      subtitle: 'Depots, zones, bin locations, and stock distribution',
-      category: 'Navigation',
-      icon: <IconPackage className="w-4 h-4" />,
-      onSelect: () => navigate('/inventory/warehouses'),
-    },
-    {
-      id: 'nav-purchase-requests',
-      title: 'Purchase Requests',
-      subtitle: 'Procurement requests, approvals, and supplier orders',
-      category: 'Navigation',
-      icon: <IconReceipt className="w-4 h-4" />,
-      onSelect: () => navigate('/inventory/purchase-requests'),
-    },
-    {
-      id: 'nav-clients',
-      title: 'Clients & CRM',
-      subtitle: 'Client directory, credit limits, and document registry',
-      category: 'Navigation',
-      icon: <IconUsers className="w-4 h-4" />,
-      shortcut: 'G C',
-      onSelect: () => navigate('/clients'),
-    },
-    {
-      id: 'nav-finance',
-      title: 'Finance & Invoices',
-      subtitle: 'Invoices, immutable payments, security deposits, VAT',
-      category: 'Finance',
-      icon: <IconReceipt className="w-4 h-4" />,
-      shortcut: 'G F',
-      onSelect: () => navigate('/finance'),
-    },
-    {
-      id: 'nav-logistics',
-      title: 'Crew & Fleet Logistics',
-      subtitle: 'Technician schedules, vehicles, and trip logs',
-      category: 'Navigation',
-      icon: <IconTruck className="w-4 h-4" />,
-      onSelect: () => navigate('/crew'),
-    },
-    {
-      id: 'nav-settings',
-      title: 'Settings & Audit Logs',
-      subtitle: 'Branches, RBAC permissions, immutable audit logs',
-      category: 'Navigation',
-      icon: <IconSettings className="w-4 h-4" />,
-      onSelect: () => navigate('/settings'),
-    },
+  useEffect(() => {
+    if (isOpen && hasUser) {
+      const opener = document.activeElement as HTMLElement | null
+      setSearch('')
+      setSelectedIndex(0)
+      inputRef.current?.focus()
+      return () => {
+        if (opener?.isConnected) opener.focus()
+      }
+    }
+  }, [isOpen, hasUser])
 
-    // Quick Actions
-    {
-      id: 'act-new-booking',
-      title: 'Create New Booking / Quote',
-      subtitle: 'Start a fresh quotation with causal dates',
-      category: 'Actions',
-      icon: <IconPlus className="w-4 h-4 text-emerald-400" />,
-      shortcut: '⌘ N',
-      onSelect: () => navigate('/rentals/new'),
-    },
+  useEffect(() => {
+    const userRole = user?.role
+    if (!isOpen || !userRole || !isStaff(userRole) || term.length < 2) {
+      setRecordSearch(null)
+      return
+    }
+    let cancelled = false
+    setRecordSearch({ term, role: userRole, status: 'loading', rows: [] })
+    const timer = window.setTimeout(() => {
+      void searchRecords({ role: userRole, term, limit: 4 })
+        .then((rows) => {
+          if (!cancelled) setRecordSearch({ term, role: userRole, status: 'ready', rows })
+        })
+        .catch(() => {
+          if (!cancelled) setRecordSearch({ term, role: userRole, status: 'error', rows: [] })
+        })
+    }, 180)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [isOpen, term, user?.role, retry])
+
+  useEffect(() => {
+    if (isOpen) {
+      document.getElementById(`${resultsId}-${selectedIndex}`)?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [isOpen, selectedIndex, resultsId])
+
+  if (!user || !isOpen) return null
+
+  /* The fixed 11 for this role — money surfaces dropped for money-blind
+     roles, staff surfaces dropped for Client, by the same filter the sidebar
+     and phone bar read. Rebuilt per open; permittedNav is a cheap filter. */
+  const actions: PaletteAction[] = [
+    ...(nav.permittedAllNav?.(user.role) ?? nav.permittedNav(user.role)).map(
+      (s): PaletteAction => ({
+        id: `nav-${s.to}`,
+        title: s.label,
+        subtitle: s.to,
+        category: 'Navigation',
+        icon: s.icon,
+        shortcut: NAV_SHORTCUTS[s.to]?.shortcut,
+        keywords: NAV_SHORTCUTS[s.to]?.keywords,
+        onSelect: () => navigate(s.to),
+      }),
+    ),
+    ...quickCreateActions(user.role).map(
+      (action): PaletteAction => ({
+        id: `create-${action.id}`,
+        title: action.label,
+        subtitle: action.detail,
+        category: 'Actions',
+        icon: action.icon,
+        shortcut: action.id === 'rental' ? 'nr' : action.id === 'client' ? 'nc' : undefined,
+        keywords: [action.id, action.label.toLowerCase()],
+        onSelect: () => navigate(action.to),
+      }),
+    ),
+    ...recordResults.map(
+      (result): PaletteAction => ({
+        id: `record-${result.kind}-${result.id}`,
+        title: result.label,
+        subtitle: `${result.kind} · ${result.detail}`,
+        category: 'Records',
+        icon: result.kind === 'client' ? 'users' : result.kind === 'equipment' ? 'box' : result.kind === 'invoice' ? 'card' : 'checklist',
+        onSelect: () => navigate(result.to),
+      }),
+    ),
     {
       id: 'act-scan',
-      title: 'Launch Scanner Focus',
-      subtitle: 'Focus continuous barcode/QR scanner',
+      title: 'Open Scanner',
+      subtitle: 'Scan a barcode or QR label',
       category: 'Actions',
-      icon: <IconBarcode className="w-4 h-4 text-blue-400" />,
-      shortcut: '⌘ B',
-      onSelect: () => {
-        const fab = document.querySelector('[data-scanner] button') as HTMLButtonElement | null
-        fab?.click()
-      },
+      icon: 'search',
+      shortcut: 'sc',
+      keywords: ['sc', 'scan', 'barcode', 'qr'],
+      onSelect: toggleScanner,
+    },
+    {
+      id: 'act-team-notes',
+      title: 'Team Internal Notes',
+      subtitle: 'Open shift handovers, gear defect alerts & dispatch log',
+      category: 'Navigation',
+      icon: 'message',
+      shortcut: 'notes',
+      keywords: ['notes', 'internal', 'shift', 'handover', 'dispatch', 'gear', 'alert'],
+      onSelect: () => navigate('/notes'),
+    },
+    {
+      id: 'act-toggle-lang',
+      title: currentLang === 'ne' ? 'Switch to English' : 'Switch Language to नेपाली (Nepali)',
+      subtitle: 'Toggle system & catalogue language (EN / ने)',
+      category: 'Actions',
+      icon: 'flag',
+      shortcut: 'lang',
+      keywords: ['lang', 'language', 'ne', 'en', 'nepali', 'नेपाली'],
+      onSelect: () => { void toggleLanguage() },
     },
     {
       id: 'act-toggle-theme',
       title: `Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`,
       subtitle: 'Toggle theme preference',
       category: 'Actions',
-      icon: theme === 'dark' ? <IconSun className="w-4 h-4 text-amber-400" /> : <IconMoon className="w-4 h-4 text-blue-400" />,
+      icon: theme === 'dark' ? 'sun' : 'moon',
+      shortcut: 'theme',
+      keywords: ['theme', 'dark', 'light', 'mode'],
       onSelect: toggle,
     },
   ]
 
-  const filtered = actions.filter(
-    (a) =>
-      a.title.toLowerCase().includes(search.toLowerCase()) ||
-      (a.subtitle && a.subtitle.toLowerCase().includes(search.toLowerCase())) ||
-      a.category.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = actions.filter((a) => {
+    // Record queries already match identifiers, aliases and fields that may not
+    // appear in the result label. Filtering them again hides valid matches.
+    if (a.category === 'Records') return true
+    if (!term) return true
+    if (a.shortcut && a.shortcut.toLowerCase() === term) return true
+    if (a.keywords && a.keywords.some((k) => k.toLowerCase() === term || k.toLowerCase().startsWith(term))) return true
+    return (
+      a.title.toLowerCase().includes(term) ||
+      (a.subtitle && a.subtitle.toLowerCase().includes(term)) ||
+      a.category.toLowerCase().includes(term)
+    )
+  }).sort((a, b) => Number(a.category === 'Records') - Number(b.category === 'Records'))
+  const activeIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1))
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0))
+      setSelectedIndex(activeIndex < filtered.length - 1 ? activeIndex + 1 : 0)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1))
-    } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+      setSelectedIndex(activeIndex > 0 ? activeIndex - 1 : Math.max(0, filtered.length - 1))
+    } else if (e.key === 'Enter' && filtered[activeIndex]) {
       e.preventDefault()
-      filtered[selectedIndex].onSelect()
+      filtered[activeIndex].onSelect()
       setIsOpen(false)
     }
   }
 
-  if (!isOpen) return null
-
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="fixed inset-0" onClick={() => setIsOpen(false)} />
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 'var(--z-modal)' as unknown as number,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: '80px 16px 16px',
+        /* Same scrim as Modal.tsx — the app's one dialog overlay tint. */
+        background: 'rgba(0, 0, 0, 0.6)',
+      }}
+    >
+      <div style={{ position: 'fixed', inset: 0 }} onClick={() => setIsOpen(false)} />
 
-      <div className="relative z-10 w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-        {/* Search Header */}
-        <div className="flex items-center px-4 py-3.5 border-b border-slate-800 bg-slate-950/60">
-          <IconSearch className="w-5 h-5 text-slate-400 mr-3 shrink-0" />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        onKeyDown={(e) => {
+          if (e.key !== 'Tab') return
+          e.preventDefault()
+          const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('input, button:not(:disabled)') ?? [])
+          const current = controls.indexOf(document.activeElement as HTMLElement)
+          controls[(current + (e.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus()
+        }}
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          width: '100%',
+          maxWidth: 640,
+          maxHeight: '70dvh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: 'var(--modal)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-modal)',
+          boxShadow: 'var(--shadow-modal)',
+        }}
+      >
+        {/* Search header */}
+        {/* focus-host — the input inside carries `outline: 'none'` so this box
+            draws the boundary; without this class the palette's only control has
+            no focus indicator at all. See theme.css. */}
+        <div
+          className="focus-host"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            padding: '6px 6px 6px var(--sp-lg)',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--card2)',
+          }}
+        >
+          <span style={{ color: 'var(--muted)', display: 'inline-flex', flexShrink: 0 }}>
+            <Icon name="search" size={18} />
+          </span>
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-label="Search records, commands and pages"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={resultsId}
+            aria-activedescendant={filtered[activeIndex] ? `${resultsId}-${activeIndex}` : undefined}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
               setSelectedIndex(0)
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command, search bookings, clients, inventory, or invoices..."
-            className="flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-500 outline-none font-medium"
+            placeholder="Search bookings, clients, equipment or pages…"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: 44, // Law 14 — 44px target
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              fontSize: 'var(--t-ui)',
+              fontWeight: 500,
+              color: 'var(--text)',
+              fontFamily: 'var(--font-body)',
+            }}
           />
+          {search && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                setSearch('')
+                setSelectedIndex(0)
+                inputRef.current?.focus()
+              }}
+              style={{ minWidth: 44, minHeight: 44, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+            >
+              Clear
+            </button>
+          )}
           <button
+            ref={closeRef}
+            type="button"
             onClick={() => setIsOpen(false)}
-            className="p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+            aria-label="Close command palette"
+            style={{
+              width: 44, // Law 14 — 44px target
+              height: 44,
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 'var(--r-sm)',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+            }}
           >
-            <IconX className="w-4 h-4" />
+            <Icon name="close" size={16} />
           </button>
         </div>
 
-        {/* Results List */}
-        <div className="flex-1 overflow-y-auto p-2 divide-y divide-slate-800/40">
-          {filtered.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 text-sm">
+        <div role={searchFailed ? 'alert' : 'status'} style={{ padding: '8px var(--sp-lg)', color: 'var(--muted)', fontSize: 'var(--t-meta)' }}>
+          {searchFailed ? (
+            <>
+              Could not search records. Check your connection and try again.
+              <button
+                type="button"
+                onClick={() => { setRetry((value) => value + 1); inputRef.current?.focus() }}
+                style={{ minHeight: 44, padding: '0 12px', marginLeft: 8, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', font: 'inherit', cursor: 'pointer' }}
+              >
+                Retry search
+              </button>
+            </>
+          ) : searching ? 'Searching records…' : canSearchRecords
+            ? `${recordResults.length} record ${recordResults.length === 1 ? 'match' : 'matches'}. Commands and pages are also shown when they match.`
+            : isStaff(user.role) ? 'Type at least 2 characters to find records, or choose a page or action.'
+            : 'Choose a page or action.'}
+        </div>
+
+        {/* Results list */}
+        <div id={resultsId} role="listbox" aria-label="Commands and destinations" style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-sm)' }}>
+          {filtered.length === 0 && !searching && !searchFailed ? (
+            <div
+              style={{
+                padding: 'var(--sp-2xl)',
+                textAlign: 'center',
+                color: 'var(--muted)',
+                fontSize: 'var(--t-ui)',
+              }}
+            >
               No results found for &ldquo;{search}&rdquo;
             </div>
           ) : (
             filtered.map((item, idx) => {
-              const isSelected = idx === selectedIndex
+              const isSelected = idx === activeIndex
               return (
                 <div
                   key={item.id}
+                  id={`${resultsId}-${idx}`}
+                  role="option"
+                  aria-selected={isSelected}
+                  tabIndex={-1}
                   onClick={() => {
                     item.onSelect()
                     setIsOpen(false)
                   }}
                   onMouseEnter={() => setSelectedIndex(idx)}
-                  className={`flex items-center justify-between px-3.5 py-3 rounded-xl cursor-pointer transition-colors ${
-                    isSelected
-                      ? 'bg-blue-600/20 text-white border border-blue-500/40'
-                      : 'text-slate-200 hover:bg-slate-800/60 border border-transparent'
-                  }`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    minHeight: 48, // Law 14 — comfortably past the 44px floor
+                    padding: '6px var(--sp-md)',
+                    borderRadius: 'var(--r-sm)',
+                    cursor: 'pointer',
+                    background: isSelected ? 'var(--nav-active-bg)' : 'transparent',
+                    color: isSelected ? 'var(--nav-active-accent)' : 'var(--text)',
+                  }}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`p-2 rounded-lg ${
-                        isSelected
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-slate-800 text-slate-300'
-                      }`}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--sp-md)',
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 32,
+                        height: 32,
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                        borderRadius: 'var(--r-sm)',
+                        background: isSelected ? 'var(--btn-primary-bg)' : 'var(--card2)',
+                        color: isSelected ? 'var(--btn-primary-fg)' : 'var(--nav-icon)',
+                      }}
                     >
-                      {item.icon}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">{item.title}</div>
+                      <Icon name={item.icon} size={16} />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: 'var(--t-ui)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {item.title}
+                      </span>
                       {item.subtitle && (
-                        <div className="text-xs text-slate-400 truncate">{item.subtitle}</div>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: 'var(--t-meta)',
+                            color: 'var(--muted)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {item.subtitle}
+                        </span>
                       )}
-                    </div>
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 'var(--sp-md)' }}>
                     {item.shortcut && (
-                      <kbd className="px-2 py-0.5 text-[10px] font-mono bg-slate-800 border border-slate-700 text-slate-400 rounded">
+                      <kbd
+                        className="figure"
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: isSelected ? 'var(--nav-active-accent)' : 'var(--muted)',
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: isSelected ? 'var(--nav-active-bg)' : 'var(--card)',
+                          border: '1px solid var(--border)',
+                          fontFamily: 'var(--font-id)',
+                        }}
+                      >
                         {item.shortcut}
                       </kbd>
                     )}
-                    {isSelected && <IconArrowRight className="w-4 h-4 text-blue-400" />}
+                    {isSelected && (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          color: 'var(--nav-active-accent)',
+                        }}
+                      >
+                        <Icon name="arrow_right" size={16} />
+                      </span>
+                    )}
                   </div>
                 </div>
               )
@@ -286,12 +547,26 @@ export const CommandPalette: React.FC = () => {
           )}
         </div>
 
-        {/* Footer info */}
-        <div className="px-4 py-2.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500 font-mono">
-          <div className="flex items-center gap-3">
+        {/* Footer — keys and quick codes that work */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px var(--sp-lg)',
+            background: 'var(--card2)',
+            borderTop: '1px solid var(--border)',
+            fontSize: 'var(--t-th)',
+            color: 'var(--muted)',
+            fontFamily: 'var(--font-id)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap' }}>
             <span>↑↓ Navigate</span>
             <span>↵ Select</span>
             <span>ESC Close</span>
+            <span style={{ color: 'var(--border)' }}>|</span>
+            <span style={{ color: 'var(--text2)' }}>Codes: <strong>nr</strong> · <strong>sc</strong> · <strong>today</strong> · <strong>lang</strong></span>
           </div>
           <span>Babin Rentals OS ⌘K</span>
         </div>

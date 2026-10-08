@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Modal } from './Modal'
 import { Button } from './Page'
 import Icon from './Icon'
+import { ErrorBanner } from './StateViews'
 import {
   getUnresolvedConflicts,
   resolveConflict,
@@ -37,25 +38,25 @@ export function ConflictResolutionModal({
   const [resolving, setResolving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadConflicts = async () => {
+  useEffect(() => {
+    if (!isOpen) return
+    let alive = true
     setLoading(true)
     setError(null)
-    try {
-      const list = await getUnresolvedConflicts()
-      setConflicts(list)
-      if (activeIdx >= list.length) {
-        setActiveIdx(Math.max(0, list.length - 1))
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (isOpen) {
-      void loadConflicts()
+    getUnresolvedConflicts()
+      .then((list) => {
+        if (!alive) return
+        setConflicts(list)
+        setActiveIdx((i) => Math.min(i, Math.max(0, list.length - 1)))
+      })
+      .catch((err: unknown) => {
+        if (alive) setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
     }
   }, [isOpen])
 
@@ -144,22 +145,9 @@ export function ConflictResolutionModal({
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         {error && (
-          <div
-            data-testid="conflict-error-banner"
-            style={{
-              padding: '10px 14px',
-              borderRadius: 'var(--r-card, 6px)',
-              background: 'var(--st-danger-bg, rgba(239, 68, 68, 0.15))',
-              color: 'var(--st-danger-fg, #ef4444)',
-              border: '1px solid var(--st-danger-fg, #ef4444)',
-              fontSize: 'var(--t-meta, 13px)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <Icon name="error" size={16} />
-            <span>{error}</span>
+          <div data-testid="conflict-error-banner">
+            {/* Law 12 — inline and persistent, through the kit's own banner. */}
+            <ErrorBanner title="Could not resolve this conflict" message={error} />
           </div>
         )}
 
@@ -180,9 +168,9 @@ export function ConflictResolutionModal({
                 justifyContent: 'space-between',
                 padding: '8px 12px',
                 background: 'var(--card2)',
-                borderRadius: 'var(--r-card, 6px)',
+                borderRadius: 'var(--r-card)',
                 marginBottom: 'var(--sp-md)',
-                fontSize: 'var(--t-meta, 13px)',
+                fontSize: 'var(--t-meta)',
               }}
             >
               <div>
@@ -191,7 +179,7 @@ export function ConflictResolutionModal({
                 <span style={{ marginLeft: 12, fontWeight: 600, color: 'var(--text)' }}>Record ID: </span>
                 <code style={{ fontFamily: 'monospace' }}>{currentConflict.recordId}</code>
               </div>
-              <div style={{ color: 'var(--muted)', fontSize: 'var(--t-micro, 11px)' }}>
+              <div style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>
                 Detected: {new Date(currentConflict.detectedAt).toLocaleTimeString()}
               </div>
             </div>
@@ -207,8 +195,8 @@ export function ConflictResolutionModal({
               <div
                 data-testid="local-conflict-side"
                 style={{
-                  border: '1px solid var(--warning-text, #eab308)',
-                  borderRadius: 'var(--r-card, 6px)',
+                  border: '1px solid var(--warn-text)',
+                  borderRadius: 'var(--r-card)',
                   padding: 'var(--sp-md)',
                   background: 'var(--card)',
                 }}
@@ -219,15 +207,15 @@ export function ConflictResolutionModal({
                     alignItems: 'center',
                     gap: 6,
                     fontWeight: 600,
-                    color: 'var(--warning-text, #eab308)',
+                    color: 'var(--warn-text)',
                     marginBottom: 'var(--sp-sm)',
-                    fontSize: 'var(--t-body, 14px)',
+                    fontSize: 'var(--t-body)',
                   }}
                 >
                   <Icon name="timer" size={16} />
                   <span>Local Offline Edit</span>
                 </div>
-                <div style={{ fontSize: 'var(--t-meta, 12px)', color: 'var(--muted)', marginBottom: 'var(--sp-sm)' }}>
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginBottom: 'var(--sp-sm)' }}>
                   Queued on this device while offline
                 </div>
                 <pre
@@ -236,7 +224,7 @@ export function ConflictResolutionModal({
                     padding: '8px 10px',
                     borderRadius: '4px',
                     background: 'var(--app)',
-                    fontSize: 'var(--t-micro, 11px)',
+                    fontSize: 'var(--t-th)',
                     fontFamily: 'monospace',
                     overflowX: 'auto',
                     maxHeight: 220,
@@ -252,7 +240,7 @@ export function ConflictResolutionModal({
                 data-testid="remote-conflict-side"
                 style={{
                   border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-card, 6px)',
+                  borderRadius: 'var(--r-card)',
                   padding: 'var(--sp-md)',
                   background: 'var(--card)',
                 }}
@@ -265,13 +253,13 @@ export function ConflictResolutionModal({
                     fontWeight: 600,
                     color: 'var(--text)',
                     marginBottom: 'var(--sp-sm)',
-                    fontSize: 'var(--t-body, 14px)',
+                    fontSize: 'var(--t-body)',
                   }}
                 >
                   <Icon name="check" size={16} />
                   <span>Server Version</span>
                 </div>
-                <div style={{ fontSize: 'var(--t-meta, 12px)', color: 'var(--muted)', marginBottom: 'var(--sp-sm)' }}>
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginBottom: 'var(--sp-sm)' }}>
                   Current state in database (updated after offline edit)
                 </div>
                 <pre
@@ -280,7 +268,7 @@ export function ConflictResolutionModal({
                     padding: '8px 10px',
                     borderRadius: '4px',
                     background: 'var(--app)',
-                    fontSize: 'var(--t-micro, 11px)',
+                    fontSize: 'var(--t-th)',
                     fontFamily: 'monospace',
                     overflowX: 'auto',
                     maxHeight: 220,

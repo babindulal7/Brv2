@@ -59,8 +59,8 @@ import { createClient } from '@supabase/supabase-js'
 
 /* ── env ─────────────────────────────────────────────────────────────── */
 
-function readEnv() {
-  for (const f of ['.env.local', '.env']) {
+function readEnv(files) {
+  for (const f of files) {
     if (!existsSync(f)) continue
     const out = {}
     for (const line of readFileSync(f, 'utf8').split('\n')) {
@@ -72,16 +72,38 @@ function readEnv() {
   return {}
 }
 
-const env = readEnv()
+const args = process.argv.slice(2)
+
+/**
+ * `--local` — read `.env.localdb.local` instead of `.env.local`.
+ *
+ * Without it this script reads `.env.local`, and in this repo that is the LIVE
+ * project. The default is right for the script's main job — proving on
+ * production that `0062` closed the Law 6 hole — but it means an idle
+ * `npm run check:db --email … --password …` signs a real staff account into
+ * production to satisfy curiosity. The flag makes the rehearsal case one word
+ * instead of two exported variables somebody can forget.
+ */
+const wantsLocal = args.includes('--local')
+const env = readEnv(wantsLocal ? ['.env.localdb.local', '.env.local'] : ['.env.local', '.env'])
 const url = process.env.VITE_SUPABASE_URL || env.VITE_SUPABASE_URL
 const key = process.env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
 
 if (!url || !key) {
-  console.error('No VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local or the environment.')
+  console.error(
+    wantsLocal
+      ? 'No VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.localdb.local — is the local stack configured?'
+      : 'No VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local or the environment.',
+  )
   process.exit(1)
 }
 
-const args = process.argv.slice(2)
+/* Loud about which database this is. The two look identical in a terminal and
+   only one of them is production; a verification tool that does not say what
+   it verified is a rumour. */
+if (!/127\.0\.0\.1|localhost/.test(url)) {
+  console.log('\n  \x1b[33m⚠ TARGET IS LIVE PRODUCTION\x1b[0m — pass --local to check the local stack instead.')
+}
 const argOf = (n) => {
   const i = args.indexOf(`--${n}`)
   return i >= 0 ? args[i + 1] : null
@@ -109,10 +131,15 @@ const TARGETS = [
   ['branches', 'Finance filters · Settings ▸ Branches'],
   ['operation_sessions', 'Packing · Handover · Return · Reset'],
   ['cleaning_queue_entries', 'Reset workspace'],
-  ['external_refs', 'lib/booqable/sync.ts (no screen imports it yet)'],
-  ['external_invoices', 'lib/booqable/sync.ts'],
-  ['sync_outbox', 'lib/booqable/sync.ts'],
-  ['sync_conflicts', 'lib/booqable/sync.ts'],
+  /* R-36 (9 Sep 2026): the Booqable bridge is gone and these four tables have no
+     writer at all now. They are kept because Law 3 keeps rows — `external_refs`
+     still records which Booqable order each of the 200 imported bookings came
+     from, which is the only provenance that import left behind. Nothing reads
+     or writes them at runtime; do not re-point them at a screen. */
+  ['external_refs', 'historical only — Booqable import provenance (R-36, no writer)'],
+  ['external_invoices', 'historical only — no writer since R-36'],
+  ['sync_outbox', 'the offline queue, not a Booqable table — still unused'],
+  ['sync_conflicts', 'the offline queue, not a Booqable table — still unused'],
 ]
 
 /** Law 6 — a money-blind session SHOULD read zero from every one of these. */
@@ -192,7 +219,25 @@ async function main() {
 
   const rows = []
   for (const [table, used] of TARGETS) {
-    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true })
+    /*
+     * Counted on `id`, NOT on `*` — and this is load-bearing from 0062 onward.
+     *
+     * `0062_law6_column_grants_arm_the_mask` revokes table-level SELECT on
+     * `bookings`, `booking_lines`, `products` and `product_units` and grants
+     * back only the non-money columns. A `select('*')` expands to every column
+     * including the ungranted ones, so on those four tables it is refused
+     * outright — for every role, Owner included.
+     *
+     * Verified against a local stack with 0062 applied on 25 Aug 2026: counting
+     * with `*` reported ERROR on `bookings` and `booking_lines` while every
+     * other table answered normally. That is this script reporting its own
+     * query shape as a database fault — in the one tool whose job is to prove
+     * 0062 landed cleanly. An operator reading that would reasonably conclude
+     * 0062 had broken bookings, and roll back a migration that was working.
+     *
+     * `id` is granted on every table in TARGETS and is all `head: true` needs.
+     */
+    const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true })
 
     let status, detail
     if (!error) {
@@ -262,21 +307,152 @@ async function main() {
    * establish that the SQL editor cannot, because it goes through the same
    * path the app does: client → PostgREST → RLS.
    */
-  if (signedIn && staffRow) {
+  /*
+   * ⛔ `Client` CANNOT prove Law 6, and the check below refuses to let it try.
+   *
+   * A signed-in session with no row in `users` resolves through
+   * `auth_user_role()` to 'Client', and a Client reads zero from nearly every
+   * table because its policies are scoped by a client_id linkage it cannot
+   * satisfy. `MONEY_BLIND` contains 'Client', so before this guard the verdict
+   * ran: blind = true, moneyZero = 5, and it printed
+   *
+   *     Law 6 — role Client reads zero from 5/5 money tables.  PASS
+   *
+   * That is a PASS FOR THE WRONG REASON — zero rows because the session is
+   * nobody, not because the mask works. Run straight after applying 0062 it
+   * would read as proof that the migration closed the hole, while the hole had
+   * never been tested. The most dangerous output this script can produce is a
+   * green line nobody has cause to doubt.
+   *
+   * So the proof requires a STAFF money-blind role — Warehouse, Technician or
+   * Driver. Client is money-blind and still cannot be the witness.
+   */
+  const PROOF_ROLES = new Set(['Warehouse', 'Technician', 'Driver'])
+
+  if (signedIn && !staffRow && !staffErr) {
+    console.log(
+      `\n  ${C.bad}Law 6 — NOT PROVEN.${C.off} Signed in, but this auth.uid() has no row in \`users\`,` +
+        `\n  so the database resolves it to Client and it reads zero from almost everything.` +
+        `\n  ${C.warn}The zero counts above are meaningless as a Law 6 result.${C.off}` +
+        `\n  Insert a \`users\` row for this uid with primary_role 'Warehouse', then run again.`,
+    )
+  } else if (signedIn && staffRow) {
     const moneyZero = rows.filter((r) => MONEY_TABLES.has(r.table) && r.status === 'ZERO').length
     /* `primary_role`, not `role` — see the identity probe above. Reading the
        wrong key here made `blind` always false, so the Law 6 verdict — the most
        valuable line this script prints — could only ever report a pass. */
-    const blind = MONEY_BLIND.has(staffRow.primary_role)
-    const pass = blind ? moneyZero === MONEY_TABLES.size : true
-    console.log(
-      `\n  Law 6 — role ${staffRow.primary_role} reads zero from ${moneyZero}/${MONEY_TABLES.size} money tables.` +
-        (blind
-          ? pass
-            ? `  ${C.ok}PASS${C.off} — money-blind, and it is.`
-            : `  ${C.bad}FAIL — a money-blind role can read money. This is a real hole.${C.off}`
-          : `  ${C.dim}(not a money-blind role; run again as Warehouse for the real test)${C.off}`),
-    )
+    const role = staffRow.primary_role
+    const canProve = PROOF_ROLES.has(role)
+    const pass = moneyZero === MONEY_TABLES.size
+    console.log(`\n  Law 6 — role ${role} reads zero from ${moneyZero}/${MONEY_TABLES.size} money tables.`)
+    if (canProve) {
+      console.log(
+        pass
+          ? `  ${C.ok}PASS${C.off} — a money-blind STAFF role, and it reads no money.`
+          : `  ${C.bad}FAIL — a money-blind role can read money. This is a real hole.${C.off}`,
+      )
+    } else if (role === 'Client') {
+      console.log(
+        `  ${C.bad}NOT PROVEN — Client cannot witness Law 6.${C.off} It reads zero from nearly every` +
+          `\n  table by construction, so 5/5 here says nothing about the mask. Use a Warehouse account.`,
+      )
+    } else {
+      console.log(`  ${C.dim}(not a money-blind role; run again as Warehouse for the real test)${C.off}`)
+    }
+  }
+
+  /* ── 4 · write probes (Stage 1 Law enforcement) ───────────────────────── */
+  if (args.includes('--write-probes')) {
+    console.log(`\n  ${C.warn}── Stage 1 Database Enforcement Write Probes ──${C.off}`)
+    if (!signedIn) {
+      console.log(`  ${C.bad}Write probes require a signed-in session. Pass --email and --password.${C.off}`)
+    } else {
+      const role = staffRow?.primary_role || 'Unknown'
+      console.log(`  Running write probes as: ${staffRow?.full_name || email} (${role})\n`)
+
+      const runProbe = async (id, name, fn) => {
+        try {
+          const err = await fn()
+          if (err) {
+            const errMsg = String(err.message || err).split('\n')[0]
+            if (errMsg.includes(id) || errMsg.includes('GATE:')) {
+              console.log(`  ${C.ok}gate.${id}${C.off} → refused (${errMsg})`)
+              return true
+            } else {
+              console.log(`  ${C.warn}gate.${id}${C.off} → refused by policy/error (${errMsg})`)
+              return true
+            }
+          } else {
+            console.log(`  ${C.bad}ALLOWED (P0)${C.off} — ${name}`)
+            return false
+          }
+        } catch (ex) {
+          const exMsg = String(ex.message || ex).split('\n')[0]
+          if (exMsg.includes(id) || exMsg.includes('GATE:')) {
+            console.log(`  ${C.ok}gate.${id}${C.off} → refused (${exMsg})`)
+            return true
+          } else {
+            console.log(`  ${C.warn}gate.${id}${C.off} → refused by policy/error (${exMsg})`)
+            return true
+          }
+        }
+      }
+
+      // 1. Direct update to product_units.status
+      await runProbe('unit_status.direct_write', 'Direct update to product_units.status', async () => {
+        const { error } = await supabase.from('product_units').update({ status: 'On Rent' }).eq('id', '00000000-0000-0000-0000-000000000000')
+        return error
+      })
+
+      // 2. Void invoice without reason
+      await runProbe('invoice.void_reason', 'Void invoice without reason', async () => {
+        const { error } = await supabase.from('invoices').update({ status: 'Void' }).eq('id', '00000000-0000-0000-0000-000000000000')
+        return error
+      })
+
+      // 3. User immutability (delete from users)
+      await runProbe('users.immutable', 'Delete from users table', async () => {
+        const { error } = await supabase.from('users').delete().eq('id', uid)
+        return error
+      })
+
+      // 4. Role ceiling (elevate role to Owner)
+      await runProbe('users.role_ceiling', 'Assign Owner role beyond ceiling', async () => {
+        const { error } = await supabase.from('users').update({ primary_role: 'Owner' }).eq('id', uid)
+        return error
+      })
+
+      // 5. Stage transition: Booked -> Packed without pack session
+      await runProbe('stage.no_pack_session', 'Booked -> Packed with no packing session', async () => {
+        const { error } = await supabase.from('booking_stage_transitions').insert({
+          booking_id: '00000000-0000-0000-0000-000000000000',
+          from_stage: 'Booked',
+          to_stage: 'Packed',
+        })
+        return error
+      })
+
+      // 6. Close gate: Returned -> Closed with no invoice
+      await runProbe('close.no_invoice', 'Returned -> Closed with no invoice', async () => {
+        const { error } = await supabase.from('booking_stage_transitions').insert({
+          booking_id: '00000000-0000-0000-0000-000000000000',
+          from_stage: 'Returned',
+          to_stage: 'Closed',
+        })
+        return error
+      })
+
+      // 7. Money-blind line insert with rate
+      if (MONEY_BLIND.has(role)) {
+        await runProbe('booking_lines.money_blind_insert', 'Direct line insert with money by money-blind caller', async () => {
+          const { error } = await supabase.from('booking_lines').insert({
+            booking_id: '00000000-0000-0000-0000-000000000000',
+            rate: 1000,
+          })
+          return error
+        })
+      }
+    }
   }
   console.log()
 }

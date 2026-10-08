@@ -1,9 +1,19 @@
-import { useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { recordExport } from '../../lib/exportAudit'
 import Icon from './Icon'
 import { Button } from './Page'
+import { DateField } from './DateField'
 import { csvCell } from '../../lib/csv'
-import { NPT_OFFSET_MIN, TODAY, kathmanduCivil, toBs, formatBs, formatAd } from '../../lib/bs'
+import { NPT_OFFSET_MIN, getBusinessToday, kathmanduCivil, toBs, formatBs, formatAd } from '../../lib/bs'
 import type { ListFilters } from '../../lib/queries/listQuery'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * # The one report toolbar — `date range · branch · compare · CSV · print`
@@ -351,6 +361,7 @@ export function reportCsvFilename(stem: string, range: ReportFilters['dateRange'
 }
 
 function download(filename: string, text: string): void {
+  recordExport({ list: `report.${filename.replace(/\.csv$/, '')}`, module: 'Operations', rowCount: Math.max(0, text.split(/\r?\n/).length - 1) })
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -441,7 +452,9 @@ export function ReportToolbar({
   csv,
   children,
 }: ReportToolbarProps) {
-  const preset = presetOf(value.dateRange)
+  const [isCustomMode, setIsCustomMode] = useState(false)
+  const calculatedPreset = presetOf(value.dateRange)
+  const preset = isCustomMode ? 'custom' : calculatedPreset
   const fromDay = dayOf(value.dateRange?.fromAd)
   const toDay = dayOf(value.dateRange?.toAd)
   const lines = useMemo(() => periodLines(value.dateRange), [value.dateRange])
@@ -456,6 +469,7 @@ export function ReportToolbar({
     const from = next.fromDay === undefined ? fromDay : next.fromDay
     const to = next.toDay === undefined ? toDay : next.toDay
     if (!from && !to) {
+      setIsCustomMode(false)
       const { dateRange: _dropped, ...rest } = value
       onChange(rest)
       return
@@ -472,12 +486,14 @@ export function ReportToolbar({
 
   const pickPreset = (key: string) => {
     if (key === 'custom') {
+      setIsCustomMode(true)
       // Custom starts from whatever is already selected, falling back to the
       // narrowest honest thing there is — today.
       const day = civilDay(TODAY)
       setRange({ fromDay: fromDay ?? day, toDay: toDay ?? day })
       return
     }
+    setIsCustomMode(false)
     const chosen = REPORT_RANGE_PRESETS.find((p) => p.key === key)
     if (!chosen) return
     if (chosen.days === null) {
@@ -553,18 +569,26 @@ export function ReportToolbar({
 
           {preset === 'custom' && (
             <>
-              <input
-                type="date"
+              {/* `showBs={false}` — these are query bounds in a filter bar, not
+                  a business date being shown to the operator, and the Date
+                  Engine covers one month, so a BS line here would read "BS not
+                  available for this date" on every report. The BS date is still
+                  in the calendar itself. See `DateFieldProps.showBs`. */}
+              <DateField
                 value={fromDay ?? ''}
-                onChange={(e) => setRange({ fromDay: e.target.value || null })}
-                aria-label="From date"
+                onChange={(v) => setRange({ fromDay: v || null })}
+                ariaLabel="From date"
+                showBs={false}
+                clearable
                 style={controlStyle}
               />
-              <input
-                type="date"
+              <DateField
                 value={toDay ?? ''}
-                onChange={(e) => setRange({ toDay: e.target.value || null })}
-                aria-label="To date"
+                onChange={(v) => setRange({ toDay: v || null })}
+                ariaLabel="To date"
+                showBs={false}
+                clearable
+                align="right"
                 style={controlStyle}
               />
             </>

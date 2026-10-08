@@ -1,8 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { PageHeader, Card, Rail, FooterNote, Button, cardStyle } from '../../components/ui/Page'
+import { PageHeader, Card, ReflowRail, FooterNote, Button, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { LineChart, GroupedBars } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -11,12 +13,13 @@ import { BRAND, BRAND_ON, STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { isStaff } from '../../lib/rbac'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
-import { PageBody } from '../../components/ui/PageBody'
+import './reports.css'
+import { IS_MOCK } from '../../lib/supabase'
 import {
   PERIODS,
   DEFAULT_PERIOD,
@@ -32,8 +35,20 @@ import {
   previousPeriod,
   rangeLabel,
   dueStatus,
-} from '../../data/pulse'
-import type { ChartView, PeriodFigures, EquipmentRow } from '../../data/pulse'
+  getPulseLiveSummary,
+  type ChartView,
+  type PeriodFigures,
+  type EquipmentRow,
+  type PulseLiveSummary,
+} from '../../lib/queries/pulse'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Finance ▸ Reports ▸ Pulse** — built against `03 Core Modules/Reports.PNG`
@@ -96,10 +111,25 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; horizontal padding and the top alignment stay as they are.
+ *
+ * Both tables below are read-only today, and their two-line cells — AD over BS
+ * on a due date, unit-days under an equipment name — already clear the floor on
+ * their own. That is the argument for putting it on the constant rather than
+ * leaving it to the content: a single-line row must not end up shorter than the
+ * two-line row beside it, and no row may be too short to hold a 44px hit area,
+ * because a target that overhangs its row hands the tap to the next row in the
+ * DOM. The floor is what stops that before a control is ever added here.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
+/* Law 15 — hit area over paint, number from `--tap`. One consumer: the range
+   Select above the pulse table. */
 const selStyle = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -109,6 +139,19 @@ const selStyle = {
   fontFamily: 'inherit',
 }
 
+/* Law 14 / v4.1 §7.3 — 44px hit area on every interactive target, and §5's
+   escape hatch: "compact visual allowed ONLY with an invisible pseudo-element
+   extending the hit area to 44 — the law is the HIT AREA, not the paint."
+
+   The paint stays 30 here on purpose, and the difference from every other strip
+   on this screen is that this constant dresses TWO different things: the `Link`
+   for a family that has a page, and an `aria-disabled` `<span>` for the eight
+   that do not. Growing the box would have inflated the span as well — a hit area
+   on something with nothing to hit — and shrinking only the interactive half
+   would leave a strip of 44px links beside 30px spans, which reads as two kinds
+   of tab rather than one kind in two states. So the constant keeps the shared
+   paint and the interactive consumer alone carries `className="tap"`, which
+   grows its target underneath the pill without moving a pixel of the strip. */
 const tabStyle = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -212,7 +255,7 @@ interface CardModel {
 function KpiCard({ c }: { c: CardModel }) {
   return (
     <article
-      className="lift"
+      className="lift report-kpi-card"
       style={{
         ...cardStyle,
         padding: '13px 14px',
@@ -320,26 +363,44 @@ function KpiCard({ c }: { c: CardModel }) {
 
 /* ── page ──────────────────────────────────────────────────────────────── */
 
-export interface PulseProps {
-  loading?: boolean
-  error?: string | null
-  onRetry?: () => void
+export default function Pulse() {
+  if (!IS_MOCK) return (
+    <PageShell>
+      <PageHeader title="Pulse" description="Business overview" />
+      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-md)' }}>
+        {['Revenue', 'Cash', 'Equipment utilisation', 'Exceptions'].map((label) => <Card key={label} title={label}><p style={{ margin: 0, color: 'var(--muted)' }}>Not tracked yet.</p></Card>)}
+      </section>
+      <Card title="Reports"><p style={{ margin: 0 }}>Open a report to see recorded invoices, collections, and rental activity.</p><Link to="/finance?tab=reports" style={{ color: 'var(--link)', display: 'inline-block', padding: '12px 0', minHeight: 44 }}>Browse reports</Link></Card>
+    </PageShell>
+  )
+  return <DemoPulse />
 }
 
-export default function Pulse({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: PulseProps = {}) {
+function DemoPulse() {
   const money = useCanViewMoney()
   const { user } = useAuth()
   const staff = isStaff(user?.role ?? 'Client')
   const periodRef = useRef<HTMLSelectElement>(null)
   const viewport = useViewport()
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there.
+     Called here, above the no-period early return, because it is a hook. */
+  const railGridColumns = useRailGridColumns()
 
   const [periodKey, setPeriodKey] = useState<string>(DEFAULT_PERIOD)
   const [compareOn, setCompareOn] = useState(true)
   const [view, setView] = useState<ChartView>('revenue')
+  const [, setLiveSummary] = useState<PulseLiveSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getPulseLiveSummary().then((res) => {
+      if (active) setLiveSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const period = PERIODS.find((p) => p.key === periodKey) ?? null
   const range = period?.range ?? null
@@ -454,7 +515,9 @@ export default function Pulse({
             gap: 5,
             height: 26,
             padding: '0 9px',
-            borderRadius: 'var(--r-badge)',
+            // §3.3 — --r-badge (999) is numeric count badges only; a status
+            // takes --r-chip. See DESIGN_DIRECTION_SPEC_v4.1 §4.
+            borderRadius: 'var(--r-chip)',
             background: figures.live ? STATUS.in.bg : STATUS.neutral.bg,
             color: figures.live ? STATUS.in.fg : STATUS.neutral.fg,
             fontSize: 'var(--t-meta)',
@@ -736,7 +799,7 @@ export default function Pulse({
 
   // §5.3's cards are dense — icon, label, value, delta and a link — so below
   // desktop they get the same treatment as BookingDetail's facts strip: two
-  // across on the 768–1179px tablet band, one across on phone, rather than
+  // across on the 768–1279px tablet band, one across on phone, rather than
   // squeezing all of `cards.length` into a viewport that has no room for it
   // (Law 13/14).
   const cardsCols =
@@ -746,14 +809,16 @@ export default function Pulse({
         ? `repeat(${Math.min(cards.length, 2)}, minmax(0,1fr))`
         : '1fr'
 
-  // The content/rail split only has room on desktop; below that the rail
-  // (already collapsed to a handle by CollapsibleAside — see Rail's docstring
-  // in components/ui/Page.tsx) stacks under the content column instead of
-  // sharing a row with it.
-  const bodyCols = viewport === 'desktop' ? 'minmax(0,1fr) 300px' : '1fr'
+  // The content/rail split only has room on desktop; below 1280 the rail
+  // track goes away and `ReflowRail` renders its cards as a plain inline
+  // column under the content — Rulings §7's "reflow, not hide". This used to
+  // be `Rail` (CollapsibleAside), which put all four rail cards behind a 44px
+  // handle on the warehouse tablet, and a fixed `300px` track that could not
+  // shrink when the rail collapsed at desktop.
+  const bodyCols = railGridColumns
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full" className="report-v2">
       {header}
       <PageBody
         noun="business pulse"
@@ -811,12 +876,22 @@ export default function Pulse({
           visibly unavailable state with the reason stated below the strip,
           because a tab that goes nowhere is worse than one that admits it. */}
       <nav aria-label="Report families">
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+        {/* The row gap is no longer the column gap, and the reason is the tap
+            areas rather than the look: eleven tabs wrap on any laptop, and a
+            30px tab whose target is 44 reaches 7px past its own edge top and
+            bottom. At the old symmetric 6px gap the second line's targets
+            climbed 8px into the first line's, and the later element in the DOM
+            wins a contested point — so a click just under "Inventory" would have
+            opened whatever sat below it. 16px is the first step on the 4px grid
+            that clears the 14px the two halves need. Columns stay tight at 6:
+            every label is wider than 44, so no tab grows sideways. */}
+        <div style={{ display: 'flex', columnGap: 6, rowGap: 'var(--sp-lg)', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
           {tabs.map((t) =>
             t.to ? (
               <Link
                 key={t.label}
                 to={t.to}
+                className="tap"
                 aria-current={t.current ? 'page' : undefined}
                 style={{
                   ...tabStyle,
@@ -851,8 +926,8 @@ export default function Pulse({
         <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
           {unbuiltTabs.length > 0 && (
             <>
-              Not built: {unbuiltTabs.join(' · ')} — Reports §8 names these families; nothing behind them exists in this
-              build yet.{' '}
+              Not built: {unbuiltTabs.join(' · ')} {/* — Reports §8 names these families; nothing behind them exists in this
+              build yet. */}These reports are not available yet. {' '}
             </>
           )}
           {gatedTabs.length > 0 && <>Not in your role&rsquo;s view: {gatedTabs.join(' · ')}.</>}
@@ -904,7 +979,7 @@ export default function Pulse({
               <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                 {activeView === 'utilization'
                   ? 'Axis in per cent of the rentable fleet — hover a mark for the exact figure.'
-                  : 'Axis in thousands of rupees — hover a mark for the exact figure, which is the one lib/money prints.'}
+                  : /* Axis in thousands of rupees — hover a mark for the exact figure, which is the one lib/money prints. */ "Amounts are shown in thousands of rupees. Hover a mark for the exact amount."}
               </p>
             )}
 
@@ -976,8 +1051,8 @@ export default function Pulse({
             }
             bodyStyle={{ padding: 0 }}
           >
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+            <DataTableShell ariaLabel="Equipment utilization" data-table-scroll className="report-table-shell" style={{ overflowX: 'auto' }}>
+              <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
                     <th style={th}>Equipment</th>
@@ -1017,7 +1092,7 @@ export default function Pulse({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           </Card>
 
           {money && (
@@ -1030,8 +1105,8 @@ export default function Pulse({
               }
               bodyStyle={{ padding: 0 }}
             >
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <DataTableShell ariaLabel="Upcoming payments and receivables" data-table-scroll className="report-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       {['Type', 'Reference', 'Client / Vendor', 'Due date', 'Amount', 'Status'].map((h) => (
@@ -1092,15 +1167,14 @@ export default function Pulse({
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               <p style={{ margin: 0, padding: '10px 12px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                Ageing is measured from {formatAd(figures.to)}, the period's last day — the one clock this page uses (§4.3).
-              </p>
+                Ageing is measured from {formatAd(figures.to)}{/* , the period's last day — the one clock this page uses (§4.3). */}, the period's last day — the one clock this page uses . </p>
             </Card>
           )}
         </div>
 
-        <Rail>
+        <ReflowRail width={300}>
           <Card title="Report summary">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               <RailRow label="Report period" value={label.bs ?? 'BS unavailable'} sub={label.ad} />
@@ -1191,9 +1265,8 @@ export default function Pulse({
                 ))}
               </div>
               <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                Read-only. Creating, editing and retrying a schedule is Reports §11 and is not built, so no control is drawn
-                for it.
-              </p>
+                {/* Read-only. Creating, editing and retrying a schedule is Reports §11 and is not built, so no control is drawn
+                for it. */}Read-only. Schedule editing is not available yet. </p>
             </Card>
           )}
 
@@ -1218,21 +1291,20 @@ export default function Pulse({
               ))}
             </div>
             <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              Saved reports and the custom builder are Reports §10 and are not built; these are the reports that exist
-              today.
-            </p>
+              {/* Saved reports and the custom builder are Reports §10 and are not built; these are the reports that exist
+              today. */}Saved reports and custom reports are not available yet. </p>
           </Card>
-        </Rail>
+        </ReflowRail>
       </div>
       </PageBody>
 
       <FooterNote
         extra={[
-          'Every amount is integer paisa — see lib/money.ts',
+          /* Every amount is integer paisa — see lib/money.ts */ "Amounts shown in rupees",
           'Reports reads its figures from the owning engine; it never defines a metric',
         ]}
       />
-    </div>
+    </PageShell>
   )
 }
 

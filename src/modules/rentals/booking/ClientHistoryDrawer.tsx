@@ -34,8 +34,8 @@
 import { formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import Icon from '../../../components/ui/Icon'
-import { Button } from '../../../components/ui/Page'
-import type { ClientRecord } from '../../../data/clients'
+import { Button } from '../../../components/ui/Button'
+import type { ClientRecord } from '../../../lib/queries/clients'
 import { TOUCH } from './ClientHealthChip'
 import { creditCheck } from './clientHealth'
 import type { ClientHealthSignals } from './clientHealth'
@@ -218,7 +218,11 @@ export function ClientHistoryDrawer({
                     )}
                   </div>
                   {meta && (
-                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{meta}</div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      {b.project}{b.project && (b.dateLabel || b.status) ? ' · ' : ''}
+                      {b.dateLabel && <span style={{ color: 'var(--booking-date-text)' }}>{b.dateLabel}</span>}
+                      {b.dateLabel && b.status ? ' · ' : ''}{b.status}
+                    </div>
                   )}
                   {showMoney && b.duePaisa !== undefined && b.duePaisa > 0 && (
                     <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
@@ -285,7 +289,7 @@ export function ClientHistoryDrawer({
         <DrawerRow label="Lifetime rentals" value={client.totalRentalsCount} figure />
         {showMoney && <DrawerRow label="Lifetime spend" value={formatMoney(client.totalSpentPaisa)} figure />}
         <DrawerRow label="Currently on rent" value={client.currentRentalsCount} figure />
-        <DrawerRow label="Last rental" value={client.lastRentalAd} figure />
+        <DrawerRow label="Last rental" value={<span style={{ color: client.lastRentalAd && client.lastRentalAd !== '—' ? 'var(--booking-date-text)' : undefined }}>{client.lastRentalAd}</span>} figure />
         <DrawerRow label="Client since" value={client.clientSinceAd ?? null} unavailableNote="Not recorded on this client." figure />
         <DrawerUnavailable>
           An itemised list of completed rentals is not available — no per-client rental ledger exists in the

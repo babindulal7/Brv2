@@ -36,7 +36,7 @@ export interface DamageFinding {
   state: DamageState
   raisedBy: string
   raisedAtAd: string
-  approvedBy?: string
+  approvedBy?: string | undefined
 }
 
 export const DAMAGE_FINDINGS: DamageFinding[] = [

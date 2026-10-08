@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { BP, MQ, viewportFor, type Viewport } from './breakpoints'
+import { onMediaChange } from './safeStorage'
 
 /**
  * **Device capability and viewport — the primitive Law 13 requires.**
@@ -18,10 +20,11 @@ import { useEffect, useState } from 'react'
  *
  * ## Width decides, never orientation
  *
- * Foundation locks the breakpoints at **768** and **1180** and specifies width
- * as the discriminator. A warehouse tablet rotated to portrait is still a
- * tablet; a phone in landscape is still a phone. Orientation changes the shape
- * of the viewport, not the size of the thumb using it.
+ * v4.1 §7.7 locks the breakpoints at **768** and **1280** and specifies width
+ * as the discriminator — they live in `lib/breakpoints.ts`, not here. A
+ * warehouse tablet rotated to portrait is still a tablet; a phone in landscape
+ * is still a phone. Orientation changes the shape of the viewport, not the
+ * size of the thumb using it.
  *
  * ## Capability is separate from size
  *
@@ -37,17 +40,30 @@ import { useEffect, useState } from 'react'
  * asking both to mean one thing is how hover menus end up on tablets.
  */
 
-export type Viewport = 'phone' | 'tablet' | 'desktop'
+export type { Viewport }
 
-/** Foundation's locked breakpoints. Width only. */
-export const BREAKPOINT = { phone: 768, desktop: 1180 } as const
+/**
+ * **v2.1 — the numbers moved to `lib/breakpoints.ts`.**
+ *
+ * This file used to declare `BREAKPOINT = { phone: 768, desktop: 1180 }`
+ * itself. Two things were wrong with that:
+ *
+ *  1. `1180` is superseded. v4.1 §7.7 rules 768/1280, and the spec's own test
+ *     width 1194 (iPad Pro 11" landscape) sat on the WRONG side of 1180 — the
+ *     likeliest device on a rental floor was classified `desktop` and served
+ *     hover affordances and mouse-sized targets.
+ *  2. A breakpoint declared here could not be shared with `responsive.css` or
+ *     the `index.html` pre-paint script, so the same threshold existed three
+ *     times and could drift silently.
+ *
+ * `BREAKPOINT` is re-exported for the existing call sites, but it now points at
+ * the shared constant. New code should import `BP` from `lib/breakpoints`.
+ */
+export const BREAKPOINT = BP
 
 function readViewport(): Viewport {
   if (typeof window === 'undefined') return 'desktop'
-  const w = window.innerWidth
-  if (w < BREAKPOINT.phone) return 'phone'
-  if (w < BREAKPOINT.desktop) return 'tablet'
-  return 'desktop'
+  return viewportFor(window.innerWidth)
 }
 
 /**
@@ -61,17 +77,21 @@ export function useViewport(): Viewport {
     // Driven by matchMedia rather than a resize listener: the browser fires
     // these only when a threshold is actually crossed, instead of on every
     // pixel of a drag.
-    const phone = window.matchMedia(`(max-width: ${BREAKPOINT.phone - 1}px)`)
-    const desktop = window.matchMedia(`(min-width: ${BREAKPOINT.desktop}px)`)
     const sync = () => setVp(readViewport())
 
-    phone.addEventListener('change', sync)
-    desktop.addEventListener('change', sync)
+    /* `onMediaChange`, not `addEventListener` — `MediaQueryList` did not inherit
+       `EventTarget` in WebKit until Safari 14, so on 13 and earlier this throws
+       a TypeError. It runs in a mount effect ABOVE the app's only ErrorBoundary
+       (App.tsx wraps the routed page only), so React 18 tears down the whole
+       root and the device shows a blank white page. `safeStorage.ts` carries
+       the two-branch bind. */
+    const offPhone = onMediaChange(MQ.phone, sync)
+    const offDesktop = onMediaChange(MQ.desktop, sync)
     sync()
 
     return () => {
-      phone.removeEventListener('change', sync)
-      desktop.removeEventListener('change', sync)
+      offPhone()
+      offDesktop()
     }
   }, [])
 
@@ -112,18 +132,17 @@ export function useCapability(): Capability {
   const [cap, setCap] = useState<Capability>(readCapability)
 
   useEffect(() => {
-    const queries = [
+    const sync = () => setCap(readCapability())
+    /* Same Safari-14 reason as useViewport above. */
+    const offs = [
       '(pointer: coarse)',
       '(hover: hover)',
       '(display-mode: standalone)',
       '(prefers-reduced-motion: reduce)',
-    ].map((q) => window.matchMedia(q))
-
-    const sync = () => setCap(readCapability())
-    queries.forEach((q) => q.addEventListener('change', sync))
+    ].map((q) => onMediaChange(q, sync))
     sync()
 
-    return () => queries.forEach((q) => q.removeEventListener('change', sync))
+    return () => offs.forEach((off) => off())
   }, [])
 
   return cap

@@ -1,121 +1,73 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { recordExport } from '../../lib/exportAudit'
 import { useNavigate, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { PageHeader } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
-import { formatMoney, rupees, type Paisa } from '../../lib/money'
+import { Badge } from '../../components/ui/Badge'
+import type { StatusKey } from '../../lib/status'
+import { formatMoney, type Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import {
+  listSubRentals,
   groupByCounterparty,
   supplierGlance,
   supplierDetailGroups,
   supplierDirectoryRow,
-} from '../../data/supplierIntel'
-import type { SupplierGroup, SupplierDirectoryRow } from '../../data/supplierIntel'
+  type SupplierGroup,
+  type SupplierDirectoryRow,
+  type SubRentalStatus,
+  type SubRentalRecord,
+} from '../../lib/queries/subrentals'
 import type { GateContext } from '../../lib/fieldGating'
-import { IconSearch, IconPlus, IconDownload, IconArrowUpRight, IconArrowDownLeft } from '@tabler/icons-react'
+import { IconPlus, IconDownload, IconArrowUpRight, IconArrowDownLeft } from '@tabler/icons-react'
 
-type SubRentalDirection = 'Borrowing' | 'Lending'
-type SubRentalStatus = 'Reserved' | 'Picked Up' | 'On Rent' | 'Returned' | 'Checked In' | 'Cancelled'
+export type { SubRentalRecord }
 
-export interface SubRentalRecord {
-  id: string
-  counterparty: string
-  linkedBooking?: string
-  direction: SubRentalDirection
-  equipment: string
-  quantity: number
-  startDateBs: string
-  endDateBs: string
-  startDateAd: string
-  endDateAd: string
-  rentalValuePaisa: Paisa
-  revenuePaisa: Paisa
-  costPaisa: Paisa
-  status: SubRentalStatus
-  isOverdue: boolean
-}
 
-const SUB_RENTAL_DATA: SubRentalRecord[] = [
-  {
-    id: 'SR-2026-0032',
-    counterparty: 'GearHouse KTM',
-    linkedBooking: 'B-715',
-    direction: 'Borrowing',
-    equipment: 'RED V-Raptor 8K VV',
-    quantity: 1,
-    startDateBs: '2083/03/10',
-    endDateBs: '2083/03/15',
-    startDateAd: '24 Jun 2026',
-    endDateAd: '29 Jun 2026',
-    rentalValuePaisa: rupees(120000),
-    revenuePaisa: rupees(120000),
-    costPaisa: rupees(91500), // ~23.75% margin (120000 - 91500 = 28500 / 120000)
-    status: 'On Rent',
-    isOverdue: false,
-  },
-  {
-    id: 'SR-2026-0033',
-    counterparty: 'Kathmandu Cinema Works',
-    direction: 'Lending',
-    equipment: 'ARRI SkyPanel S60-C',
-    quantity: 2,
-    startDateBs: '2083/03/12',
-    endDateBs: '2083/03/14',
-    startDateAd: '26 Jun 2026',
-    endDateAd: '28 Jun 2026',
-    rentalValuePaisa: rupees(30000),
-    revenuePaisa: rupees(30000),
-    costPaisa: rupees(0), // Lending idle stock
-    status: 'Returned',
-    isOverdue: true, // Returned late
-  },
-  {
-    id: 'SR-2026-0034',
-    counterparty: 'Freelance - Bikram',
-    linkedBooking: 'B-718',
-    direction: 'Borrowing',
-    equipment: 'DJI Inspire 3 Drone',
-    quantity: 1,
-    startDateBs: '2083/03/18',
-    endDateBs: '2083/03/20',
-    startDateAd: '02 Jul 2026',
-    endDateAd: '04 Jul 2026',
-    rentalValuePaisa: rupees(85000),
-    revenuePaisa: rupees(85000),
-    costPaisa: rupees(75000),
-    status: 'Reserved',
-    isOverdue: false,
-  },
-  {
-    id: 'SR-2026-0035',
-    counterparty: 'Shine Pictures',
-    direction: 'Lending',
-    equipment: 'Sony FX9 Camera Package',
-    quantity: 1,
-    startDateBs: '2083/03/05',
-    endDateBs: '2083/03/08',
-    startDateAd: '19 Jun 2026',
-    endDateAd: '22 Jun 2026',
-    rentalValuePaisa: rupees(100000),
-    revenuePaisa: rupees(0),
-    costPaisa: rupees(0),
-    status: 'Cancelled',
-    isOverdue: false,
-  }
-]
 
 /**
- * Static, so computed once at module scope rather than re-grouped every
- * render — the counterparty ↔ transactions mapping the Supplier Hover Intel
- * card is built from (`data/supplierIntel.ts`).
+ * The §4 hue for each sub-rental status — the shape `Finance.tsx`'s
+ * `INVOICE_TOKEN` already uses, so a screen names a TOKEN and <Badge> owns the
+ * paint. This replaces a `getStatusColor()` switch that returned raw CSS
+ * variables, and it corrects two of them, both of which were semantic errors
+ * rather than styling ones:
+ *
+ *  - **On Rent / Picked Up returned `var(--info)` — BLUE.** §4 puts On Rent,
+ *    Picked Up and Partial Pickup on ORANGE, and §2 gives blue exactly one
+ *    meaning: "committed · scheduled". Painting gear that is physically out
+ *    with a supplier's client in the committed hue told an operator scanning
+ *    the column by colour that the kit was still booked and still on the
+ *    shelf. Orange is the one hue that means "out".
+ *
+ *  - **Reserved returned `var(--ready-text)` — YELLOW.** §2 gives yellow to
+ *    "being worked in-house / waiting", which is the workshop: Packed,
+ *    Cleaning, Maintenance. A Reserved sub-rental is not being worked on; it
+ *    is committed and scheduled, which §4 spells BLUE. The two errors were
+ *    each other's mirror, so the column read its lifecycle backwards at the
+ *    two moments — leaving and arriving — where being wrong costs the most.
+ *
+ * Returned / Checked In stay GREEN ("home & ready", §2) and Cancelled stays
+ * DIM ("finished / inactive"); those two were already right, and `--good` /
+ * `--muted` are simply the pre-token spellings of them.
  */
-const SUPPLIER_GROUPS = groupByCounterparty(SUB_RENTAL_DATA)
+const SUB_RENTAL_TOKEN: Record<SubRentalStatus, StatusKey> = {
+  Reserved: 'primary',
+  'Picked Up': 'out',
+  'On Rent': 'out',
+  Returned: 'in',
+  'Checked In': 'in',
+  Cancelled: 'dim',
+}
 
 type FilterKey = SubRentalStatus | 'All' | 'Overdue'
 
@@ -156,11 +108,67 @@ type FilterKey = SubRentalStatus | 'All' | 'Overdue'
  * `Unavailable` is this codebase's "grey it out, but say why" control, and it
  * carries the reason on touch as well as on hover.
  */
+function exportSubRentalsCsv(rows: SubRentalRecord[], canViewMoney: boolean) {
+  const head = ['Reference', 'Direction', 'Supplier / Client', 'Equipment', 'Quantity', 'Status', 'Start Date', 'End Date', 'Linked Booking']
+  if (canViewMoney) head.push('Rental Value (NPR)', 'Revenue / Cost (NPR)')
+  const body = rows.map((r) => {
+    const cells = [
+      r.id,
+      r.direction,
+      r.counterparty,
+      r.equipment,
+      String(r.quantity),
+      r.status,
+      r.startDateAd,
+      r.endDateAd,
+      r.linkedBooking ?? '',
+    ]
+    if (canViewMoney) {
+      cells.push(
+        r.rentalValuePaisa ? formatMoney(r.rentalValuePaisa) : '',
+        r.revenuePaisa ? formatMoney(r.revenuePaisa) : (r.costPaisa ? formatMoney(r.costPaisa) : ''),
+      )
+    }
+    return cells
+  })
+  const csv = [head, ...body]
+    .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  recordExport({ list: 'sub-rentals', module: 'Operations', rowCount: rows.length, columns: head })
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `sub-rentals-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 const NEW_SUB_RENTAL_REASON =
   'A sub-rental belongs to the booking it supplies. Open that booking and use Create Sub-Rental there — there is no booking-less path, and no rule yet for who may create one.'
 
-const EXPORT_REASON =
-  'Export is not built — there is no sub-rental report generator in this release, so nothing would be produced.'
+/*
+ * ── The KPI strip states what it cannot count ──────────────────────────────
+ *
+ * "30 active · Borrowing (18) · Lending (12)", "Rs 1,20,000", "Rs 80,000" and
+ * "33.3%" were string literals over a four-row seed, and the chip row beneath
+ * them ("All 48", "Overdue 4", …) was a second set of literals that disagreed
+ * with the table it filtered. WIREFRAME_RULINGS §8: a number with no source
+ * renders "Not tracked yet".
+ *
+ *  - The record count and the chip counts are derived from `SUB_RENTAL_DATA`,
+ *    the same rows the table renders, so they cannot disagree with it.
+ *  - The ₨ totals and the margin have no source: there is no sub-rental
+ *    ledger, and summing four seed rows' `revenuePaisa` would print a demo
+ *    figure as revenue. They say so instead.
+ *
+ * TODO(decision) — "Active Records" has no ruled definition (which statuses
+ * count as active?). The tile counts every record and says so; rename it
+ * once the rule exists.
+ */
+const NOT_TRACKED = 'Not tracked yet'
+const NOT_TRACKED_NOTE = 'No sub-rental ledger is wired yet — there is nothing to total.'
+
+
 
 /**
  * **Suppliers directory** — promotes `SUPPLIER_GROUPS` (already grouped by
@@ -218,12 +226,12 @@ function SupplierDirectoryTable({
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>
           {rows.length} counterpart{rows.length === 1 ? 'y' : 'ies'} — every Sub Rental record grouped by who it&apos;s with
         </span>
-        <div style={{ width: 240 }}>
-          <Input
+        <div style={{ width: '100%', maxWidth: 360, minWidth: 240 }}>
+          <SearchInput
             placeholder="Search supplier name…"
             value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            icon={<IconSearch size={16} />}
+            onChange={onSearchChange}
+            onClear={() => onSearchChange('')}
           />
         </div>
       </div>
@@ -237,7 +245,7 @@ function SupplierDirectoryTable({
             onAction={() => onSearchChange('')}
           />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <DataTableShell ariaLabel="Sub-rental suppliers">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
                 <tr
@@ -299,21 +307,14 @@ function SupplierDirectoryTable({
                       </IntelCard>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          height: 20,
-                          padding: '0 8px',
-                          borderRadius: 'var(--r-badge)',
-                          border: '1px solid var(--ext-line)',
-                          color: 'var(--ext-fg)',
-                          fontSize: 11,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {row.relationship}
-                      </span>
+                      {/* The gold mark, from `EXT_MARK` via <Badge tone="ext">
+                          rather than hand-rolled a third time. §2 keeps gold
+                          outline-only so it can never read as a yellow status,
+                          and §3.3 puts it on `--r-chip` (6) — this carried
+                          `--r-badge` (999), which §3.3 reserves for numeric
+                          count badges. A supplier relationship IS the external
+                          -gear axis, so `ext` is the right key here. */}
+                      <Badge tone="ext" label={row.relationship} size="sm" />
                     </td>
                     <td className="figure" style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text)' }}>
                       {row.unitsInHouse}
@@ -365,14 +366,14 @@ function SupplierDirectoryTable({
                 ))}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
       </Card>
     </div>
   )
 }
 
-export function SubRental() {
+export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
 
   const { user } = useAuth()
@@ -384,6 +385,40 @@ export function SubRental() {
   // rendered and then hidden.
   const canSeeFinance = canViewMoneyField(gctx, 'asset-finance')
 
+  const [records, setRecords] = useState<SubRentalRecord[]>([])
+
+  useEffect(() => {
+    let active = true
+    listSubRentals().then((res) => {
+      if (active) {
+        setRecords(res.rows)
+      }
+    }).catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const supplierGroups = useMemo(() => groupByCounterparty(records), [records])
+
+  const recordCount = records.length
+  const directionCount = useMemo(() => ({
+    Borrowing: records.filter((r) => r.direction === 'Borrowing').length,
+    Lending: records.filter((r) => r.direction === 'Lending').length,
+  }), [records])
+
+  const filterChips = useMemo(() => (
+    ['All', 'Overdue', 'Reserved', 'Picked Up', 'On Rent', 'Returned', 'Checked In'] as const
+  ).map((label) => ({
+    label,
+    count:
+      label === 'All'
+        ? recordCount
+        : label === 'Overdue'
+          ? records.filter((r) => r.isOverdue).length
+          : records.filter((r) => r.status === label).length,
+  })), [records, recordCount])
+
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
@@ -391,15 +426,15 @@ export function SubRental() {
   const [supplierSearch, setSupplierSearch] = useState('')
 
   const supplierRows = useMemo(() => {
-    const all = Array.from(SUPPLIER_GROUPS.values())
+    const all = Array.from(supplierGroups.values())
       .map((group) => ({ group, row: supplierDirectoryRow(group, gctx) }))
       .sort((a, b) => a.group.counterparty.localeCompare(b.group.counterparty))
     const q = supplierSearch.trim().toLowerCase()
     return q ? all.filter(({ group }) => group.counterparty.toLowerCase().includes(q)) : all
-  }, [gctx, supplierSearch])
+  }, [supplierGroups, gctx, supplierSearch])
 
   const filteredData = useMemo(() => {
-    return SUB_RENTAL_DATA.filter((c) => {
+    return records.filter((c) => {
       if (activeFilter === 'Overdue' && !c.isOverdue) return false
       if (activeFilter !== 'All' && activeFilter !== 'Overdue' && c.status !== activeFilter) return false
       if (searchQuery.trim()) {
@@ -413,7 +448,7 @@ export function SubRental() {
       }
       return true
     })
-  }, [searchQuery, activeFilter])
+  }, [records, searchQuery, activeFilter])
 
   // Perf: same reasoning as `SupplierDirectoryTable`'s `rowsWithIntel` above
   // — `supplierGlance`/`supplierDetailGroups` build a full field-gated
@@ -428,18 +463,18 @@ export function SubRental() {
       filteredData.map((c) => {
         // Falls back to a single-transaction group rather than a
         // non-null assertion — every real row's counterparty is
-        // present in `SUPPLIER_GROUPS` since that map is built from
-        // this same `SUB_RENTAL_DATA`, but a card builder degrading
+        // present in `supplierGroups` since that map is built from
+        // this same `records`, but a card builder degrading
         // gracefully instead of ever throwing matches §6's "a blank
         // page is never acceptable."
-        const supplierGroup = SUPPLIER_GROUPS.get(c.counterparty) ?? { counterparty: c.counterparty, transactions: [c] }
+        const supplierGroup = supplierGroups.get(c.counterparty) ?? { counterparty: c.counterparty, transactions: [c] }
         return {
           record: c,
           glance: supplierGlance(supplierGroup, gctx),
           detail: supplierDetailGroups(supplierGroup, gctx),
         }
       }),
-    [filteredData, gctx],
+    [filteredData, supplierGroups, gctx],
   )
 
   const handleSelectAll = (checked: boolean) => {
@@ -454,57 +489,39 @@ export function SubRental() {
     setSelectedRowIds(next)
   }
 
-  const getStatusColor = (status: SubRentalStatus) => {
-    switch (status) {
-      case 'Returned':
-      case 'Checked In':
-        return 'var(--good)'
-      case 'Cancelled':
-        return 'var(--muted)'
-      case 'Reserved':
-        return 'var(--warn)'
-      case 'Picked Up':
-      case 'On Rent':
-        return 'var(--info)'
-    }
-  }
-
   const calculateMargin = (revenue: Paisa, cost: Paisa) => {
     if (revenue === 0) return 0
     return ((revenue - cost) / revenue) * 100
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Suppliers directory — a second tab inside Sub Rental rather than a
-          new top-level route; see SupplierDirectoryTable's doc comment. */}
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
-        {(['Transactions', 'Suppliers'] as const).map((t) => {
-          const on = subTab === t
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setSubTab(t)}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                height: 32,
-                padding: '0 12px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                marginBottom: -1,
-              }}
-            >
-              {t}
-            </button>
-          )
-        })}
+    <PageShell width="full">
+      {!embedded && (
+        <PageHeader
+          breadcrumb={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to="/operations" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="chevron_left" size={14} />
+                Operations
+              </Link>
+              <span>›</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>Sub-Rentals</span>
+            </div>
+          }
+          title="Sub-Rentals"
+        />
+      )}
+
+      <div style={{ marginBottom: 'var(--sp-md)' }}>
+        <SegmentedControl
+          ariaLabel="Sub-Rental sections"
+          options={[
+            { id: 'Transactions', label: 'Transactions', icon: 'file' },
+            { id: 'Suppliers', label: 'Suppliers Directory', icon: 'users' },
+          ]}
+          value={subTab}
+          onChange={(val) => setSubTab(val as 'Transactions' | 'Suppliers')}
+        />
       </div>
 
       {subTab === 'Suppliers' ? (
@@ -519,51 +536,51 @@ export function SubRental() {
         <>
       {/* KPIs — Law 6 / §4.1: the three ₨ tiles are omitted entirely for a
           role without asset-finance visibility, not rendered then hidden. */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canSeeFinance ? 4 : 1}, 1fr)`, gap: 14 }}>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Active Records
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canSeeFinance ? 4 : 1}, minmax(0, 1fr))`, gap: 'var(--sp-md)' }}>
+        <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card)' }}>
+          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Records
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
-            30
+          <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
+            {recordCount}
           </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Borrowing (18) · Lending (12)
+          <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
+            Borrowing ({directionCount.Borrowing}) · Lending ({directionCount.Lending}) · every record in table
           </span>
         </Card>
         {canSeeFinance && (
           <>
-            <Card padding="md">
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card2)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Total Revenue
               </span>
-              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 'var(--sp-xs)' }}>
-                Rs 1,20,000
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                {NOT_TRACKED}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-                Gross generated value
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
+                {NOT_TRACKED_NOTE}
               </span>
             </Card>
-            <Card padding="md">
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card2)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Total Cost
               </span>
-              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 'var(--sp-xs)' }}>
-                Rs 80,000
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                {NOT_TRACKED}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-                Partner payments & fees
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
+                {NOT_TRACKED_NOTE}
               </span>
             </Card>
-            <Card padding="md">
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card2)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Blended Margin
               </span>
-              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--info)', marginTop: 'var(--sp-xs)' }}>
-                33.3%
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                {NOT_TRACKED}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-                Across all active sub-rentals
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
+                {NOT_TRACKED_NOTE}
               </span>
             </Card>
           </>
@@ -573,18 +590,10 @@ export function SubRental() {
       {/* Toolbar & Chips */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          {[
-            { label: 'All', count: 48 },
-            { label: 'Overdue', count: 4 }, // Explicit flag
-            { label: 'Reserved', count: 6 },
-            { label: 'Picked Up', count: 8 },
-            { label: 'On Rent', count: 16 },
-            { label: 'Returned', count: 9 },
-            { label: 'Checked In', count: 5 },
-          ].map((chip) => (
+          {filterChips.map((chip) => (
             <button
               key={chip.label}
-              onClick={() => setActiveFilter(chip.label as FilterKey)}
+              onClick={() => setActiveFilter(chip.label)}
               style={{
                 padding: '6px 14px',
                 borderRadius: 'var(--r-modal)',
@@ -597,7 +606,7 @@ export function SubRental() {
                 background: activeFilter === chip.label
                   ? chip.label === 'Overdue' ? 'var(--bad)' : 'var(--nav-active-accent)'
                   : 'var(--card)',
-                color: activeFilter === chip.label ? '#ffffff' : chip.label === 'Overdue' ? 'var(--bad)' : 'var(--text)',
+                color: activeFilter === chip.label ? (chip.label === 'Overdue' ? 'var(--on-danger)' : 'var(--on-primary)') : 'var(--text)',
                 transition: 'all 0.15s ease',
               }}
             >
@@ -606,20 +615,23 @@ export function SubRental() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 240 }}>
-            <Input
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' }}>
+          <div style={{ width: '100%', maxWidth: 360, minWidth: 240 }}>
+            <SearchInput
               placeholder="Search SR ID, equipment, partner…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<IconSearch size={16} />}
+              onChange={setSearchQuery}
+              onClear={() => setSearchQuery('')}
             />
           </div>
-          <Unavailable reason={EXPORT_REASON}>
-            <Button variant="secondary" disabled icon={<IconDownload size={16} />}>
-              Export
-            </Button>
-          </Unavailable>
+          <Button
+            variant="secondary"
+            icon={<IconDownload size={16} />}
+            style={{ flexShrink: 0 }}
+            onClick={() => exportSubRentalsCsv(filteredData, canSeeFinance)}
+          >
+            Export
+          </Button>
           {/* Law 6 / §4.1 — the gate this button never had. A sub-rental is a
               vendor cost against a client charge, so it is `asset-finance`
               work, and the same flag that omits the ₨ tiles and the Revenue &
@@ -650,13 +662,14 @@ export function SubRental() {
             }}
           />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <DataTableShell ariaLabel="Sub-rental records">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ width: 36, padding: '12px 14px' }}>
                     <input
                       type="checkbox"
+                      aria-label="Select all sub-rentals"
                       checked={selectedRowIds.size === filteredData.length && filteredData.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}
@@ -681,6 +694,7 @@ export function SubRental() {
                       <td style={{ padding: '12px 14px' }}>
                         <input
                           type="checkbox"
+                          aria-label={`Select sub-rental ${c.id}`}
                           checked={selectedRowIds.has(c.id)}
                           onChange={() => handleToggleRow(c.id)}
                           style={{ accentColor: 'var(--nav-active-accent)' }}
@@ -753,31 +767,56 @@ export function SubRental() {
                               OVERDUE
                             </span>
                           )}
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: getStatusColor(c.status), fontWeight: 600 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-                            {c.status}
-                          </span>
+                          {/* §8 step 2 — the status is painted by <Badge> and
+                              nowhere else. The dot-plus-coloured-word this
+                              replaces was colour on TYPE, which §4 does not
+                              have: every status is a solid block. */}
+                          <Badge tone={SUB_RENTAL_TOKEN[c.status]} label={c.status} size="sm" />
                         </div>
                       </td>
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={c.linkedBooking ? () => navigate(`/rentals/${c.linkedBooking}`) : undefined}
-                        >
-                          View
-                        </Button>
+                        {/*
+                          BUG-006 — `View` navigates to the linked booking, and
+                          `linkedBooking` is optional (`:31`). On a contract
+                          without one the ternary passed `onClick={undefined}`,
+                          so the button rendered fully enabled and did nothing:
+                          the dead half was invisible, because the live and dead
+                          copies of the button were pixel-identical.
+
+                          A sub-rental with no linked booking is a real state,
+                          not a data fault — kit hired in against stock rather
+                          than against a specific job — so the row keeps its
+                          column and the button states the reason instead of
+                          disappearing, which would misalign the column and read
+                          as "this row has no action" rather than "this contract
+                          has nothing to open".
+                        */}
+                        {c.linkedBooking ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => navigate(`/rentals/${c.linkedBooking}`)}
+                          >
+                            View
+                          </Button>
+                        ) : (
+                          <Unavailable reason="This sub-rental is not linked to a booking, so there is nothing to open. Link it to a booking to view the job it was hired for.">
+                            <Button variant="secondary" size="sm" disabled>
+                              View
+                            </Button>
+                          </Unavailable>
+                        )}
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
       </Card>
         </>
       )}
-    </div>
+    </PageShell>
   )
 }

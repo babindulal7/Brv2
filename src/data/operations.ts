@@ -1,3 +1,4 @@
+import { formatAd } from '../lib/bs'
 import { operationQueue, type BookingListRow } from '../lib/queries/bookings'
 import type { ListFilters } from '../lib/queries/listQuery'
 import { JOBS, JOB_ORDER, type BookingStatus, type JobName } from '../lib/workflow'
@@ -41,10 +42,13 @@ import { JOBS, JOB_ORDER, type BookingStatus, type JobName } from '../lib/workfl
  *   not joined by `listBookings`. The column is gone rather than dashed.
  * - **`CREW_LOAD`** — four invented people with invented open/capacity figures.
  *   It needs exactly the per-person job assignment that does not exist, so the
- *   seed is gone. The **card** is not: Rulings §8 words the remedy as "renders
- *   'not tracked yet' until a real source exists", and §1 keeps a panel no
- *   spec removes in prose. `OperationsQueues.tsx`'s `railContent` carries it
- *   as the empty state, naming the missing assignment.
+ *   seed is gone. The **card** followed it on 30 Aug: the Alerts panel moved
+ *   from the Dashboard into `OperationsQueues.tsx`'s `railContent`, taking the
+ *   rail slot the Crew Load empty state held. The GAP the card named — no
+ *   per-person job assignment anywhere in the schema — is still real and still
+ *   recorded here; a future crew-load panel needs that source first, exactly
+ *   as Rulings §8's "renders 'not tracked yet' until a real source exists"
+ *   requires of the figure.
  */
 
 /* ── The five chips ────────────────────────────────────────────────────────
@@ -63,9 +67,9 @@ export interface Queue {
 }
 
 export const QUEUES: Queue[] = [
-  { job: 'Pack', title: 'Packing', action: 'Pack against the list', icon: 'box' },
-  { job: 'Handover', title: 'Handover', action: 'Complete the handover', icon: 'truck' },
-  { job: 'Return', title: 'Return & Inspection', action: 'Receive, count and inspect', icon: 'return_arrow' },
+  { job: 'Pack', title: 'Pack', action: 'Pack against the list', icon: 'box' },
+  { job: 'Handover', title: 'Handover', action: 'Complete pickup', icon: 'truck' },
+  { job: 'Return', title: 'Return', action: 'Receive, count and inspect', icon: 'return_arrow' },
   { job: 'Reset', title: 'Reset', action: 'Clean, reset, re-shelf', icon: 'sparkles' },
   { job: 'Cases', title: 'Cases', action: 'Resolve missing and damage', icon: 'eye' },
 ]
@@ -342,7 +346,7 @@ export function jobRoute(bookingNo: string, job: JobName): string {
 export function formatDueAt(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  const day = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kathmandu' })
+  const day = formatAd(d)
   const time = d.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',

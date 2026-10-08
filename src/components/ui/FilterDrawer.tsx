@@ -1,7 +1,9 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { WorkspaceHeaderActions } from '../shell/WorkspacePortal'
 import type { CSSProperties, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
-import { useViewport } from '../../lib/device'
+import { useViewport, useCapability } from '../../lib/device'
 
 /**
  * # Filters as an overlay, not a column
@@ -59,9 +61,15 @@ const DRAWER_MS = 200
  * animation. Otherwise the panel would sit there, motionless and still
  * on-screen, for 200ms after they closed it.
  */
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-}
+/*
+ * This was a private `prefersReducedMotion()` helper querying matchMedia
+ * directly. `lib/device.ts:useCapability()` is the module that exists to
+ * answer exactly this question, and it does so REACTIVELY — the private
+ * version was read once per close, so a person who changed their motion
+ * preference mid-session kept the old timer until a reload. Routed through the
+ * hook below; the reasoning above about WHY the timer needs the value in JS
+ * (rather than leaving it to the CSS block) still stands unchanged.
+ */
 
 export interface FilterDrawerProps {
   open: boolean
@@ -82,6 +90,10 @@ export interface FilterDrawerProps {
   onClearAll?: () => void
   /** Panel width on desktop and tablet. */
   width?: number
+  /** Desktop/tablet can be a Booqable-style in-flow rail; phone always remains a sheet. */
+  desktopMode?: 'overlay' | 'rail'
+  /** Optional grid placement when the rail participates in a page workspace. */
+  railStyle?: CSSProperties
   /**
    * Which edge the panel comes from.
    *
@@ -98,6 +110,19 @@ export interface FilterDrawerProps {
    * the footer becomes `Apply Filters (n)` instead of Clear all.
    */
   apply?: { pendingCount: number; onApply: () => void } | undefined
+  /**
+   * Booqable standard dual-action footer:
+   * Left = "Clear all", Right = "Apply" / "Show {N} Results".
+   */
+  standardFooter?: boolean
+  onApply?: () => void
+  applyLabel?: string
+  /**
+   * Portal overlay drawers to `document.body` so transformed page parents
+   * (e.g. `.page-shell.animate-entrance`) cannot trap fixed positioning.
+   * Defaults to true except in test runs (`import.meta.env.MODE === 'test'`).
+   */
+  portal?: boolean | undefined
 }
 
 export function FilterDrawer({
@@ -110,13 +135,24 @@ export function FilterDrawer({
   activeCount = 0,
   onClearAll,
   width = 360,
+  desktopMode = 'overlay',
+  railStyle,
   side = 'left',
   apply,
+  standardFooter,
+  onApply,
+  applyLabel,
+  portal,
 }: FilterDrawerProps) {
   const viewport = useViewport()
   const phone = viewport === 'phone'
+  const rail = !phone && desktopMode === 'rail'
+  // See the note above prefersReducedMotion's former home: the exit timer needs
+  // this in JS, and useCapability keeps it reactive.
+  const { reducedMotion } = useCapability()
   const panelRef = useRef<HTMLDivElement | null>(null)
   const restoreFocusTo = useRef<HTMLElement | null>(null)
+  const [headerBottom, setHeaderBottom] = useState<number | null>(null)
 
   /**
    * `open` is the caller's intent; this is what is on screen.
@@ -142,13 +178,27 @@ export function FilterDrawer({
     }
     if (!mounted) return
     setClosing(true)
-    const ms = prefersReducedMotion() ? 0 : DRAWER_MS
+    const ms = reducedMotion ? 0 : DRAWER_MS
     const t = window.setTimeout(() => {
       setMounted(false)
       setClosing(false)
     }, ms)
     return () => window.clearTimeout(t)
-  }, [open, mounted])
+  }, [open, mounted, reducedMotion])
+
+  useLayoutEffect(() => {
+    if (!mounted || phone || rail) return
+    const measureHeader = () => {
+      const header = document.querySelector('.app-global-header')
+      if (header) {
+        const rect = header.getBoundingClientRect()
+        setHeaderBottom(rect.bottom)
+      }
+    }
+    measureHeader()
+    window.addEventListener('resize', measureHeader)
+    return () => window.removeEventListener('resize', measureHeader)
+  }, [mounted, phone, rail])
 
   useEffect(() => {
     if (!open) return
@@ -182,19 +232,40 @@ export function FilterDrawer({
   const enter = phone ? 'drawer-in-up' : side === 'left' ? 'drawer-in-left' : 'drawer-in-right'
   const exit = phone ? 'drawer-out-down' : side === 'left' ? 'drawer-out-left' : 'drawer-out-right'
 
-  return (
+  const content = (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        top: phone ? 0 : 'var(--header-h)',
-        zIndex: 60,
-        display: 'flex',
-        alignItems: phone ? 'flex-end' : 'stretch',
-        justifyContent: phone ? 'center' : side === 'left' ? 'flex-start' : 'flex-end',
-        // Desktop: the wrapper must not swallow clicks meant for the list.
-        pointerEvents: phone ? 'auto' : 'none',
-      }}
+      className={rail ? 'filter-rail' : 'filter-overlay'}
+      style={rail
+        ? {
+            position: 'sticky',
+            top: 'calc(var(--header-h) + var(--sp-md))',
+            width,
+            maxWidth: '30vw',
+            height: 'calc(100dvh - var(--header-h) - (2 * var(--sp-md)))',
+            minHeight: 360,
+            alignSelf: 'start',
+            zIndex: 10,
+            overflow: 'hidden',
+            ...railStyle,
+          }
+        : {
+            position: 'fixed',
+            inset: 0,
+            top: phone
+              ? 0
+              : headerBottom !== null
+                ? `${headerBottom}px`
+                : 'var(--header-h)',
+            left: !phone && side === 'left' ? 'var(--shell-nav-w, var(--app-sidebar-width, 256px))' : 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 'var(--z-drawer, 1350)' as unknown as number,
+            display: 'flex',
+            alignItems: phone ? 'flex-end' : 'stretch',
+            justifyContent: phone ? 'center' : side === 'left' ? 'flex-start' : 'flex-end',
+            pointerEvents: phone ? 'auto' : 'none',
+            overflow: 'hidden',
+          }}
     >
       {/* Scrim on phone only — see the header note. */}
       {phone && (
@@ -212,7 +283,7 @@ export function FilterDrawer({
 
       <div
         ref={panelRef}
-        role="dialog"
+        role={rail ? 'region' : 'dialog'}
         // Not `aria-modal` on desktop: the page behind genuinely stays usable,
         // and claiming otherwise would tell a screen reader the opposite.
         {...(phone ? { 'aria-modal': true } : {})}
@@ -223,19 +294,31 @@ export function FilterDrawer({
           position: 'relative',
           zIndex: 1,
           pointerEvents: 'auto',
-          width: phone ? '100%' : `min(${width}px, 100vw)`,
+          width: rail
+            ? '100%'
+            : phone
+              ? '100%'
+              : `min(${width}px, calc(100vw - var(--shell-nav-w, var(--app-sidebar-width, 256px))))`,
           maxHeight: phone ? '85vh' : 'none',
           // Full height on desktop so the scroll lives INSIDE the body and the
           // Clear all footer stays pinned rather than scrolling away.
-          height: phone ? 'auto' : '100%',
+          height: rail ? '100%' : phone ? 'auto' : '100%',
           display: 'flex',
           flexDirection: 'column',
-          background: 'var(--card)',
+          background: 'var(--surface)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           borderLeft: phone || side === 'left' ? 'none' : '1px solid var(--border)',
-          borderRight: phone || side === 'right' ? 'none' : '1px solid var(--border)',
+          borderRight: rail ? '1px solid var(--border)' : phone || side === 'right' ? 'none' : '1px solid var(--border)',
           borderTop: phone ? '1px solid var(--border)' : 'none',
           borderRadius: phone ? 'var(--r-modal) var(--r-modal) 0 0' : 0,
-          boxShadow: 'var(--shadow-modal)',
+          boxShadow: rail
+            ? 'none'
+            : phone
+              ? 'var(--shadow-modal)'
+              : side === 'left'
+                ? '10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)'
+                : '-10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)',
           outline: 'none',
           // §20. `both` holds the last frame, so a panel mid-exit stays off the
           // edge for the rest of its timer instead of snapping back into view.
@@ -245,11 +328,14 @@ export function FilterDrawer({
         <header
           style={{
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
             justifyContent: 'space-between',
             gap: 'var(--sp-md)',
-            padding: '14px 16px',
+            padding: '10px 16px',
+            minHeight: 'var(--header-h, 59px)',
+            boxSizing: 'border-box',
             borderBottom: '1px solid var(--border)',
+            background: 'var(--surface)',
             flexShrink: 0,
           }}
         >
@@ -278,7 +364,10 @@ export function FilterDrawer({
               display: 'grid',
               placeItems: 'center',
               borderRadius: 'var(--r-btn)',
+              outline: 'none',
             }}
+            onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+            onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
           >
             <Icon name="close" size={16} />
           </button>
@@ -306,8 +395,80 @@ export function FilterDrawer({
           {children}
         </div>
 
-        {apply ? (
-          <footer style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        {standardFooter || onApply ? (
+          <footer
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 'var(--sp-sm)',
+              padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
+              borderTop: '1px solid var(--border)',
+              flexShrink: 0,
+              background: 'var(--surface)',
+            }}
+          >
+            <button
+              type="button"
+              className="tap"
+              onClick={onClearAll}
+              disabled={!onClearAll || activeCount === 0}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                padding: '0 12px',
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: activeCount > 0 ? 'var(--text)' : 'var(--muted)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--t-ui)',
+                fontWeight: 600,
+                cursor: activeCount > 0 ? 'pointer' : 'not-allowed',
+                opacity: activeCount > 0 ? 1 : 0.45,
+                outline: 'none',
+              }}
+              onFocus={(e) => { if (!e.currentTarget.disabled) { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+            >
+              Clear all {activeCount > 0 ? `(${activeCount})` : ''}
+            </button>
+            <button
+              type="button"
+              className="press tap"
+              onClick={onApply ?? onClose}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid transparent',
+                background: 'var(--primary)',
+                color: 'var(--on-brand)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--t-ui)',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                outline: 'none',
+              }}
+              onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+            >
+              {applyLabel ?? (resultCount !== null && resultCount !== undefined ? `Show ${resultCount} Results` : 'Apply')}
+            </button>
+          </footer>
+        ) : apply ? (
+          <footer
+            style={{
+              padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
+              borderTop: '1px solid var(--border)',
+              flexShrink: 0,
+            }}
+          >
             <button
               type="button"
               onClick={apply.onApply}
@@ -330,7 +491,13 @@ export function FilterDrawer({
         ) : (
           activeCount > 0 &&
           onClearAll && (
-            <footer style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+            <footer
+              style={{
+                padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
+                borderTop: '1px solid var(--border)',
+                flexShrink: 0,
+              }}
+            >
               <button
                 type="button"
                 onClick={onClearAll}
@@ -354,6 +521,9 @@ export function FilterDrawer({
       </div>
     </div>
   )
+
+  const shouldPortal = !rail && (portal ?? (import.meta.env.MODE !== 'test'))
+  return shouldPortal && typeof document !== 'undefined' ? createPortal(content, document.body) : content
 }
 
 /**
@@ -364,19 +534,36 @@ export function FilterDrawer({
  * narrowed. Without it, someone returns to a page whose filters persisted from
  * last visit, sees four rows, and concludes the data is missing.
  */
+/**
+ * The page's filter-panel toggle. It belongs to the page as a whole, so by
+ * default it renders in the global header beside the page name (8 Oct 2026,
+ * RULINGS-2026-10-08.md) — every page that uses it moves there with no change of
+ * its own. `inHeader={false}` keeps it where it is written, for a toggle inside
+ * an overlay that covers the header (Calendar's full view). Outside the app
+ * shell (tests, embeds) it falls back to rendering in place.
+ */
 export function FilterButton({
-  onClick,
-  activeCount = 0,
-  controls,
-  expanded,
-  label = 'Filters',
-}: {
+  inHeader = true,
+  ...props
+}: FilterButtonProps & { inHeader?: boolean }) {
+  return inHeader ? <WorkspaceHeaderActions><FilterToggle {...props} /></WorkspaceHeaderActions> : <FilterToggle {...props} />
+}
+
+interface FilterButtonProps {
   onClick: () => void
   activeCount?: number
   controls: string
   expanded: boolean
   label?: string
-}) {
+}
+
+function FilterToggle({
+  onClick,
+  activeCount = 0,
+  controls,
+  expanded,
+  label = 'Filters',
+}: FilterButtonProps) {
   return (
     <button
       type="button"
@@ -384,36 +571,41 @@ export function FilterButton({
       onClick={onClick}
       aria-controls={controls}
       aria-expanded={expanded}
+      aria-label={`${expanded ? 'Hide' : 'Show'} ${label.toLowerCase()} panel${activeCount > 0 ? `, ${activeCount} active` : ''}`}
+      title={`${expanded ? 'Hide' : 'Show'} ${label.toLowerCase()} panel`}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 7,
+        position: 'relative',
+        display: 'inline-grid',
+        placeItems: 'center',
+        minWidth: 44,
         minHeight: 44,
-        padding: '0 13px',
+        width: 44,
+        height: 44,
+        padding: 0,
         borderRadius: 'var(--r-btn)',
-        border: `1px solid ${activeCount > 0 ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
-        background: 'transparent',
-        color: activeCount > 0 ? 'var(--primary)' : 'var(--text)',
+        border: `1px solid ${expanded || activeCount > 0 ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
+        background: expanded ? 'var(--nav-active-bg)' : 'transparent',
+        color: expanded || activeCount > 0 ? 'var(--primary)' : 'var(--text)',
         fontFamily: 'inherit',
         fontSize: 'var(--t-ui)',
         fontWeight: 600,
         cursor: 'pointer',
       }}
     >
-      {/* The registry has no `filter` glyph (Icon.tsx REGISTRY, ~60 names).
-          `queues` is the funnel-adjacent one already in use for stacked lists;
-          adding a Tabler filter icon would widen the icon budget for one control. */}
-      <Icon name="queues" size={15} />
-      {label}
+      <Icon name={expanded ? 'panel_left_close' : 'panel_left_open'} size={19} />
       {activeCount > 0 && (
         <span
           className="figure"
+          aria-hidden="true"
           style={{
+            position: 'absolute',
+            top: -5,
+            right: -5,
             display: 'inline-grid',
             placeItems: 'center',
-            minWidth: 20,
-            height: 20,
-            padding: '0 6px',
+            minWidth: 18,
+            height: 18,
+            padding: '0 4px',
             borderRadius: 'var(--r-badge)',
             background: 'var(--primary)',
             color: 'var(--on-brand)',
@@ -445,6 +637,13 @@ export interface ActiveFilter {
   onRemove: () => void
 }
 
+/**
+ * Every item in the strip paints at this height — the chips, `+N more` and
+ * `Clear all` alike. It is a named constant because the row gap below is
+ * derived from it, so the two cannot drift apart.
+ */
+const CHIP_H = 28
+
 export function ActiveFilterChips({
   filters,
   onClearAll,
@@ -469,7 +668,41 @@ export function ActiveFilterChips({
       role="list"
       aria-label="Active filters"
       id={listId}
-      style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
+      /*
+        THE GAP IS THE HIT-AREA DECISION. `gap: 6` on both axes is what made
+        this strip the one place a `.tap` target could not be granted, so the
+        two axes are now set separately and each number is derived, not chosen.
+
+        ROW GAP — `--tap` minus the chip height. Every item here paints at
+        CHIP_H and every hit area is `--tap` tall and centred on its item, so
+        two items stacked by a wrap sit (CHIP_H + rowGap) apart centre to
+        centre. Below `--tap` those targets OVERLAP, and the one later in the
+        DOM — the LOWER row — wins the tap: the second row silently removes the
+        first row's filter. At 6px that overlap was 10px tall and live (the
+        hand-rolled 44×44 span this replaced had the identical geometry, so it
+        is not a regression of the `.tap` pass — it is older than it). Setting
+        the gap to `--tap - CHIP_H` puts the centres exactly `--tap` apart, so
+        the targets meet edge to edge and never overlap. Written as a calc so a
+        future change to the 44px floor moves this with it; see TouchTarget.tsx,
+        whose ⚠ block names the row-above/row-below axis this is an instance of.
+
+        COLUMN GAP — the remove glyph is 20px with 4px of chip padding to its
+        right, so its `--tap`-wide target overhangs the chip's right edge by
+        (44/2 - 20/2 - 4) = 8px. At `gap: 6` two of those pixels landed on the
+        NEXT chip, and an absolutely-positioned ::after wins the hit test over a
+        static sibling — so a tap on the next chip's leading padding removed the
+        PREVIOUS chip's filter. 8px puts the whole overhang in the gutter, where
+        it belongs. The chips' own remove targets stay far apart horizontally
+        (a chip is never narrower than ~80px), so nothing else on this axis is
+        at risk, and 2px of extra gutter costs the toolbar nothing.
+      */
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        rowGap: `calc(var(--tap) - ${CHIP_H}px)`,
+        columnGap: 8,
+        alignItems: 'center',
+      }}
     >
       {shown.map((f) => (
         <span
@@ -479,23 +712,35 @@ export function ActiveFilterChips({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
-            height: 28,
+            height: CHIP_H,
             padding: '0 4px 0 10px',
             borderRadius: 'var(--r-badge)',
-            border: '1px solid var(--border)',
-            background: 'var(--card2)',
+            border: 'none',
+            background: 'var(--chip-blue-bg)',
             fontSize: 'var(--t-meta)',
             fontWeight: 600,
-            color: 'var(--text)',
+            color: 'var(--chip-blue-fg)',
           }}
         >
           {f.label}
+          {/* The glyph stays 20px because its chip is only 28px tall — a target
+              painted at the full touch minimum would stand taller than its own
+              parent and burst the row. §5 sanctions exactly this trade: keep the
+              paint compact, extend the hit area underneath it, because the law
+              is the hit area and not the paint.
+
+              This used to carry its own hand-rolled `aria-hidden` span holding a
+              literal 44×44. That worked — a plain descendant with default
+              pointer-events is genuinely part of the button's hit region — but it
+              was a private copy of a rule that now has one home in `theme.css`,
+              and it hard-coded the number `--tap` owns. `.tap` brings its own
+              `position: relative`, so the inline one left with the span. */}
           <button
             type="button"
+            className="tap"
             onClick={f.onRemove}
             aria-label={`Remove filter ${f.label}`}
             style={{
-              position: 'relative',
               display: 'grid',
               placeItems: 'center',
               width: 20,
@@ -507,25 +752,29 @@ export function ActiveFilterChips({
               cursor: 'pointer',
             }}
           >
-            {/* 44×44 hit area on a 20px glyph — the touch minimum applies on
-                desktop too, and inflating the chip would wreck the row. */}
-            <span
-              aria-hidden="true"
-              style={{ position: 'absolute', top: '50%', left: '50%', width: 44, height: 44, transform: 'translate(-50%,-50%)' }}
-            />
             <Icon name="close" size={12} />
           </button>
         </span>
       ))}
 
       {overflow > 0 && (
+        /* Both this and `Clear all` paint at CHIP_H so the strip stays one
+           optical line, and both now carry `.tap`, which the row gap above
+           finally makes safe. Neither grows sideways: `.tap::after` is
+           `max(100%, var(--tap))` wide and the shortest label these ever render
+           ("+1 more", seven glyphs at `--t-meta`/600 inside 20px of padding)
+           measures ~65px, so the pseudo-element matches its own box on X and
+           only the height moves. That is why these two could not simply be
+           granted targets in the hit-area pass: the constraint was never their
+           width — it was the row above and the row below. */
         <button
           type="button"
+          className="tap"
           onClick={() => setExpanded((e) => !e)}
           aria-expanded={expanded}
           aria-controls={listId}
           style={{
-            height: 28,
+            height: CHIP_H,
             padding: '0 10px',
             borderRadius: 'var(--r-badge)',
             border: '1px dashed var(--border)',
@@ -544,9 +793,10 @@ export function ActiveFilterChips({
       {onClearAll && (
         <button
           type="button"
+          className="tap"
           onClick={onClearAll}
           style={{
-            height: 28,
+            height: CHIP_H,
             padding: '0 10px',
             borderRadius: 'var(--r-badge)',
             border: 'none',
@@ -649,9 +899,19 @@ export function FilterOptionList({
           onChange={(e) => setTerm(e.target.value)}
           placeholder={`Search ${label.toLowerCase()}`}
           aria-label={`Search within ${label}`}
+          /*
+            36 -> `--tap`. This one is the easy half of the pair: the input is
+            `width: 100%` in a single-column fieldset, so it has no horizontal
+            neighbour, and the 6px `marginBottom` plus the option grid's own
+            44px rows keep the next control a full row away. The box itself
+            grows, so there is no pseudo-element to overhang anything — the
+            overlap axis that governs the chip strip above does not exist here.
+            Same bargain as the option rows below: a filter panel is not dense
+            enough to earn §5's compact exception, and the drawer body scrolls.
+          */
           style={{
             width: '100%',
-            minHeight: 36,
+            minHeight: 'var(--tap)',
             marginBottom: 6,
             padding: '0 10px',
             borderRadius: 'var(--r-input)',
@@ -674,13 +934,28 @@ export function FilterOptionList({
             const text = o.label ?? o.value
             const on = chosen.has(o.value)
             return (
+              /*
+                The ROW grows to the touch minimum; the checkbox stays 16px.
+                A label forwards its clicks to the control it wraps, so the whole
+                strip — box, option name and facet count — is one target, and we
+                get there without the grotesquerie of a 44px native checkbox.
+                Same bargain the packing, handover and reset card rows already
+                make.
+
+                36px was simply short of the line. Nothing about a filter panel
+                is dense enough to earn §5's compact exception, and the drawer
+                body scrolls on its own axis, so the extra height per option
+                costs a little scroll rather than a clipped option. The rows are
+                real boxes in a grid, not pseudo-elements, so growing them pushes
+                their neighbours apart instead of overlapping them.
+              */
               <label
                 key={o.value}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 9,
-                  minHeight: 36,
+                  minHeight: 44,
                   padding: '0 8px',
                   borderRadius: 'var(--r-sm)',
                   cursor: 'pointer',
@@ -691,6 +966,7 @@ export function FilterOptionList({
               >
                 <input
                   type="checkbox"
+                  aria-label={`Filter by ${text}`}
                   checked={on}
                   onChange={() => onToggle(o.value)}
                   style={{ width: 16, height: 16, flexShrink: 0, accentColor: 'var(--primary)' }}
@@ -715,3 +991,130 @@ export function FilterOptionList({
 
 /** Shared by callers that lay their own controls out inside the drawer. */
 export const filterGroupStyle: CSSProperties = { display: 'grid', gap: 'var(--sp-md)', alignContent: 'start' }
+
+/**
+ * # FilterSection — Collapsible Filter Group
+ *
+ * A standardized Booqable-style accordion section inside the Filter Drawer:
+ * - 44px hit-target header button (`tap` class, Law 15)
+ * - Accessible disclosure with `aria-expanded` and `aria-controls`
+ * - Title + optional badge on the left, chevron ˅/˄ on the right
+ * - Supports controlled (`isOpen` + `onToggle`) or uncontrolled (`defaultOpen`) states
+ * - Persists clean spacing and visual separation
+ */
+export interface FilterSectionProps {
+  title: string
+  defaultOpen?: boolean
+  isOpen?: boolean
+  onToggle?: () => void
+  badge?: ReactNode
+  action?: ReactNode
+  children: ReactNode
+  id?: string
+}
+
+export function FilterSection({
+  title,
+  defaultOpen = true,
+  isOpen,
+  onToggle,
+  badge,
+  action,
+  children,
+  id,
+}: FilterSectionProps) {
+  const [internalOpen, setInternalOpen] = useState(defaultOpen)
+  const isControlled = isOpen !== undefined
+  const open = isControlled ? isOpen : internalOpen
+  const toggle = isControlled ? (onToggle ?? (() => {})) : () => setInternalOpen((o) => !o)
+  const generatedId = useId()
+  const sectionId = id ?? generatedId
+  const contentId = `${sectionId}-content`
+
+  return (
+    <section
+      aria-labelledby={`${sectionId}-heading`}
+      style={{
+        borderBottom: '1px solid var(--border)',
+        paddingBottom: open ? 'var(--sp-md)' : 0,
+        marginBottom: 'var(--sp-xs)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          minHeight: 'var(--tap)',
+        }}
+      >
+        <button
+          type="button"
+          id={`${sectionId}-heading`}
+          className="tap"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-controls={contentId}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flex: 1,
+            minHeight: 'var(--tap)',
+            padding: '0 4px',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontFamily: 'inherit',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 'var(--t-ui)',
+              fontWeight: 700,
+              color: 'var(--text)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {title}
+          </span>
+          {badge && (
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              {badge}
+            </span>
+          )}
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {action}
+          <button
+            type="button"
+            className="tap"
+            onClick={toggle}
+            aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
+            style={{
+              display: 'grid',
+              placeItems: 'center',
+              width: 32,
+              height: 32,
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              borderRadius: 'var(--r-sm)',
+            }}
+          >
+            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={16} />
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <div id={contentId} style={{ paddingTop: 'var(--sp-xs)' }}>
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}

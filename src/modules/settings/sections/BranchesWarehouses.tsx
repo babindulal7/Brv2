@@ -1,8 +1,11 @@
+import { Pagination } from '../../../components/ui/Pagination'
 import { Fragment, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
 import { Card, Button, SummaryRows, cardStyle } from '../../../components/ui/Page'
+import { SearchInput } from '../../../components/ui/SearchInput'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import { ErrorBanner } from '../../../components/ui/StateViews'
 import { Donut, Legend } from '../../../components/ui/Charts'
@@ -25,9 +28,9 @@ import {
   equipmentSlices,
   totalsOf,
   warehousesOfBranch,
-} from '../../../data/settings'
-import type { Branch, BranchStatus, BranchActionKind, Dest } from '../../../data/settings'
-import type { Warehouse } from '../../../data/warehouse'
+} from '../../../lib/queries/settings'
+import type { Branch, BranchStatus, BranchActionKind, Dest } from '../../../lib/queries/settings'
+import type { Warehouse } from '../../../lib/queries/warehouses'
 import {
   ActivityList,
   DestControl,
@@ -249,8 +252,14 @@ function WarehouseChildRow({ w, columns, onOpen }: { w: Warehouse; columns: numb
           <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
             Zones <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>{w.zonesCount}</span>
           </span>
+          {/* 28px of paint keeps this inside the warehouse sub-row without
+              stretching it; `tap` is what makes the target legal. The label
+              carries it past 44 across, so only the short axis inflates, and
+              the sub-row is the last thing in its cell — nothing sits under the
+              extra 8px but the row's own padding. */}
           <button
             type="button"
+            className="tap"
             onClick={onOpen}
             style={{ ...controlStyle, minHeight: 28, padding: '0 9px', fontSize: 'var(--t-th)', marginLeft: 'auto' }}
           >
@@ -344,11 +353,22 @@ export function BranchesPane({
   setAddOpen: (v: boolean) => void
 }) {
   const tabular = useTabularLayout()
-  const [view, setView] = useState<View>('branches')
+  const [params, setParams] = useSearchParams()
+  const viewParam = params.get('view')
+  const view: View = viewParam === 'warehouses' ? 'warehouses' : 'branches'
+  const setView = (next: View) => {
+    const p = new URLSearchParams(params)
+    if (next === 'branches') {
+      p.delete('view')
+    } else {
+      p.set('view', next)
+    }
+    setParams(p, { replace: true })
+  }
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'All' | BranchStatus>('All')
   const [sort, setSort] = useState<SortState | null>(null)
-  const [perPage, setPerPage] = useState(10)
+  const [perPage, setPerPage] = useState(25)
   const [page, setPage] = useState(1)
   const [focused, setFocused] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string[]>(() => BRANCHES.map((b) => b.id))
@@ -490,6 +510,14 @@ export function BranchesPane({
         ).map((v) => {
           const on = view === v.key
           return (
+            /* Grown rather than coated. The tablist wraps, and once it does the
+               two tabs stack 6px apart — at the old 34px paint that is a pitch
+               of 40, so two 44px pseudo-elements would have overlapped in a 4px
+               band and the later tab in the DOM would have won presses along it.
+               There is no density argument for keeping these small either: they
+               are the pane's top-level view switch with a whole row to
+               themselves, which is precisely the button §5 says should be 44 in
+               the first place. */
             <button
               key={v.key}
               type="button"
@@ -498,7 +526,7 @@ export function BranchesPane({
               onClick={() => setView(v.key)}
               style={{
                 ...controlStyle,
-                minHeight: 34,
+                minHeight: 'var(--tap)',
                 borderColor: on ? 'var(--nav-active-accent)' : 'var(--border)',
                 background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                 color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -514,8 +542,8 @@ export function BranchesPane({
       {view === 'warehouses' ? (
         <>
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.55 }}>
-            Warehouse Management moved out of Inventory into this tab (`07_INVENTORY.md` line 4, §11.3). This is the same
-            screen, mounted here unchanged —{' '}
+            {/* Warehouse Management moved out of Inventory into this tab (`07_INVENTORY.md` line 4, §11.3). This is the same
+            screen, mounted here unchanged — */}Manage warehouses here. {' '}
             <Link to="/inventory/warehouses" style={{ color: 'var(--link)', fontWeight: 600 }}>
               /inventory/warehouses
             </Link>{' '}
@@ -605,13 +633,18 @@ export function BranchesPane({
                   </span>
                 </div>
 
+                {/* The card's one action, full width and last in the card, so
+                    it can simply be 44 — no pseudo-element needed and nothing
+                    below it to overlap. This is the phone/tablet path (tables
+                    become card rows under 768), which is exactly where a thumb
+                    is doing the pressing. */}
                 <button
                   type="button"
                   onClick={() => {
                     setFocused(b.id)
                     setPage(1)
                   }}
-                  style={{ ...controlStyle, width: '100%', justifyContent: 'center', minHeight: 34, background: 'var(--card2)' }}
+                  style={{ ...controlStyle, width: '100%', justifyContent: 'center', minHeight: 'var(--tap)', background: 'var(--card2)' }}
                 >
                   View Branch Profile
                   <Icon name="arrow_right" size={13} />
@@ -625,7 +658,17 @@ export function BranchesPane({
             <Card
               title={`Branch Profile — ${focusedBranch.name}`}
               action={
-                <button type="button" onClick={() => setFocused(null)} style={{ ...controlStyle, minHeight: 28, fontSize: 'var(--t-th)' }}>
+                /* A card-header action: 28px so it sits inside the header band
+                   rather than inflating it, `tap` so the way out of the branch
+                   profile is not a 28px strip. The header is 52px tall and this
+                   is the only control in it, so the 44px target lands entirely
+                   inside the header. */
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={() => setFocused(null)}
+                  style={{ ...controlStyle, minHeight: 28, fontSize: 'var(--t-th)' }}
+                >
                   <Icon name="chevron_left" size={12} />
                   Back to all branches
                 </button>
@@ -675,31 +718,21 @@ export function BranchesPane({
             title="Branches & warehouses"
             action={
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Icon name="search" size={13} style={{ color: 'var(--muted)' }} />
-                  <span className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                    Search branch or warehouse
-                  </span>
-                  <input
+                <div style={{ width: 260 }}>
+                  <SearchInput
                     value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value)
+                    onChange={(val) => {
+                      setQuery(val)
+                      setPage(1)
+                    }}
+                    onClear={() => {
+                      setQuery('')
                       setPage(1)
                     }}
                     placeholder="Search branch, code, manager, city, warehouse…"
-                    style={{
-                      minHeight: 30,
-                      width: 236,
-                      padding: '0 9px',
-                      borderRadius: 'var(--r-input)',
-                      border: '1px solid var(--input-border)',
-                      background: 'var(--input-bg)',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-meta)',
-                      fontFamily: 'inherit',
-                    }}
+                    aria-label="Search branch or warehouse"
                   />
-                </label>
+                </div>
                 <select
                   value={status}
                   onChange={(e) => {
@@ -724,7 +757,22 @@ export function BranchesPane({
                     </option>
                   ))}
                 </select>
-                <button type="button" onClick={exportCsv} style={{ ...controlStyle, minHeight: 30, fontSize: 'var(--t-th)' }}>
+                {/* 30px to line up with the search box and status select it
+                    shares the header band with — a button standing 14px taller
+                    than the two filters beside it would read as a different
+                    class of control. `tap` for the rest. It is wider than 44,
+                    so the target grows only up and down, never the 8px across
+                    into the status select. Note the band wraps below ~768: once
+                    it does, the three sit 8px apart in a column and the 44px
+                    target clears the select above by exactly 1px — it holds,
+                    but it is the seam to re-measure if either filter is ever
+                    given a target of its own. */}
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={exportCsv}
+                  style={{ ...controlStyle, minHeight: 30, fontSize: 'var(--t-th)' }}
+                >
                   <Icon name="download" size={12} />
                   Export CSV
                 </button>
@@ -750,7 +798,7 @@ export function BranchesPane({
                 )}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Branches and warehouses" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
                   <thead>
                     <tr>
@@ -780,6 +828,40 @@ export function BranchesPane({
                         <Fragment key={b.id}>
                           <tr>
                             <td style={{ ...td, padding: '0 0 0 4px' }}>
+                              {/* 26x26 was the whole target — a third of the
+                                  required area on the control that opens a
+                                  branch's warehouses. It stays 26 on screen
+                                  because a 44px disclosure glyph would set the
+                                  width of the first column and push every row
+                                  sideways; `tap` grows BOTH axes here, since
+                                  unlike the labelled buttons this one is square
+                                  and under 44 in each direction.
+
+                                  ⚠ These rows pitch at about 39px, short of the
+                                  §7.3 "rows >= 56" floor, so this target and the
+                                  one in the row below overlap in a band of
+                                  roughly 5px and the lower row wins it. Raising
+                                  the row height is the fix and it belongs to
+                                  `td`, which several screens share — flagged
+                                  rather than forced from inside this file. */}
+                              {/*
+                                No `className="tap"` here, deliberately.
+
+                                It WAS applied, and an adversarial check showed
+                                the ::after being clipped: the table sits in a
+                                `<div style={{ overflowX: 'auto' }}>` (line
+                                ~797), and a non-visible `overflow-x` makes
+                                `overflow-y` compute to `auto` too — a real
+                                scroll container that clips on both axes. With
+                                the first `td` at `padding: '0 0 0 4px'`, the
+                                26px button sits 4px inside the scrollport edge,
+                                so the 44px pseudo-element lost 5px off its left
+                                and the true target measured 39x44.
+
+                                A pseudo-element cannot escape a scrollport, so
+                                the box grows instead. `minWidth`/`minHeight`
+                                are real layout, which the container cannot clip.
+                              */}
                               <button
                                 type="button"
                                 onClick={() => toggle(b.id)}
@@ -787,8 +869,12 @@ export function BranchesPane({
                                 aria-label={`${open ? 'Collapse' : 'Expand'} the warehouses under ${b.name}`}
                                 style={{
                                   ...controlStyle,
-                                  minHeight: 26,
-                                  width: 26,
+                                  // Real layout, not a pseudo-element — see the
+                                  // note above. The scrollport clips ::after but
+                                  // cannot clip the box itself.
+                                  minHeight: 'var(--tap)',
+                                  minWidth: 'var(--tap)',
+                                  width: 'var(--tap)',
                                   padding: 0,
                                   justifyContent: 'center',
                                   border: 'none',
@@ -818,8 +904,16 @@ export function BranchesPane({
                               {/* §11.3 draws a `⋮`. One built action does not
                                   need a menu, and a menu of unbuilt rows would
                                   be four dead controls. */}
+                              {/* Same trade as the disclosure glyph: the paint
+                                  stays 28 so the row does not grow, `tap` makes
+                                  the target legal, and the label keeps it past
+                                  44 across so only the short axis moves. Same
+                                  row-pitch caveat too — until rows reach 56,
+                                  this target and the Profile button one row
+                                  down share a ~5px band. */}
                               <button
                                 type="button"
+                                className="tap"
                                 onClick={() => {
                                   setFocused(b.id)
                                   setPage(1)
@@ -855,68 +949,16 @@ export function BranchesPane({
                     )}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap', marginTop: 'var(--sp-md)' }}>
-              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                Showing {filtered.length === 0 ? 0 : (current - 1) * perPage + 1} to {Math.min(current * perPage, filtered.length)} of{' '}
-                {filtered.length} branches
-              </span>
-              <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                Rows per page
-                <select
-                  value={perPage}
-                  onChange={(e) => {
-                    setPerPage(Number(e.target.value))
-                    setPage(1)
-                  }}
-                  style={{
-                    minHeight: 28,
-                    padding: '0 6px',
-                    borderRadius: 'var(--r-input)',
-                    border: '1px solid var(--input-border)',
-                    background: 'var(--input-bg)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {[10, 25, 50].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <button
-                  type="button"
-                  onClick={() => setPage(current - 1)}
-                  disabled={current === 1}
-                  aria-label="Previous page"
-                  style={{ ...controlStyle, minHeight: 28, width: 28, padding: 0, justifyContent: 'center', opacity: current === 1 ? 0.45 : 1 }}
-                >
-                  <Icon name="chevron_left" size={13} />
-                </button>
-                <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, minWidth: 46, textAlign: 'center' }}>
-                  {current} / {pageCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage(current + 1)}
-                  disabled={current === pageCount}
-                  aria-label="Next page"
-                  style={{ ...controlStyle, minHeight: 28, width: 28, padding: 0, justifyContent: 'center', opacity: current === pageCount ? 0.45 : 1 }}
-                >
-                  <Icon name="chevron_right" size={13} />
-                </button>
-              </span>
+              <Pagination page={current} total={filtered.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={[10, 25, 50]} onPageSizeChange={(size) => { setPerPage(size); setPage(1) }} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'var(--sp-md)', paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)' }}>
               <OpenDecision text={STORAGE_VOCABULARY_TODO} />
-              <OpenDecision text="TODO(decision) — Rulings §9.12: is “Bhaktapur Heavy Grip & Rigging” a fourth BRANCH or a fourth WAREHOUSE of an existing one? It joins to Head Office here because that is the only assignment under which the branch records’ own declared counts (2 / 1 / 1) reconcile. If it is really a fourth branch, every group total on this tab moves with it." />
+              <OpenDecision text={/* TODO(decision) — Rulings §9.12: is “Bhaktapur Heavy Grip & Rigging” a fourth BRANCH or a fourth WAREHOUSE of an existing one? It joins to Head Office here because that is the only assignment under which the branch records’ own declared counts (2 / 1 / 1) reconcile. If it is really a fourth branch, every group total on this tab moves with it. */ "Branch assignment has not been confirmed."} />
             </div>
           </Card>
 
@@ -948,8 +990,16 @@ export function BranchesPane({
                     </span>
                   </div>
                 ))}
+                {/* Last thing in the card, under a list of transfer counts that
+                    are text and chips rather than controls, so the 6px this
+                    target reaches upward crosses nothing clickable. `tap` and
+                    not a taller box only because `controlStyle`'s 32 is what
+                    every other "see the rest of this" link on the page paints
+                    at, and one of them standing 44 tall would look like the
+                    card's primary action. */}
                 <button
                   type="button"
+                  className="tap"
                   onClick={() => setView('warehouses')}
                   style={{ ...controlStyle, justifyContent: 'center', marginTop: 'var(--sp-xs)' }}
                 >
@@ -963,44 +1013,46 @@ export function BranchesPane({
                 money-blind session does not get an emptied version of it. */}
             {money && (
               <Card title="Branch Performance" action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>This month</span>}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th scope="col" style={th}>Branch</th>
-                      <th scope="col" style={{ ...th, textAlign: 'right' }}>Revenue</th>
-                      <th scope="col" style={{ ...th, textAlign: 'right' }}>Utilization</th>
-                      <th scope="col" style={{ ...th, textAlign: 'right' }}>Growth</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((b) => (
-                      <tr key={b.id}>
-                        <td style={{ ...td, fontWeight: 600 }}>{b.name}</td>
-                        <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} className="figure">
-                          {formatMoney(b.revenue)}
-                        </td>
-                        <td style={{ ...td, textAlign: 'right' }} className="figure">
-                          {b.utilization}%
-                        </td>
-                        <td style={{ ...td, textAlign: 'right' }}>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                              fontWeight: 700,
-                              fontSize: 'var(--t-th)',
-                              color: b.growthPercent >= 0 ? 'var(--success-text)' : 'var(--danger-text)',
-                            }}
-                          >
-                            <Icon name={b.growthPercent >= 0 ? 'arrow_up' : 'arrow_down'} size={11} fill />
-                            {Math.abs(b.growthPercent)}%
-                          </span>
-                        </td>
+                <DataTableShell ariaLabel="Branch performance" data-table-scroll style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th scope="col" style={th}>Branch</th>
+                        <th scope="col" style={{ ...th, textAlign: 'right' }}>Revenue</th>
+                        <th scope="col" style={{ ...th, textAlign: 'right' }}>Utilization</th>
+                        <th scope="col" style={{ ...th, textAlign: 'right' }}>Growth</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {rows.map((b) => (
+                        <tr key={b.id}>
+                          <td style={{ ...td, fontWeight: 600 }}>{b.name}</td>
+                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} className="figure">
+                            {formatMoney(b.revenue)}
+                          </td>
+                          <td style={{ ...td, textAlign: 'right' }} className="figure">
+                            {b.utilization}%
+                          </td>
+                          <td style={{ ...td, textAlign: 'right' }}>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontWeight: 700,
+                                fontSize: 'var(--t-th)',
+                                color: b.growthPercent >= 0 ? 'var(--success-text)' : 'var(--danger-text)',
+                              }}
+                            >
+                              <Icon name={b.growthPercent >= 0 ? 'arrow_up' : 'arrow_down'} size={11} fill />
+                              {Math.abs(b.growthPercent)}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </DataTableShell>
               </Card>
             )}
 
@@ -1080,26 +1132,33 @@ function AddBranchModal({
   if (!city.trim()) errors.push('City is required.')
   if (!manager.trim()) errors.push('A branch manager is required.')
 
-  const field = (label: string, value: string, set: (v: string) => void, placeholder: string) => (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-      <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</span>
-      <input
-        value={value}
-        onChange={(e) => set(e.target.value)}
-        placeholder={placeholder}
-        style={{
-          minHeight: 32,
-          padding: '0 9px',
-          borderRadius: 'var(--r-input)',
-          border: '1px solid var(--input-border)',
-          background: 'var(--input-bg)',
-          color: 'var(--text)',
-          fontSize: 'var(--t-meta)',
-          fontFamily: 'inherit',
-        }}
-      />
-    </label>
-  )
+  const field = (label: string, value: string, set: (v: string) => void, placeholder: string) => {
+    const isPhone = label.toLowerCase().includes('phone')
+    return (
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
+        <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</span>
+        <input
+          type={isPhone ? 'tel' : 'text'}
+          inputMode={isPhone ? 'tel' : undefined}
+          value={value}
+          onChange={(e) => set(e.target.value)}
+          placeholder={placeholder}
+          /* Law 15 — the law is the hit area and `--tap` is the token. One field
+             per line in the Add Branch form, so it just grows. */
+          style={{
+            minHeight: 'var(--tap)',
+            padding: '0 9px',
+            borderRadius: 'var(--r-input)',
+            border: '1px solid var(--input-border)',
+            background: 'var(--input-bg)',
+            color: 'var(--text)',
+            fontSize: 'var(--t-meta)',
+            fontFamily: 'inherit',
+          }}
+        />
+      </label>
+    )
+  }
 
   return (
     <div
@@ -1113,7 +1172,7 @@ function AddBranchModal({
         background: 'var(--modal)',
         display: 'grid',
         placeItems: 'center',
-        zIndex: 9000,
+        zIndex: 'var(--z-modal)' as unknown as number,
         padding: 20,
       }}
     >
@@ -1274,7 +1333,15 @@ export function BranchesRail({
               </span>
             </DestControl>
           ))}
-          <Link to="/operations" style={{ ...controlStyle, justifyContent: 'center', width: '100%', marginTop: 2 }}>
+          {/* ⚠ The tightest seam in this file. The alert rows above stack 6px
+              apart with `marginTop: 2` under the last one, so this target's 6px
+              of upward reach stops 2px short of the alert box — it clears, but
+              only just. The alert rows are 32px tall themselves and are still
+              short of Law 15; whoever gives them their target must open this gap
+              first, or the two will start trading clicks. Their style is a local
+              object rather than `controlStyle`, which is why they are not fixed
+              in this pass. */}
+          <Link to="/operations" className="tap" style={{ ...controlStyle, justifyContent: 'center', width: '100%', marginTop: 2 }}>
             View all alerts
             <Icon name="arrow_right" size={13} />
           </Link>

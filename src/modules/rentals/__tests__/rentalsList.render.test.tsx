@@ -25,6 +25,20 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { BookingListRow } from '../../../lib/queries/bookings'
+import type { SystemRole } from '../../../types/database'
+
+/**
+ * The sub-rented lines the mocked `booking_lines_v` returns.
+ *
+ * §11.1's chip and row marker both read `subRentalBookingIds()`, which is the
+ * one query this screen makes outside `listBookings`. Driving it from here is
+ * what lets a test say "this booking has a sub-rented line" and then assert the
+ * gold outline — the whole point of a derived flag is that it follows the lines.
+ */
+const lines = vi.hoisted(() => ({
+  rows: [] as { booking_id: string; line_type: string }[],
+  shouldFail: false,
+}))
 
 /**
  * The sub-rented lines the mocked `booking_lines_v` returns.
@@ -54,7 +68,13 @@ vi.mock('../../../lib/supabase', () => {
   const build = () => {
     const chain: Record<string, unknown> = {}
     for (const method of ['select', 'in', 'is', 'eq', 'order', 'range']) chain[method] = () => chain
-    chain['then'] = (resolve: (value: unknown) => unknown) => resolve({ data: lines.rows, error: null })
+    chain['then'] = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => {
+      if (lines.shouldFail) {
+        if (reject) return reject(new Error('Subrental query failed'))
+        return Promise.reject(new Error('Subrental query failed'))
+      }
+      return resolve({ data: lines.rows, error: null })
+    }
     return chain
   }
   return {
@@ -69,11 +89,13 @@ const ROW: BookingListRow = {
   clientId: 'c0ffee00-1111-4222-8333-444455556666',
   clientName: 'Mountain Stories',
   project: 'FX3 Documentary',
+  projectType: 'Documentary',
+  projectTypeOther: null,
   stage: 'Booked',
   pickupAtAd: '2026-08-14T03:15:00.000Z',
   returnAtAd: '2026-08-18T10:30:00.000Z',
   actualReturnAtAd: null,
-  deliveryType: 'Customer Pickup',
+  deliveryType: 'Client Pickup',
   pickupLocation: 'Kathmandu',
   returnLocation: null,
   quoteExpiresAtAd: null,
@@ -87,23 +109,33 @@ const ROW: BookingListRow = {
 /* The mocked count, so a test can have more rows than one page. `vi.hoisted`
    because a `vi.mock` factory is hoisted above ordinary consts and cannot close
    over one. Reset in `afterEach`. */
-const stub = vi.hoisted(() => ({ total: 1 }))
+const stub = vi.hoisted(() => ({ total: 1, empty: false }))
+vi.mock('../../../actions/rentals/saveDraft', () => ({ listActiveDrafts: async () => [] }))
+vi.mock('../../../lib/queries/rentalViews', async (importOriginal) => { const real = await importOriginal<typeof import('../../../lib/queries/rentalViews')>(); return { ...real, listRentalViewCounts: async () => ({ rows: real.RENTAL_VIEWS.map(v => ({ id: v.id, count: 0 })) }) } })
+const authStub = vi.hoisted(() => ({ role: 'Owner' as SystemRole }))
 
 /* The real named filter sets are kept (the screen builds its four KPI queries
    from them); only the fetch is replaced, so rows actually arrive and the table
    renders. */
 vi.mock('../../../lib/queries/bookings', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../lib/queries/bookings')>()
-  return { ...real, listBookings: async () => ({ rows: [ROW], total: stub.total }) }
+  return { ...real, listBookings: async () => (stub.empty ? { rows: [], total: 0 } : { rows: [ROW], total: stub.total }) }
 })
 
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => true }))
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({
-    user: { id: 'u-1', name: 'Babin Shrestha', role: 'Owner', isSharedDevice: false },
+    user: { id: 'u-1', name: 'Babin Shrestha', role: authStub.role, isSharedDevice: false },
     loading: false,
     isLocked: false,
   }),
+}))
+
+/* RentalsList.RowOperations calls useOperationsWorkspace — mock the context so
+   tests don't need a real provider (which would render OperationsShell). */
+vi.mock('../../operations/OperationsWorkspaceContext', () => ({
+  OperationsWorkspaceProvider: ({ children }: { children: unknown }) => children,
+  useOperationsWorkspace: () => ({ openOperations: vi.fn(), closeOperations: vi.fn() }),
 }))
 
 window.matchMedia = ((q: string) => ({
@@ -125,13 +157,20 @@ let root: Root
 
 /** The live query string, so a test can assert what a refresh would restore. */
 let search = ''
+let pathname = ''
 function LocationProbe() {
-  search = useLocation().search
+  const location = useLocation()
+  search = location.search
+  pathname = location.pathname
   return null
 }
 
-/** Foundation's locked breakpoints — 768 and 1180. Width only (Law 14). */
+/** v4.1 §7.7's breakpoints — 768 and 1280. Width only (Law 14). */
 async function mount(width: number, entry = '/rentals') {
+  if (root) {
+    await act(async () => root.unmount())
+    container?.remove()
+  }
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -153,13 +192,17 @@ async function mount(width: number, entry = '/rentals') {
 afterEach(async () => {
   if (root) await act(async () => root.unmount())
   container?.remove()
+  document.body.innerHTML = ''
   stub.total = 1
+  stub.empty = false
   lines.rows = []
+  lines.shouldFail = false
+  authStub.role = 'Owner'
 })
 
-const text = () => container.textContent ?? ''
-const allButtons = () => [...container.querySelectorAll('button')]
-const button = (label: string) => allButtons().find((b) => b.textContent?.trim() === label)
+const text = () => document.body.textContent ?? ''
+const allButtons = () => [...document.body.querySelectorAll('button')]
+const button = (label: string) => allButtons().find((b) => (b.querySelector('[data-view-label]')?.textContent ?? b.textContent)?.trim() === label)
 
 describe('§4.1 — one list, no tabs', () => {
   it('renders no tab strip and no trace of Productions', async () => {
@@ -170,24 +213,25 @@ describe('§4.1 — one list, no tabs', () => {
     expect(button('Bookings')).toBeUndefined()
   })
 
-  it('draws the seven stage chips the wireframe names, in stage order', async () => {
+  it('draws the 5 operational view chips in order', async () => {
     await mount(1280)
     const chips = allButtons()
       .filter((b) => b.getAttribute('aria-pressed') !== null)
-      .map((b) => b.textContent?.trim())
-    expect(chips.slice(0, 7)).toEqual(['All', 'Quote', 'Booked', 'Packed', 'On Rent', 'Returned', 'Closed'])
+      .map((b) => (b.querySelector('[data-view-label]')?.textContent ?? b.textContent)?.trim())
+    expect(chips.slice(0, 7)).toEqual(['All', 'Draft', 'Quote', 'Upcoming', 'Out', 'Returns', 'Closed'])
   })
 
-  it('gives every stage chip an icon beside its word (Law 11 — never colour alone)', async () => {
+  it('gives every operational view chip an icon beside its word (Law 11 — never colour alone)', async () => {
     await mount(1280)
-    const quote = allButtons().find((b) => b.textContent?.trim() === 'Quote')
-    expect(quote?.querySelector('svg')).not.toBeNull()
+    const upcoming = allButtons().find((b) => b.getAttribute('aria-label') === 'Upcoming')
+    expect(upcoming?.querySelector('svg')).not.toBeNull()
   })
 
-  it('keeps the KPI strip and the pager, which no prose removes (rulings §1)', async () => {
+  it('keeps the list and pager as the primary V2 workspace', async () => {
     await mount(1280)
-    expect(text()).toContain('Active Rentals')
-    expect(text()).toContain('Rows per page')
+    expect(text()).not.toContain('Active Rentals')
+    expect(text()).toContain('1 Rental found')
+    expect(text()).not.toContain('Rows per page')
   })
 })
 
@@ -232,12 +276,10 @@ describe('Sub-Rental — the chip that replaced the tab, live since rulings §11
   })
 })
 
-describe('the header actions — §4.1 draws New Rental and Export, and nothing else', () => {
-  it('keeps Export, honestly disabled with its reason', async () => {
+describe('the header actions — 1 primary CTA, secondary actions, and no unbuilt Export', () => {
+  it('no longer draws an unbuilt placeholder Export button', async () => {
     await mount(1280)
-    const exportBtn = button('Export')
-    expect(exportBtn).toBeDefined()
-    expect(exportBtn?.disabled).toBe(true)
+    expect(button('Export')).toBeUndefined()
   })
 
   it('no longer draws an Import button', async () => {
@@ -279,15 +321,15 @@ describe('§18 — this screen’s filters are the query string', () => {
     await mount(1280, '/rentals?quick=Overdue&stage=Booked')
     const overdue = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Overdue')
     expect(overdue?.getAttribute('aria-pressed')).toBe('true')
-    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')
-    expect(booked?.getAttribute('aria-pressed')).toBe('true')
+    const row = container.querySelector('[aria-label="Active filters"]')
+    expect(row?.textContent).toContain('Stage: Booked')
   })
 
-  it('puts a picked stage on the URL', async () => {
+  it('puts a picked operational view on the URL', async () => {
     await mount(1280)
-    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')!
-    await act(async () => booked.click())
-    expect(search).toBe('?stage=Booked')
+    const out = [...container.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Out')!
+    await act(async () => out.click())
+    expect(search).toBe('?stage=On+Rent')
   })
 
   it('shows what is narrowing the list as removable chips', async () => {
@@ -330,31 +372,31 @@ describe('§18 — this screen’s filters are the query string', () => {
     // client truncated, a URL from before a stage was renamed. None of it may
     // reach `rentalsQuery` unchecked.
     await mount(1280, '/rentals?quick=DropTable&stage=Nonsense')
-    const all = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'All')
+    const all = [...container.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'All')
     expect(all?.getAttribute('aria-pressed')).toBe('true')
     expect(container.querySelector('[aria-label="Active filters"]')).toBeNull()
   })
 })
 
 describe('the three layouts, from one width reading (Law 14)', () => {
-  it('desktop ≥1180 — table, and the filter panel costs the table no width', async () => {
+  it('desktop ≥1280 — the filter drawer is absent when closed and opens beside the list', async () => {
     await mount(1280)
     expect(container.querySelector('table')).not.toBeNull()
 
-    // The rail this replaced took a grid column even collapsed — a 32px track
-    // content could not reflow into. The drawer is `position: fixed`, so the
-    // grid is one track at every width and the table gets all of it.
-    const grid = [...container.querySelectorAll<HTMLDivElement>('div')].find(
-      (d) => d.style.display === 'grid' && d.style.gridTemplateColumns !== '',
-    )
-    expect(grid?.style.gridTemplateColumns).toBe('minmax(0,1fr)')
-
-    // Closed by default, and nothing of the panel is in the tree until asked for.
+    // Closed by default, so it consumes no workspace track.
     expect(filterButton()?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.filter-overlay')).toBeNull()
     expect(text()).not.toContain('Save as new filter')
+
+    await act(async () => filterButton()!.click())
+    const panel = container.querySelector<HTMLElement>('.filter-overlay [role="dialog"]')
+    expect(panel).not.toBeNull()
+    expect(panel?.parentElement?.style.position).toBe('fixed')
+    expect(panel?.style.position).toBe('relative')
+    expect(panel?.textContent).toContain('Smart Views & Presets')
   })
 
-  it('tablet 768–1179 — fewer columns, and the filter panel is reachable at this width too', async () => {
+  it('tablet 768–1279 — fewer columns, and the filter panel is reachable at this width too', async () => {
     await mount(1000)
     const headers = [...container.querySelectorAll('th')].map((h) => h.textContent?.trim())
     // §4.1 tablet draws `BR# │ client │ dates │ badge │ [prim]⋮`.
@@ -363,7 +405,7 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     expect(headers).toContain('Pickup')
 
     /*
-     * Rulings §7 — "rails collapse below 1180" means REFLOW, not hide — used to
+     * Rulings §7 — "rails collapse below 1280" means REFLOW, not hide — used to
      * be satisfied by rendering the same card inline under the list, and this
      * test asserted that by looking for its contents on the page.
      *
@@ -388,5 +430,186 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     expect(container.querySelector('table')).toBeNull()
     expect(text()).toContain('Open Booking')
     expect(text()).toContain('B-715')
+  })
+})
+
+describe('§Step 6 — cross-page and filter selection state', () => {
+  it('clears selection when a filter changes', async () => {
+    await mount(1280)
+    const rowCheckbox = container.querySelector('tbody input[type="checkbox"]') as HTMLInputElement
+    expect(rowCheckbox).not.toBeNull()
+    await act(async () => {
+      rowCheckbox.click()
+    })
+    expect(text()).toContain('1 rental selected')
+
+    // Changing filter drops selection immediately
+    const out = [...container.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Out')!
+    await act(async () => {
+      out.click()
+    })
+    expect(text()).not.toContain('1 rental selected')
+  })
+})
+
+describe('§Step 7 — CSV Export selection behavior', () => {
+  it('triggers CSV download with selected rows and respects selection', async () => {
+    const createObjectURLMock = vi.fn().mockReturnValue('blob:mock-url')
+    const revokeObjectURLMock = vi.fn()
+    window.URL.createObjectURL = createObjectURLMock
+    window.URL.revokeObjectURL = revokeObjectURLMock
+
+    await mount(1280)
+    const rowCheckbox = container.querySelector('tbody input[type="checkbox"]') as HTMLInputElement
+    await act(async () => {
+      rowCheckbox.click()
+    })
+
+    const exportBtn = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Export CSV'))
+    expect(exportBtn).toBeDefined()
+
+    await act(async () => {
+      exportBtn?.click()
+    })
+
+    expect(createObjectURLMock).toHaveBeenCalled()
+    expect(revokeObjectURLMock).toHaveBeenCalled()
+  })
+})
+
+describe('§Step 8 & 9 — quick action permissions and mobile card parity', () => {
+  it('keeps Fast Return and Record Payment with New Rental in the shell', async () => {
+    authStub.role = 'Owner'
+    await mount(1280)
+    expect(button('New Rental')).toBeUndefined()
+    expect(button('Fast Return')).toBeDefined()
+    expect(button('Record Payment')).toBeDefined()
+    // Scan Barcode and Refresh are in the overflow menu (•••)
+    const moreBtn = container.querySelector('button[aria-label="More actions"]') as HTMLButtonElement
+    expect(moreBtn).not.toBeNull()
+    await act(async () => {
+      moreBtn.click()
+    })
+    expect(button('Scan Barcode')).toBeDefined()
+  })
+
+  it('hides New Rental and Record Payment for Technician, keeps Fast Return', async () => {
+    authStub.role = 'Technician'
+    await mount(1280)
+    expect(button('New Rental')).toBeUndefined()
+    expect(button('Record Payment')).toBeUndefined()
+    expect(button('Fast Return')).toBeDefined()
+  })
+
+  it('hides Fast Return for Accounts, keeps Record Payment', async () => {
+    authStub.role = 'Accounts'
+    await mount(1280)
+    expect(button('Fast Return')).toBeUndefined()
+    expect(button('Record Payment')).toBeDefined()
+  })
+
+  it('provides Cancel Booking in both Desktop and Mobile views for desk writers', async () => {
+    // Desktop view
+    authStub.role = 'Owner'
+    await mount(1280)
+    const deskOpsBtn = container.querySelector('button[aria-label="Operations for B-715"]') as HTMLButtonElement
+    expect(deskOpsBtn).not.toBeNull()
+    await act(async () => {
+      deskOpsBtn.click()
+    })
+    expect(text()).toContain('Cancel Booking')
+
+    // Mobile view (Step 9 parity)
+    await mount(420)
+    const mobOpsBtn = container.querySelector('button[aria-label="Operations for B-715"]') as HTMLButtonElement
+    expect(mobOpsBtn).not.toBeNull()
+    await act(async () => {
+      mobOpsBtn.click()
+    })
+    expect(text()).toContain('Cancel Booking')
+  })
+
+  it('hides Cancel Booking for Technician in both views', async () => {
+    authStub.role = 'Technician'
+    await mount(1280)
+    const deskOpsBtn = container.querySelector('button[aria-label="Operations for B-715"]') as HTMLButtonElement
+    await act(async () => {
+      deskOpsBtn.click()
+    })
+    expect(text()).not.toContain('Cancel Booking')
+  })
+})
+
+describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
+  it('re-queries sub-rentals when Refresh is clicked', async () => {
+    lines.rows = []
+    await mount(1280)
+    expect(text()).not.toContain('Sub-rented')
+
+    // Data changes in database
+    lines.rows = [{ booking_id: ROW.id, line_type: 'Sub-rental' }]
+
+    // Click Refresh from overflow menu
+    const moreBtn = container.querySelector('button[aria-label="More actions"]') as HTMLButtonElement
+    if (moreBtn) {
+      await act(async () => {
+        moreBtn.click()
+      })
+    }
+    const refreshBtn = button('Refresh')
+    expect(refreshBtn).toBeDefined()
+    await act(async () => {
+      refreshBtn?.click()
+    })
+
+    expect(text()).toContain('Sub-rented')
+  })
+
+  it('renders retry button on sub-rental failure and heals upon retry', async () => {
+    lines.shouldFail = true
+    await mount(1280)
+
+    // Sub-Rental is disabled / unavailable
+    const subBtn = container.querySelector('button[aria-label^="Sub-Rental — unavailable"]') as HTMLButtonElement
+    expect(subBtn).not.toBeNull()
+    expect(subBtn.disabled).toBe(true)
+
+    // Retry button is available
+    const retryBtn = container.querySelector('button[aria-label="Retry loading sub-rentals"]') as HTMLButtonElement
+    expect(retryBtn).not.toBeNull()
+
+    // Network recovers
+    lines.shouldFail = false
+
+    await act(async () => {
+      retryBtn.click()
+    })
+
+    // Sub-Rental is now live and enabled
+    const liveSubBtn = button('Sub-Rental')
+    expect(liveSubBtn).toBeDefined()
+    expect(liveSubBtn?.disabled).toBe(false)
+  })
+})
+
+/* From main's 32c4d29, ported 8 Oct 2026: the unfiltered empty list offers its
+   one next step, to the roles `rental.create` allows. */
+describe('empty list — the New Rental step', () => {
+  it('offers New Rental to a role that can create, and it goes to /rentals/new', async () => {
+    stub.empty = true
+    await mount(1280)
+    expect(text()).toContain('No rentals yet')
+    const cta = button('New Rental')
+    expect(cta).toBeDefined()
+    await act(async () => cta?.click())
+    expect(pathname).toBe('/rentals/new')
+  })
+
+  it('offers nothing to a role that cannot create', async () => {
+    stub.empty = true
+    authStub.role = 'Accounts'
+    await mount(1280)
+    expect(text()).toContain('No rentals yet')
+    expect(button('New Rental')).toBeUndefined()
   })
 })

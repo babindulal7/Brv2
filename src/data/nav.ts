@@ -1,40 +1,10 @@
 import type { IconName } from '../components/ui/Icon'
 import type { SystemRole } from '../types/database'
-import { canViewMoney } from '../lib/rbac'
+import { canViewMoney, isStaff } from '../lib/rbac'
 
 /**
- * The application's navigation tree — **the updated wireframes, "Shell —
- * identical on every page"**, repeated verbatim at the top of all eleven spec
- * files (`updated mds/01_NEW_RENTAL.md` lines 6–28 … `11_SETTINGS.md`).
- *
- * > **Nav (fixed, 11):** New Rental · Today · Operation · Rentals · Calendar ·
- * > Crew Assist · Inventory · Clients · Finance · Tools · Settings
- *
- * ## This supersedes Foundation v2.0 §5.1's "8 + Settings, hard ceiling"
- *
- * That ceiling is gone, and this file no longer argues for it. §5.1 was written
- * against a 15-item sidebar transcribed from the Generation C renders; the fix
- * at the time was to cut to eight and pin Settings below a divider so the array
- * could not quietly grow back. The updated wireframes are the newer artefact and
- * they state a different, equally explicit number: **eleven, in one flat list,
- * with Settings as item 11 inside it.** Eleven named destinations chosen by a
- * spec is not the fifteen-item drift §5.1 was defending against — it is a
- * decision, and this is the decision.
- *
- * Two consequences a future reader should not mistake for a mistake:
- *
- *  1. **Settings is item 11 of `NAV`**, not a separate pinned row. `SETTINGS_NAV`
- *     still exists and still points at *the same object*, so no surface can show
- *     a Settings entry that has drifted from the one in the list.
- *  2. **The nav is flat — no children anywhere.** Operation's five queues
- *     (`?queue=packing` …) were sidebar children; spec `03_OPERATION.md` §3.1
- *     makes them *filter chips on the /operations page*: "queue chips filter one
- *     time-ordered list". `NavChild` survives as a type only so a future spec
- *     that re-introduces nesting has somewhere to land.
- *
- * Scanner is still never a nav item: the wireframe keeps it a FAB "at every
- * width — not phone-only", plus a centre slot on the phone bar that triggers
- * that same FAB (see `components/shell/ScannerFab.tsx`).
+ * The user's locked eleven destinations, restored by the 7 Oct 2026 ruling.
+ * New Rental redirects to `/rentals?action=new`; Documents and Reports belong to Finance.
  */
 
 export interface NavChild {
@@ -48,71 +18,93 @@ export interface NavSection {
   icon: IconName
   to: string
   children?: NavChild[]
+  action?: {
+    label: string
+    to: string
+    title?: string
+  }
+}
+
+export interface NavGroup {
+  id: string
+  title: string
+  sections: NavSection[]
 }
 
 /**
- * Declared before `NAV` and inserted into it by reference, so `SETTINGS_NAV`
- * and `NAV[10]` are one object. Anything else lets the two drift.
+ * Declared before navigation arrays and inserted by reference.
  */
 const SETTINGS_SECTION: NavSection = { label: 'Settings', icon: 'settings', to: '/settings' }
 
 /**
- * The fixed eleven, in the wireframe's order. The order is the specification —
- * do not sort, group, or re-rank by role.
- *
- * Note **"Operation"**, singular. Every one of the eleven spec files writes it
- * that way; the route stays `/operations` because that is what the router,
- * the breadcrumbs and every existing deep link already use.
+ * One flat sidebar; role restrictions still omit inaccessible destinations.
  */
-export const NAV: NavSection[] = [
-  { label: 'New Rental', icon: 'plus', to: '/rentals/new' }, //      1
-  { label: 'Today', icon: 'home', to: '/today' }, //                 2
-  { label: 'Operation', icon: 'queues', to: '/operations' }, //      3
-  { label: 'Rentals', icon: 'checklist', to: '/rentals' }, //        4
-  { label: 'Calendar', icon: 'calendar', to: '/calendar' }, //       5
-  { label: 'Crew Assist', icon: 'crew', to: '/crew' }, //            6
-  { label: 'Inventory', icon: 'box', to: '/inventory' }, //          7
-  { label: 'Clients', icon: 'users', to: '/clients' }, //            8
-  { label: 'Finance', icon: 'card', to: '/finance' }, //             9
-  { label: 'Tools', icon: 'tool', to: '/tools' }, //                10
-  SETTINGS_SECTION, //                                              11
+// RULING 2026-10-07: restore the user's locked eleven destinations in order.
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'dispatch',
+    title: '',
+    sections: [
+      { label: 'New Rental', icon: 'plus', to: '/rentals/new' },
+      { label: 'Today', icon: 'home', to: '/today' },
+      { label: 'Operation', icon: 'queues', to: '/operations' },
+      { label: 'Rentals', icon: 'checklist', to: '/rentals' },
+      { label: 'Calendar', icon: 'calendar', to: '/calendar' },
+      { label: 'Crew Assist', icon: 'crew', to: '/crew' },
+      { label: 'Inventory', icon: 'box', to: '/inventory' },
+      { label: 'Clients', icon: 'users', to: '/clients' },
+      { label: 'Finance', icon: 'card', to: '/finance' },
+      { label: 'Tools', icon: 'tool', to: '/tools' },
+      SETTINGS_SECTION,
+    ],
+  },
 ]
 
 /**
- * Item 11, by reference.
- *
- * **No surface imports this today** — the sidebar renders `permittedNav()` and
- * the phone More sheet renders `moreNav()`, both of which reach Settings through
- * `NAV` like any other item, which is the point of folding it back in. It stays
- * exported as the deliberate handle for a surface that must name Settings
- * specifically (a "pin Settings last" affordance, a first-run wizard), because
- * the alternative such a surface reaches for is a fresh literal that drifts.
- * Since it *is* `NAV[10]` rather than a copy, a filter applied to `NAV` covers
- * it too.
+ * Primary navigation destinations for desktop and tablet shells.
  */
-export const SETTINGS_NAV: NavSection = SETTINGS_SECTION
+export const PRIMARY_NAV: NavSection[] = NAV_GROUPS.flatMap((g) => g.sections)
 
 /**
- * The single filter every nav surface reads, so the sidebar, the phone bar and
- * the More sheet cannot drift into showing a different set for the same role.
- *
- * **Law 6 — money-blind roles must not see money surfaces.** The "fixed 11" is
- * the nav for a *permitted* role; it is not a bypass of RBAC. This filter is
- * unchanged from the pre-wireframe build and must stay: the test was
- * `role === 'Warehouse'` until 11 Aug 2026, which left Technician, Driver and
- * Client — the other three members of `lib/rbac.ts`'s `MONEY_BLIND` set —
- * holding a sidebar with Finance in it, shown and then refused by `App.tsx`'s
- * Shell guard. Asking `canViewMoney()` instead of naming a role means this
- * filter cannot fall out of step with the engine. The Shell guard stays as the
- * backstop for a typed URL, the one case nav omission cannot cover — and it
- * reads {@link isMoneySurface} too, so guard and nav cannot answer differently.
+ * Secondary lower-frequency modules exposed under More or Settings.
  */
-export function permittedNav(role: SystemRole | undefined): NavSection[] {
+export const MORE_NAV: NavSection[] = []
+
+export const ALL_NAV: NavSection[] = [...PRIMARY_NAV, ...MORE_NAV]
+export const NAV: NavSection[] = PRIMARY_NAV
+
+export const SETTINGS_NAV: NavSection = SETTINGS_SECTION
+
+export function filterNavByRole(sections: NavSection[], role: SystemRole | undefined): NavSection[] {
   if (!role) return []
+  let nav = sections
   if (!canViewMoney(role)) {
-    return NAV.filter((s) => !isMoneySurface(s.to))
+    nav = nav.filter((s) => !isMoneySurface(s.to))
   }
-  return NAV
+  if (!isStaff(role)) {
+    nav = nav.filter((s) => !isStaffSurface(s.to))
+  }
+  return nav
+}
+
+export function permittedNavGroups(role: SystemRole | undefined): NavGroup[] {
+  if (!role) return []
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    sections: filterNavByRole(group.sections, role),
+  })).filter((group) => group.sections.length > 0)
+}
+
+export function permittedNav(role: SystemRole | undefined): NavSection[] {
+  return filterNavByRole(PRIMARY_NAV, role)
+}
+
+export function permittedMoreNav(role: SystemRole | undefined): NavSection[] {
+  return filterNavByRole(MORE_NAV, role)
+}
+
+export function permittedAllNav(role: SystemRole | undefined): NavSection[] {
+  return filterNavByRole(ALL_NAV, role)
 }
 
 /**
@@ -159,6 +151,96 @@ export function isMoneySurface(path: string): boolean {
 }
 
 /**
+ * **The staff-only surfaces — `isStaff`'s route list, Law 6's sibling.**
+ *
+ * Added 22 Aug 2026 (audit theme 3 #7). `lib/rbac.ts` has said since the roles
+ * were drawn: *"Client is external. Guard every staff surface with this."* But
+ * until this list existed no route surface asked — an external Client session
+ * could reach the floor workspaces, `/clients/import`, `/clients/duplicates`
+ * and `/crew`, stopped only by RLS returning empty results. An empty screen is
+ * not a refusal: it reads as "nothing here today", leaks the surface's shape
+ * and labels, and contradicts the app's own rule that forbidden things are
+ * absent or refused, never hollowed out.
+ *
+ * Same discipline as {@link MONEY_ROUTES}: **one list, read by every gate.**
+ * `permittedNav()` filters `NAV` by it and `App.tsx`'s Shell guard refuses a
+ * typed URL by it, so nav and guard cannot answer differently.
+ *
+ * Entries are route **prefixes**, matched exactly like `MONEY_ROUTES`:
+ *
+ *  - `/crew` — nav item 6. Crew scheduling is staff coordination; a client
+ *    hiring crew goes through their booking, not the roster.
+ *  - `/clients/import`, `/clients/duplicates` — bulk intake and merge tooling
+ *    over the whole client book. `client_merges_all` is Owner/Admin/Manager in
+ *    the database; the surface itself is meaningless to the one client a
+ *    Client session can see.
+ *
+ * The floor workspaces are covered by {@link FLOOR_ROUTE_SUFFIXES} below —
+ * they are `/rentals/:bookingNo/<step>` routes, so a prefix cannot name them.
+ *
+ * RULING 2026-10-08: every staff module is on this list, not only the four
+ * above. `docs/PERMISSIONS.md` gives Client "Portal only": §3 marks Today,
+ * Calendar, Inventory, Settings and Tools ✕, and §7 serves the ◐ cells
+ * (own bookings P2, own record P3) inside the portal, "one page, no routes".
+ * main reached the same answer screen by screen (a `RestrictedState` in 19
+ * pages, 7-8 Oct). This puts it in the one list both gates read. `/finance`,
+ * `/reports` and `/admin` are refused to Client by {@link MONEY_ROUTES}
+ * already. Revert = drop the entries after `/clients/duplicates`.
+ *
+ * ⚠ This list is a ROUTE gate for the external role only. It does not replace
+ * the per-capability predicates (`canWriteFloor`, `canMergeClients`, …) that
+ * decide which STAFF roles may act once inside — mirroring rule, Law 6.
+ */
+export const STAFF_ROUTES: readonly string[] = [
+  '/notes',
+  '/crew',
+  '/clients/import',
+  '/clients/duplicates',
+  '/today',
+  '/dashboard',
+  '/operations',
+  '/rentals',
+  '/calendar',
+  '/inventory',
+  '/clients',
+  '/documents',
+  '/team',
+  '/tools',
+  '/settings',
+]
+
+/**
+ * The five floor-workspace suffixes under `/rentals/:bookingNo/…`.
+ *
+ * Moved here from `App.tsx` on 22 Aug 2026 so its two readers share one list:
+ * `App.tsx`'s Shell still reads it to apply the floor UI scale
+ * (`data-floor` — DEVICES.md §7 build order item 3), and `isStaffSurface()`
+ * reads it because the floor is staff ground (audit theme 3 #7). Two copies of
+ * the same five suffixes would drift exactly the way the money guard once did.
+ */
+export const FLOOR_ROUTE_SUFFIXES: readonly string[] = [
+  '/packing',
+  '/handover',
+  '/return',
+  '/reset',
+  '/evidence',
+]
+
+/**
+ * True when `path` is a staff-only surface an external Client session must be
+ * refused. Prefix match over {@link STAFF_ROUTES} (same rule as
+ * {@link isMoneySurface}), plus suffix match over {@link FLOOR_ROUTE_SUFFIXES}
+ * for the parameterised floor routes a prefix cannot express.
+ */
+export function isStaffSurface(path: string): boolean {
+  const base = path.split('?')[0] ?? path
+  return (
+    STAFF_ROUTES.some((r) => base === r || base.startsWith(r + '/')) ||
+    FLOOR_ROUTE_SUFFIXES.some((s) => base.endsWith(s))
+  )
+}
+
+/**
  * Which nav entry owns a route — **most specific wins, exactly one answer.**
  *
  * Lives here rather than in `Sidebar.tsx` because the sidebar and the phone bar
@@ -185,14 +267,22 @@ export function isMoneySurface(path: string): boolean {
  * would never be claimed by `/rentals`.
  */
 export function activeNavTo(sections: NavSection[], path: string): string | null {
-  const base = path.split('?')[0] ?? path
+  const rawBase = path.split('?')[0] ?? path
+  const base = rawBase === '/dashboard' ? '/today' : rawBase
+  if (new URLSearchParams(path.split('?')[1]).get('action') === 'new' && base === '/rentals') return sections.find((s) => s.to === '/rentals/new')?.to ?? null
   let best: NavSection | null = null
   for (const s of sections) {
     if (base === s.to || base.startsWith(s.to + '/')) {
       if (best === null || s.to.length > best.to.length) best = s
     }
   }
-  return best === null ? null : best.to
+  if (best) return best.to
+  // Analytics opens Pulse directly, while the other reports are sibling routes.
+  if (base === '/reports' || base.startsWith('/reports/')) {
+    return sections.find((s) => s.to === '/finance')?.to ?? null
+  }
+  if (base === '/documents') return sections.find((s) => s.to === '/finance')?.to ?? null
+  return null
 }
 
 /* ══ phone bottom bar ════════════════════════════════════════════════════ */
@@ -258,34 +348,29 @@ export function bottomBarSlots(role: SystemRole | undefined): BottomBarSlot[] {
  * The wireframe says: *"Nav items 1, 3, 5, 6, 9, 10, 11 live under More."*
  * That is New Rental · Operation · Calendar · Crew Assist · Finance · Tools ·
  * Settings — seven of the eight items the five-slot bar cannot hold.
+/**
+ * What the phone **More** sheet lists.
  *
- * TODO(decision) — **item 8 (Clients) is missing from the spec's own list.**
- * The bar holds items 2 (Today), 4 (Rentals) and 7 (Inventory). 11 − 3 = 8
- * overflow items, but the spec names only seven: 1, 3, 5, 6, 9, 10, 11.
- * Clients appears in neither the five slots nor the More list, which would make
- * `/clients` unreachable on a phone for every role — including Coordinator,
- * whose whole job is client-facing. This reads as an omission in the spec, not
- * an instruction to hide it, so Clients is listed here in its natural NAV
- * position (between Crew Assist and Finance) and flagged rather than silently
- * "fixed". The reversible choice is to show it: dropping a line is cheaper than
- * discovering a module is unreachable on the floor. **Ruling needed:** is
- * Clients meant to be in More, or was it meant to take a bar slot from
- * Inventory?
+ * Phone 5-slot bar holds Dashboard, Rentals, Scan, Inventory, More.
+ * Destinations outside the bar live under More:
+ * Calendar · Operations · Clients · Crew Assist · Finance · Tools · Settings
+ *
+ * New Rental is removed — global creation lives under Header Create ▾.
  */
 export const MORE_ROUTES: readonly string[] = [
-  '/rentals/new', //  1  New Rental
-  '/operations', //   3  Operation
-  '/calendar', //     5  Calendar
-  '/crew', //         6  Crew Assist
-  '/clients', //      8  Clients — TODO(decision) above; not in the spec's list
-  '/finance', //      9  Finance
-  '/tools', //       10  Tools
-  '/settings', //    11  Settings
+  '/rentals/new',
+  '/operations',
+  '/calendar',
+  '/crew',
+  '/clients',
+  '/finance',
+  '/tools',
+  '/settings',
 ]
 
-/** The More sheet's contents for a role, resolved against `permittedNav()`. */
+/** The More sheet's contents for a role, resolved against `permittedAllNav()`. */
 export function moreNav(role: SystemRole | undefined): NavSection[] {
-  const permitted = permittedNav(role)
+  const permitted = permittedAllNav(role)
   return MORE_ROUTES.map((r) => permitted.find((s) => s.to === r)).filter(
     (s): s is NavSection => s !== undefined,
   )
@@ -331,10 +416,9 @@ export const SPEC_TABS: Record<string, string[]> = {
      lists. */
   '/inventory': ['Equipment', 'Bundles', 'Stock Check', 'Maintenance'],
 
-  /* `09_FINANCE.md` line 4 — "Dashboard · Invoices · Payments · Expenses ·
-     Documents · Reports." Payments and Expenses are new tabs (§9.3, §9.4);
-     "Audit" is gone — the audit log is a Tools card (`10_TOOLS.md` §10.4). */
-  '/finance': ['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Documents', 'Reports'],
+  /* Finance tabs: Dashboard · Invoices · Payments · Expenses · Closing · Reports.
+     Documents is a dedicated primary module in Business & Back Office. */
+  '/finance': ['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Documents', 'Closing', 'Reports'],
 
   /* `08_CLIENTS.md` line 3 says "Directory only — no tabs." **Deliberately
      overridden, 12 Aug 2026 (user ruling).** Clients keeps Memberships.
@@ -355,23 +439,6 @@ export const SPEC_TABS: Record<string, string[]> = {
 
 /**
  * **Where each Finance tab actually goes.**
- *
- * `SPEC_TABS['/finance']` above names the six tabs `09_FINANCE.md` line 4 rules.
- * It does not say where any of them LIVES, and on Finance that gap has already
- * cost something: `modules/finance/Finance.tsx`'s tab strip links Expenses to
- * `/reports/expenses`, which is the Expense **report** — twelve hand-typed rows
- * out of `src/data/expenseReports.ts` — rather than the ledger §9.4 specifies.
- * Two different screens, one tab, and nothing wrote down which is which.
- *
- * So this is the record: tab label → the route that serves it today, or `null`
- * where no screen exists. `null` is deliberate and must stay honest — pointing
- * an unbuilt tab at the nearest plausible page is exactly how Expenses came to
- * mean the report.
- *
- * ⚠ Like `SPEC_TABS`, **no page reads this yet**. `Finance.tsx` still holds its
- * own literal strip and is owned by another pass; re-pointing it is that pass's
- * work, and this is the one place it should read from when it does. Nothing here
- * routes anything on its own.
  */
 export const FINANCE_TAB_ROUTES: Readonly<Record<string, string | null>> = {
   /* Both are the Finance page itself — `Finance.tsx` switches between them in
@@ -380,15 +447,13 @@ export const FINANCE_TAB_ROUTES: Readonly<Record<string, string | null>> = {
   Invoices: '/finance',
   /* §9.3 — `modules/finance/Payments.tsx`, added 12 Aug 2026. The receipt
      ledger with its deposits rail and the shared Record Payment modal, reading
-     `payments` through `lib/queries/finance.ts`. NOT `Finance.tsx`'s Dashboard
-     payment-method breakdown, which is an aggregate over the same table and not
-     the ledger §9.3 draws. Read-only by law: `payments` is immutable, so the
-     screen records and reverses, and offers no edit. */
+     `payments` through `lib/queries/finance.ts`. */
   Payments: '/finance/payments',
   /* §9.4 — `modules/finance/Expenses.tsx`, added 12 Aug 2026. Reads `expenses`
-     through `lib/queries/finance.ts`. NOT `/reports/expenses`. */
+     through `lib/queries/finance.ts`. */
   Expenses: '/finance/expenses',
   Documents: '/finance/documents',
+  Closing: '/finance/closing',
   /* §9.6's catalog of 45 is not built; Pulse is the report index that exists. */
   Reports: '/reports/pulse',
 }
@@ -424,9 +489,5 @@ export const BRANCH = {
  * at this screen" and should not appear to.
  */
 
-/** Footer note bar, present on every deep screen. */
-export const FOOTER_NOTE = {
-  dates: 'All dates are shown in BS above AD',
-  timezone: 'Timezone: Asia/Kathmandu (NPT)',
-  version: 'Babin Rentals OS v3.0.0',
-}
+/** Single version source for the system settings view. */
+export const APP_VERSION = 'Babin Rentals OS v3.0.0'

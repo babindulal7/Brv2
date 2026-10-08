@@ -2,7 +2,30 @@ import type { IconName } from '../components/ui/Icon'
 import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
-import { toBs, formatBs, TODAY } from '../lib/bs'
+import { toBs, formatBs, getBusinessToday } from '../lib/bs'
+import { captureError } from '../lib/monitoring'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
+/*
+ * ⚖ X-05, considered and LEFT AS A CONSTANT — deliberately.
+ *
+ * `CASES` is seed, and every case's `openedAd` / `settledAd` below is computed
+ * FROM this same `TODAY` at import (see the note above `CASES`). `ageDays` and
+ * the escalation thresholds then measure against it, so the ages are the ones
+ * the seed intends. Reading the live clock here would age fabricated cases past
+ * their own escalation thresholds while a tablet stayed open — inventing
+ * "escalate to Owner" alerts about cases that do not exist.
+ *
+ * The fix for this file is a `lib/queries` read, not a live anchor over a
+ * frozen corpus.
+ */
+
 
 /**
  * Cases (Incident Management) seed data — `04 Operations/Cases.md` v1.1
@@ -972,7 +995,10 @@ export const CASES_SEED_ERROR: string | null = (() => {
     : `Cases seed data does not reconcile: ${problems.join('; ')}. Figures on this screen cannot be trusted — see src/data/cases.ts.`
 })()
 
-if (CASES_SEED_ERROR) console.error(CASES_SEED_ERROR)
+if (CASES_SEED_ERROR) {
+  console.error(CASES_SEED_ERROR)
+  captureError(new Error(CASES_SEED_ERROR), { where: 'seed.cases' })
+}
 
 /* ── misc seed reference data ─────────────────────────────────────────── */
 
@@ -981,5 +1007,7 @@ export const ROWS_PER_PAGE_OPTIONS = [10, 25, 50] as const
 
 /** §9 — Case creation is a separate, undefined flow (only the queue+rail screen is in scope). */
 export const NEW_CASE_UNAVAILABLE_REASON = 'Case creation is not built yet — only the queue and rail are in scope for this pass.'
+/** No export pipeline exists — no cases report builder or CSV writer anywhere in the build. The old button toasted "Generating cases report…" while generating nothing (the exact fabrication src/actions/core.ts §1 names). */
+export const CASES_EXPORT_UNAVAILABLE_REASON = 'Export is not built yet — no cases report or CSV generator exists in this build, so nothing can be downloaded from here.'
 /** §10 — the workspace route has no field list yet; §12 checklist item "Case Workspace route defined and reachable" stays open until it does. */
-export const CASE_WORKSPACE_ROUTE = (id: string) => `/operations/cases/${id}`
+export const CASE_WORKSPACE_ROUTE = (id: string) => `/inventory/cases/${id}` // moved from /operations/cases 30 Aug

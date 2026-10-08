@@ -1,0 +1,154 @@
+{
+  "framework": "Babin Rentals OS",
+  "specification": "Foundation Specification v2.0",
+  "version": "2026-08-16",
+  "laws": [
+    {
+      "id": 1,
+      "title": "Pages never implement business logic",
+      "summary": "Ten domain engines own all business rules, calculations, and state transitions. UI screens and LLM chat interfaces only render outputs and call engines.",
+      "enforcement": "Architecture / Engine Layer",
+      "violation_penalty": "Revert code. Zero inline calculations allowed."
+    },
+    {
+      "id": 2,
+      "title": "Single Query Rule",
+      "summary": "One canonical booking query serves every surface (quote, pack, dispatch, invoice, return, review). Different screens cannot run divergent queries on the same booking.",
+      "enforcement": "Data Layer (bookingQuery.ts)",
+      "violation_penalty": "Screen inconsistency defects."
+    },
+    {
+      "id": 3,
+      "title": "Nothing is deleted",
+      "summary": "Hard deletes are banned. Every entity has a named terminal state: Cancel, Void, Reverse, Retire, Archive, Deactivate, or Close.",
+      "enforcement": "Database Grants (REVOKE DELETE on priced lines, bookings, invoices, payments, audit_events) and Triggers",
+      "violation_penalty": "Database rejection (SQL 42501 / trigger exception)."
+    },
+    {
+      "id": 4,
+      "title": "Payments are immutable",
+      "summary": "A recorded payment cannot be updated or deleted. Corrections are ledger reversal rows referencing the original payment ID.",
+      "enforcement": "Triggers (trg_payments_reject_update, trg_payments_reject_delete)",
+      "violation_penalty": "Transaction rollback."
+    },
+    {
+      "id": 5,
+      "title": "Deposits are liabilities",
+      "summary": "Security deposits are held in trust as liabilities. They never enter Rental Total, never reduce Outstanding balance, and never count as rental payments.",
+      "enforcement": "Schema Check Constraints & Financial Engine arithmetic",
+      "violation_penalty": "Audit failure and accounting misstatement."
+    },
+    {
+      "id": 6,
+      "title": "Warehouse sees no money",
+      "summary": "Staff in warehouse and logistics roles cannot view rates, line totals, deposits, or invoice balances. Enforced at database level via Row Level Security and masking views (_v).",
+      "enforcement": "Database RLS & Column Grants",
+      "violation_penalty": "Information security breach."
+    },
+    {
+      "id": 7,
+      "title": "Store AD in UTC",
+      "summary": "All database timestamps and business date calculations are stored in UTC Anno Domini (AD). Bikram Sambat (BS) is rendered exclusively for client display, never stored.",
+      "enforcement": "Database Schema & Localization Engine (bs.ts)",
+      "violation_penalty": "Date drift and temporal corruption."
+    },
+    {
+      "id": 8,
+      "title": "Every write carries a client UUID",
+      "summary": "Every mutation submitted by UI, mobile, or offline queue must include a client-generated UUID for replay-safe idempotency. Duplicate submissions are safely discarded.",
+      "enforcement": "Database Unique Constraints on client_uuid",
+      "violation_penalty": "Duplicate line creation prevented."
+    },
+    {
+      "id": 9,
+      "title": "Days mandatory on every priced line",
+      "summary": "Duration in days must be explicitly specified (minimum 1) on every priced rental line. Days cannot be omitted or defaulted to null.",
+      "enforcement": "Database Check Constraint (days >= 1)",
+      "violation_penalty": "Insert/Update constraint violation."
+    },
+    {
+      "id": 10,
+      "title": "Discount approval & 25% hard cap",
+      "summary": "Discounts <= 10% are standard. Discounts > 10% require a reason >= 10 characters and a named authorizing approver (Manager or Owner). Hard cap is 25% across all stacked discounts with zero role bypass, including Owner.",
+      "enforcement": "Database Trigger (trg_booking_discounts_stacking) & Engine Gate",
+      "violation_penalty": "Discount rejected by database trigger."
+    },
+    {
+      "id": 11,
+      "title": "Never colour alone",
+      "summary": "Status and alerts must always render Icon + Label + Colour. Colour alone is never the sole carrier of meaning, ensuring accessibility and visibility on monochrome/greyscale screens.",
+      "enforcement": "Design System Primitives (StatusToken)",
+      "violation_penalty": "Accessibility gate failure."
+    },
+    {
+      "id": 12,
+      "title": "Errors inline and persistent",
+      "summary": "Validation and submission errors must be rendered inline next to the failing input and persist until resolved. Toast notifications are strictly reserved for success confirmations.",
+      "enforcement": "UI Component Standards",
+      "violation_penalty": "UX audit failure."
+    },
+    {
+      "id": 13,
+      "title": "No platform branch in layout components",
+      "summary": "Layout components branch on screen width or capability (e.g., touch target, pointer capability), never on operating system or device user-agent strings.",
+      "enforcement": "Frontend Architecture",
+      "violation_penalty": "Responsive layout fragmentation."
+    },
+    {
+      "id": 14,
+      "title": "Width decides (768 / 1180)",
+      "summary": "Responsive layouts adapt strictly by viewport width breakpoints (< 768 phone, 768-1180 tablet, >= 1180 desktop). Never branch on orientation alone.",
+      "enforcement": "Viewport Engine (useViewport)",
+      "violation_penalty": "Layout overlap on mobile/tablet."
+    },
+    {
+      "id": 15,
+      "title": "44x44 touch targets",
+      "summary": "All interactive elements, buttons, chips, and toggles must meet the 44x44 pixel minimum touch target size across all devices, including desktop monitors.",
+      "enforcement": "CSS Tokens / Primitives",
+      "violation_penalty": "Touch usability rejection."
+    },
+    {
+      "id": 16,
+      "title": "Validated computation before AI display",
+      "summary": "No AI assistant panel or automated recommendation may render figures or kit configurations until validated by an underlying domain computation engine.",
+      "enforcement": "AI Engine Architecture",
+      "violation_penalty": "Unverified recommendation block."
+    },
+    {
+      "id": 17,
+      "title": "Strict vocabulary: Clients, never Customers",
+      "summary": "The word 'customer' is strictly banned from all UI screens, notifications, invoices, and system code. They are always referred to as 'Clients'.",
+      "enforcement": "Copy / Linter / Engine Validation",
+      "violation_penalty": "Brand tone violation."
+    }
+  ],
+  "canonical_lifecycle": {
+    "stages": [
+      { "order": 0, "name": "Quote", "client_label": "Quote", "meaning": "Priced, not committed. Reserves nothing." },
+      { "order": 1, "name": "Booked", "client_label": "Confirmed", "meaning": "Committed. Gear reserved, calendar held, serials assigned." },
+      { "order": 2, "name": "Packed", "client_label": "Ready for pickup", "meaning": "Packing complete, ready to leave facility." },
+      { "order": 3, "name": "On Rent", "client_label": "With you", "meaning": "All items with the client." },
+      { "order": 4, "name": "Returned", "client_label": "Returned", "meaning": "All items physically received back." },
+      { "order": 5, "name": "Closed", "client_label": "Complete", "meaning": "Money settled, deposit resolved, nothing open." }
+    ],
+    "jobs": [
+      { "name": "Pack", "runs_at": "Booked", "sets": "Packed", "sessions": false, "blocks_booking": true },
+      { "name": "Handover", "runs_at": "Packed", "sets": "On Rent", "sessions": true, "blocks_booking": true },
+      { "name": "Return", "runs_at": "On Rent", "sets": "Returned", "sessions": true, "blocks_booking": true },
+      { "name": "Reset", "runs_at": "Returned", "sets": null, "sessions": false, "blocks_booking": false, "absorbs": "Cleaning" }
+    ],
+    "item_states": ["Ready", "Picked Up", "Returned", "Missing"]
+  },
+  "financial_invariants": {
+    "currency": "NPR",
+    "internal_unit": "Paisa (1 NPR = 100 Paisa)",
+    "rounding": "Half-Up per displayed step",
+    "vat_rate": 0.13,
+    "grouping": "South Asian Lakh (e.g. 1,85,000)",
+    "discount_approval_threshold_pct": 10,
+    "discount_max_cap_pct": 25,
+    "damage_owner_approval_threshold_npr": 25000,
+    "reference_case_id": "BK-2026-0715"
+  }
+}

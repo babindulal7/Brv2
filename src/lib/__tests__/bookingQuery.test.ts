@@ -141,7 +141,7 @@ function rawBooking(over: Partial<RawBooking> = {}): RawBooking {
     pickup_at: '2026-08-14T04:15:00+00:00',
     return_at: '2026-08-18T10:30:00+00:00',
     actual_return_at: null,
-    delivery_type: 'Customer Pickup',
+    delivery_type: 'Client Pickup',
     pickup_location: 'Thamel warehouse',
     return_location: 'Lalitpur yard',
     quote_expires_at: null,
@@ -304,7 +304,7 @@ describe('booking header → CanonicalBooking', () => {
       pickupAtAd: '2026-08-14T04:15:00+00:00',
       returnAtAd: '2026-08-18T10:30:00+00:00',
       actualReturnAtAd: null,
-      deliveryType: 'Customer Pickup',
+      deliveryType: 'Client Pickup',
       pickupLocation: 'Thamel warehouse',
       returnLocation: 'Lalitpur yard',
       version: 4,
@@ -1236,41 +1236,42 @@ describe('the booking discount cap', () => {
     })
   }
 
-  it('takes the cap from money.ts rather than re-typing 25', () => {
+  it('takes the ceiling from money.ts rather than re-typing it', () => {
     // If DISCOUNT_CAP ever moves, the module and this suite move together.
-    expect(DISCOUNT_CAP).toBe(25)
+    // 100 since 31 Aug 2026 — the gate is gone (D3); what remains is the
+    // arithmetic ceiling a percentage has, not a cap anyone chose.
+    expect(DISCOUNT_CAP).toBe(100)
   })
 
-  it('prices a stacked discount that lands exactly on the cap', async () => {
-    const b = await withDiscountRows([
-      discount({ id: 'd1', percent: 20 }),
-      discount({ id: 'd2', discount_source: 'Membership', percent: 5 }),
-    ])
-    expect(b.engineInput.discountPercent).toBe(25)
-    expect(b.discountIntegrity?.violation).toBeNull()
-    expect(priceCanonicalBooking(b, PRICEABLE).ok).toBe(true)
-  })
-
-  it('REFUSES a stacked discount one point over the cap', async () => {
-    // Neither row breaks the per-row cap; the SUM does. 0002:610 — "Capped at 25
-    // per row and at 25 summed across stacked rows."
+  it('prices a stacked discount that would once have broken the old 25% cap', async () => {
+    // 20 + 6 = 26 was the old refusal case. Ungated, it simply prices.
     const b = await withDiscountRows([
       discount({ id: 'd1', percent: 20 }),
       discount({ id: 'd2', discount_source: 'Membership', percent: 6 }),
     ])
+    expect(b.engineInput.discountPercent).toBe(26)
+    expect(b.discountIntegrity?.violation).toBeNull()
+    expect(priceCanonicalBooking(b, PRICEABLE).ok).toBe(true)
+  })
+
+  it('REFUSES a stacked discount past 100% — a negative price, not a discount', async () => {
+    const b = await withDiscountRows([
+      discount({ id: 'd1', percent: 60 }),
+      discount({ id: 'd2', discount_source: 'Membership', percent: 41 }),
+    ])
     const totals = priceCanonicalBooking(b, PRICEABLE)
     expect(totals.ok).toBe(false)
     if (totals.ok) return
-    expect(totals.reason).toMatch(/26% discount, above the 25% cap/)
+    expect(totals.reason).toMatch(/101% discount, above the 100% cap/)
   })
 
   it('does NOT clamp — the stored sum is reported unchanged', async () => {
-    // Clamping to 25 would invent a number matching neither the rows (40) nor
-    // the rules (which say 40 cannot be there at all), and would erase a data
-    // defect on the very screen most likely to catch it.
-    const b = await withDiscountRows([discount({ percent: 40 })])
-    expect(b.engineInput.discountPercent).toBe(40)
-    expect(b.discountIntegrity?.sumPercent).toBe(40)
+    // Clamping would invent a number matching neither the rows (140) nor the
+    // rules, and would erase a data defect on the very screen most likely to
+    // catch it.
+    const b = await withDiscountRows([discount({ percent: 140 })])
+    expect(b.engineInput.discountPercent).toBe(140)
+    expect(b.discountIntegrity?.sumPercent).toBe(140)
     expect(b.discountIntegrity?.sumPercent).not.toBe(DISCOUNT_CAP)
   })
 
@@ -1278,7 +1279,7 @@ describe('the booking discount cap', () => {
     // A refusal alone hides WHAT is wrong from the screen; the flag alone would
     // still let a total render. Both directions, or the inconsistency is not
     // actually visible.
-    const b = await withDiscountRows([discount({ percent: 40 })])
+    const b = await withDiscountRows([discount({ percent: 140 })])
     expect(b.discountIntegrity?.violation).toBe('Over cap')
     expect(b.discountIntegrity?.cap).toBe(DISCOUNT_CAP)
     expect(b.discountIntegrity?.message).toMatch(/not clamped/)
@@ -1331,12 +1332,12 @@ describe('the booking discount cap', () => {
     const b = await withDiscountRows([discount({ percent: 7 })])
     const tampered: CanonicalBooking = {
       ...b,
-      engineInput: { ...b.engineInput, discountPercent: 60 },
+      engineInput: { ...b.engineInput, discountPercent: 160 },
     }
     const totals = priceCanonicalBooking(tampered, PRICEABLE)
     expect(totals.ok).toBe(false)
     if (totals.ok) return
-    expect(totals.reason).toMatch(/outside the permitted range of 0% to 25%/)
+    expect(totals.reason).toMatch(/outside the permitted range of 0% to 100%/)
   })
 })
 

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -25,7 +27,9 @@ import {
   profitToCashGap,
   collectionUpside,
   OVERDUE,
-} from '../../data/liquidityReports'
+  getLiquiditySummary,
+  type LiquiditySummary,
+} from '../../lib/queries/liquidity'
 
 /**
  * **Finance ▸ Reports ▸ Cash Flow** — built from the `Babin Cash Flow Report`
@@ -69,7 +73,22 @@ const th = {
   fontWeight: 600,
   borderBottom: '1px solid var(--divider)',
 }
+/*
+ * `height` on a table cell behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") stated with the token rather than reached by inflating the
+ * padding; the horizontal padding is left exactly as it was.
+ *
+ * The floor is a data-integrity rule and not a density preference. A row under
+ * 56px cannot contain a 44px hit area, so the target overhangs the rows either
+ * side, and where two rows overlap the later one in the DOM wins the tap. This
+ * statement carries no row control today, which is the reason the floor belongs
+ * on the shared constant rather than on the day somebody adds a drill-through
+ * to a cash line: the row is already safe when that happens. `num` derives from
+ * this object and the `<th scope="row">` label cells spread it, so a line rises
+ * as a whole row instead of one half of it.
+ */
 const td = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--fs-body)',
   borderBottom: '1px solid var(--divider)',
@@ -111,10 +130,22 @@ function cashFlowCsv(): ReportCsvRow[] {
 }
 
 export default function CashFlowReport() {
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()
+  const [, setSummary] = useState<LiquiditySummary | null>(null)
+
+  useEffect(() => {
+    if (!canSeeMoney) return
+    let active = true
+    void getLiquiditySummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [canSeeMoney])
 
   // Law 6: a money-blind role is not shown a masked figure — the page is not
   // built. The bespoke card that used to say so is now the shared RESTRICTED
@@ -252,50 +283,52 @@ export default function CashFlowReport() {
 
       <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`Cash movement · ${period}`}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <caption style={{ captionSide: 'top', textAlign: 'left', paddingBottom: 8, fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>
-              Cash basis. Deposits held in trust are excluded from every line below.
-            </caption>
-            <thead>
-              <tr>
-                <th style={th} scope="col">Line</th>
-                <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">Opening cash balance</th>
-                <td style={num}>{money(OPENING_CASH)}</td>
-              </tr>
-              {CASH_LINES.map((l) => (
-                <tr key={l.label}>
-                  <th style={{ ...td, fontWeight: 400 }} scope="row">
-                    {l.label}
-                    {l.detail && (
-                      <span style={{ display: 'block', fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>{l.detail}</span>
-                    )}
-                  </th>
-                  <td style={{ ...num, color: (l.amount as number) < 0 ? 'var(--danger-text)' : 'var(--text-1)' }}>
-                    {signed(l.amount)}
-                  </td>
+          <DataTableShell ariaLabel={`Cash movement · ${period}`}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <caption style={{ captionSide: 'top', textAlign: 'left', paddingBottom: 8, fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>
+                Cash basis. Deposits held in trust are excluded from every line below.
+              </caption>
+              <thead>
+                <tr>
+                  <th style={th} scope="col">Line</th>
+                  <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
                 </tr>
-              ))}
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">Net operating cash</th>
-                <td style={{ ...num, fontWeight: 600 }}>{signed(netOperatingCash())}</td>
-              </tr>
-              <tr>
-                <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)' }} scope="row">
-                  Net cash movement
-                </th>
-                <td style={{ ...num, fontWeight: 700, borderTop: '2px solid var(--border)' }}>{signed(netCash())}</td>
-              </tr>
-              <tr>
-                <th style={{ ...td, fontWeight: 700, borderBottom: 'none' }} scope="row">Closing cash balance</th>
-                <td style={{ ...num, fontWeight: 700, borderBottom: 'none' }}>{money(closingCash())}</td>
-              </tr>
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">Opening cash balance</th>
+                  <td style={num}>{money(OPENING_CASH)}</td>
+                </tr>
+                {CASH_LINES.map((l) => (
+                  <tr key={l.label}>
+                    <th style={{ ...td, fontWeight: 400 }} scope="row">
+                      {l.label}
+                      {l.detail && (
+                        <span style={{ display: 'block', fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>{l.detail}</span>
+                      )}
+                    </th>
+                    <td style={{ ...num, color: (l.amount as number) < 0 ? 'var(--danger-text)' : 'var(--text-1)' }}>
+                      {signed(l.amount)}
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">Net operating cash</th>
+                  <td style={{ ...num, fontWeight: 600 }}>{signed(netOperatingCash())}</td>
+                </tr>
+                <tr>
+                  <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)' }} scope="row">
+                    Net cash movement
+                  </th>
+                  <td style={{ ...num, fontWeight: 700, borderTop: '2px solid var(--border)' }}>{signed(netCash())}</td>
+                </tr>
+                <tr>
+                  <th style={{ ...td, fontWeight: 700, borderBottom: 'none' }} scope="row">Closing cash balance</th>
+                  <td style={{ ...num, fontWeight: 700, borderBottom: 'none' }}>{money(closingCash())}</td>
+                </tr>
+              </tbody>
+            </table>
+          </DataTableShell>
 
           <p style={{ marginTop: 11, padding: '9px 11px', ...cardStyle, fontSize: 'var(--fs-meta)', color: 'var(--text-2)' }}>
             Deposits held in trust ({money(DEPOSITS_HELD)}) are tracked separately and excluded above —

@@ -19,7 +19,7 @@
  *    matters for `exactOptionalPropertyTypes`: an un-blocked client must have the
  *    key ABSENT, not present-and-false.
  *
- * 2. **`getClientRecordByCode` addresses a client the way the app links to it.**
+ * 2. **`getClientRecord` addresses a client the way the app links to it.**
  *    Every `/clients/:id` link carries `client_code`, so a lookup by uuid could
  *    never resolve one. It must also return the uuid, because
  *    `invoicesForClient` and `bookings.client_id` take that and silently return
@@ -109,7 +109,7 @@ const {
   toClientRecord,
   listClients,
   listClientRecords,
-  getClientRecordByCode,
+  getClientRecord,
   listMembershipPlans,
   UNJOINED_MEMBERSHIP_PLACEHOLDER,
 } = await import('../../../lib/queries/clients')
@@ -162,7 +162,6 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   }
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const asRow = (o: Record<string, unknown>) => o as any
 
 describe('toClientRecord — the block flag (migration 0054)', () => {
@@ -227,12 +226,12 @@ describe('toClientRecord — membership, where the last fabricated value still l
 
   it('carries the truthful answer on ClientProfile, where the type can hold it', async () => {
     db.state.single = row({ membership_level: null })
-    await expect(getClientRecordByCode('CL-2026-0001')).resolves.toMatchObject({
+    await expect(getClientRecord('CL-2026-0001')).resolves.toMatchObject({
       membershipKnown: false,
     })
 
     db.state.single = row({ membership_level: 'Elite' })
-    await expect(getClientRecordByCode('CL-2026-0001')).resolves.toMatchObject({
+    await expect(getClientRecord('CL-2026-0001')).resolves.toMatchObject({
       membershipKnown: true,
     })
   })
@@ -262,17 +261,44 @@ describe('listClientRecords — the select list', () => {
   })
 })
 
-describe('getClientRecordByCode', () => {
-  it('looks the client up by client_code — the id every /clients/:id link carries', async () => {
+describe('getClientRecord', () => {
+  it('looks a client_code up on client_code — the shape links from inside Clients carry', async () => {
     db.state.single = row()
-    await getClientRecordByCode('CL-2026-0001')
+    await getClientRecord('CL-2026-0001')
     expect(db.state.table).toBe('client_directory_v')
     expect(db.state.calls).toContainEqual(['eq', 'client_code', 'CL-2026-0001'])
   })
 
+  /*
+   * The regression this pair guards, fixed 4 Sep 2026.
+   *
+   * Eight links from OUTSIDE the clients module build `/clients/:id` from the
+   * uuid FK they already hold (`RentalsList.tsx:1834`, `Payments.tsx:854`,
+   * `OperationsQueues.tsx:791`, …), because `bookings.ts:341` and
+   * `finance.ts:404` map `clientId: r.client_id`. Filtering those on
+   * `client_code` could never match — `0055:136` pins the column to
+   * `^C-[0-9]+$` — so every one of them rendered "Client not found".
+   *
+   * The old test asserted the code path and called it "the id every
+   * /clients/:id link carries", which is why a P0 sat behind a green suite.
+   */
+  it('looks a uuid up on id — the shape links from outside Clients carry', async () => {
+    db.state.single = row()
+    await getClientRecord('11111111-1111-4111-8111-111111111111')
+    expect(db.state.table).toBe('client_directory_v')
+    expect(db.state.calls).toContainEqual(['eq', 'id', '11111111-1111-4111-8111-111111111111'])
+    expect(db.state.calls.some((c) => c[1] === 'client_code')).toBe(false)
+  })
+
+  it('resolves a uuid to the same record a code resolves to', async () => {
+    db.state.single = row()
+    const byUuid = await getClientRecord('11111111-1111-4111-8111-111111111111')
+    expect(byUuid?.record.id).toBe('CL-2026-0001')
+  })
+
   it('returns the uuid alongside the record — per-client queries key on it, not on the code', async () => {
     db.state.single = row()
-    const profile = await getClientRecordByCode('CL-2026-0001')
+    const profile = await getClientRecord('CL-2026-0001')
     expect(profile?.id).toBe('11111111-1111-4111-8111-111111111111')
     // The record's own `id` stays the code, which is what the screen renders
     // and what every link is built from.
@@ -281,7 +307,7 @@ describe('getClientRecordByCode', () => {
 
   it('opens a closed account and reports the closure (Law 3 — retained and marked)', async () => {
     db.state.single = row({ deactivated_at: '2026-06-01T00:00:00Z' })
-    const profile = await getClientRecordByCode('CL-2026-0001')
+    const profile = await getClientRecord('CL-2026-0001')
     expect(profile?.deactivatedAtAd).toBe('2026-06-01T00:00:00Z')
     // Not filtered out: a link to a retained account must still resolve.
     expect(db.state.calls.some((c) => c[0] === 'is' && c[1] === 'deactivated_at')).toBe(false)
@@ -289,12 +315,12 @@ describe('getClientRecordByCode', () => {
 
   it('returns null for a code that matches nothing — a missing client is not an error', async () => {
     db.state.single = null
-    await expect(getClientRecordByCode('CL-2026-9999')).resolves.toBeNull()
+    await expect(getClientRecord('CL-2026-9999')).resolves.toBeNull()
   })
 
   it('throws a named failure when the read itself fails', async () => {
     db.state.error = { message: 'JWT expired' }
-    await expect(getClientRecordByCode('CL-2026-0001')).rejects.toThrow(/getClientRecordByCode failed: JWT expired/)
+    await expect(getClientRecord('CL-2026-0001')).rejects.toThrow(/getClientRecord failed: JWT expired/)
   })
 })
 

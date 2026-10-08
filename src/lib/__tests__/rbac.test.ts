@@ -9,8 +9,12 @@ import {
   canApproveDamage,
   canApproveLateFeeWaiver,
   canRecordPayment,
+  canReleaseDeposit,
+  canReversePayment,
   canOverrideCreditLimit,
   canManageSettings,
+  canPublishTeamViews,
+  canExportClientPii,
   canConfirmRental,
   canCreateClient,
   canBlockClient,
@@ -19,6 +23,7 @@ import {
   canWriteFloor,
   canMergeClients,
   canWriteSharedTriage,
+  canApprovePurchase,
 } from '../rbac'
 
 /**
@@ -82,40 +87,36 @@ describe('isStaff', () => {
   })
 })
 
-/* ── Law 10 · discount approval ─────────────────────────────────────────── */
+/* ── Law 10 as amended 31 Aug 2026 — the gate is GONE ───────────────────── */
 
-describe('canApproveDiscount — Law 10', () => {
-  it('caps at 25% for everyone, Owner included — no role bypass', () => {
-    expect(canApproveDiscount('Owner', 25)).toBe(true)
-    expect(canApproveDiscount('Owner', 25.01)).toBe(false)
-    expect(canApproveDiscount('Owner', 30)).toBe(false)
-    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 26)).toBe(false)
-  })
-
-  it('lets Admin and Manager approve up to 15% and no further', () => {
-    for (const role of ['Admin', 'Manager'] as const) {
+describe('canApproveDiscount — ungated (D3, Babin 31 Aug: "don\'t put any gate on discount")', () => {
+  it('no cap, no role tier, no offline block — every role, any sane percent, online or not', () => {
+    for (const role of ALL_ROLES) {
+      expect(canApproveDiscount(role, 0)).toBe(true)
       expect(canApproveDiscount(role, 15)).toBe(true)
-      expect(canApproveDiscount(role, 15.01)).toBe(false)
-      expect(canApproveDiscount(role, 20)).toBe(false)
-    }
-    // Owner keeps the band between 15 and 25 to itself.
-    expect(canApproveDiscount('Owner', 20)).toBe(true)
-  })
-
-  it('gives no other role any approval authority', () => {
-    for (const role of ['Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client'] as const) {
-      expect(canApproveDiscount(role, 1)).toBe(false)
-      expect(canApproveDiscount(role, 15)).toBe(false)
+      expect(canApproveDiscount(role, 26)).toBe(true)
+      expect(canApproveDiscount(role, 100)).toBe(true)
+      expect(canApproveDiscount(role, 5, false)).toBe(true)
     }
   })
 
-  it('treats a zero discount as needing no approval at all', () => {
-    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 0)).toBe(true)
+  /*
+   * R3-1, fixed 16 Aug 2026 and DELIBERATELY KEPT through the gate removal:
+   * a negative percent was once approvable by anyone, the external Client
+   * included. A negative discount is a price increase, and removing the gate
+   * does not reopen that hole.
+   */
+  it('still refuses a NEGATIVE discount for every role — a price increase is not a discount', () => {
+    for (const role of ALL_ROLES) {
+      expect(canApproveDiscount(role, -5)).toBe(false)
+      expect(canApproveDiscount(role, -0.01)).toBe(false)
+    }
+    expect(canApproveDiscount('Client', -5)).toBe(false)
+    expect(canApproveDiscount('Driver', -100)).toBe(false)
   })
 
-  it('blocks approval offline for every role, including Owner', () => {
-    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 5, false)).toBe(false)
-    expect(canApproveDiscount('Owner', 0, false)).toBe(false)
+  it('still refuses above 100% — a negative price, not a discount', () => {
+    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 100.01)).toBe(false)
   })
 })
 
@@ -147,6 +148,36 @@ describe('canRecordPayment', () => {
 
   it('is blocked offline', () => {
     for (const role of ALL_ROLES) expect(canRecordPayment(role, false)).toBe(false)
+  })
+})
+
+describe('canReleaseDeposit', () => {
+  it('is Owner, Admin, Manager, and Accounts (M+ and Accounts per PERMISSIONS.md)', () => {
+    const allowed = ALL_ROLES.filter((r) => canReleaseDeposit(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Accounts'])
+  })
+
+  it('refuses money-blind roles and Coordinator', () => {
+    expect(canReleaseDeposit('Warehouse')).toBe(false)
+    expect(canReleaseDeposit('Technician')).toBe(false)
+    expect(canReleaseDeposit('Driver')).toBe(false)
+    expect(canReleaseDeposit('Client')).toBe(false)
+    expect(canReleaseDeposit('Coordinator')).toBe(false)
+  })
+
+  it('is blocked offline', () => {
+    for (const role of ALL_ROLES) expect(canReleaseDeposit(role, false)).toBe(false)
+  })
+})
+
+describe('canReversePayment', () => {
+  it('is Owner, Admin and Manager only, matching payment_reversals RLS', () => {
+    const allowed = ALL_ROLES.filter((r) => canReversePayment(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager'])
+  })
+
+  it('is blocked offline', () => {
+    for (const role of ALL_ROLES) expect(canReversePayment(role, false)).toBe(false)
   })
 })
 
@@ -187,6 +218,13 @@ describe('canManageSettings', () => {
   })
 })
 
+describe('canPublishTeamViews and canExportClientPii (7 Oct 2026)', () => {
+  it('are Owner, Admin and Manager — and nobody else, Client included', () => {
+    expect(ALL_ROLES.filter((r) => canPublishTeamViews(r))).toEqual(['Owner', 'Admin', 'Manager'])
+    expect(ALL_ROLES.filter((r) => canExportClientPii(r))).toEqual(['Owner', 'Admin', 'Manager'])
+  })
+})
+
 /* ── the external role is never granted anything ────────────────────────── */
 
 describe('the Client role holds no staff capability', () => {
@@ -197,7 +235,8 @@ describe('the Client role holds no staff capability', () => {
     expect(canVoidInvoice('Client')).toBe(false)
     expect(canOverrideCreditLimit('Client')).toBe(false)
     expect(canManageSettings('Client')).toBe(false)
-    expect(canApproveDiscount('Client', 5)).toBe(false)
+    // canApproveDiscount is deliberately absent here since 31 Aug 2026: with
+    // the gate gone there is no approval capability to withhold from anyone.
     expect(isStaff('Client')).toBe(false)
   })
 })
@@ -429,17 +468,50 @@ describe('canWriteSharedTriage', () => {
   })
 
   /*
-   * ⚠ This test PINS A KNOWN-BROAD RULE, deliberately. purchase_requests_all is
-   * auth_is_staff() on the live project, so mirroring it admits Driver and
-   * Technician to `purchase.approve` -- a spend-authorising verb.
-   *
-   * It is asserted rather than quietly narrowed because the fix belongs in the
-   * RLS policy, not here (PLAN.md §4.29). When that policy is tightened, THIS
-   * TEST SHOULD FAIL -- that failure is the signal to split the set, and is the
-   * only thing standing between a policy change and a silent app/DB drift.
+   * Driver and Technician remain CORRECTLY admitted here: this predicate backs
+   * cases, crew, and the non-deciding purchase-request verbs, all still
+   * `auth_is_staff()` live. The spend-authorising verb this breadth used to
+   * leak into (`purchase.approve`) split off to `canApprovePurchase` on
+   * 23 Aug 2026 when 0064's restrictive policy landed -- see that describe.
    */
-  it('admits Driver and Technician -- the known-broad case, pinned on purpose', () => {
+  it('admits Driver and Technician -- correct for the non-deciding triage verbs', () => {
     expect(canWriteSharedTriage('Driver')).toBe(true)
     expect(canWriteSharedTriage('Technician')).toBe(true)
+  })
+})
+
+describe('canApprovePurchase', () => {
+  it('mirrors purchase_requests_approval_rank (0069) -- Owner and Manager only', () => {
+    const allowed = ALL_ROLES.filter((r) => canApprovePurchase(r))
+    expect(allowed).toEqual(['Owner', 'Manager'])
+  })
+
+  /* The whole point of 0064: the tier that cannot READ estimated_unit_cost
+     (Law 6 money-blind) no longer decides the spend it describes. */
+  it('denies the money-blind staff roles and the external Client', () => {
+    for (const role of ['Warehouse', 'Technician', 'Driver', 'Client'] as const) {
+      expect(canApprovePurchase(role)).toBe(false)
+    }
+  })
+
+  /*
+   * 0069 (25 Aug 2026) narrowed past the money-visibility tier: Admin,
+   * Coordinator and Accounts may SEE the cost and do every non-deciding verb,
+   * but committing the business to the spend is an owner/manager act. So the
+   * approvers are still a strict subset of triage, and the gap is now the
+   * three money-blind staff plus those three deciding-excluded roles.
+   */
+  it('is a strict subset of canWriteSharedTriage, excluding six roles', () => {
+    const triage = ALL_ROLES.filter((r) => canWriteSharedTriage(r))
+    const approvers = ALL_ROLES.filter((r) => canApprovePurchase(r))
+    expect(approvers.every((r) => triage.includes(r))).toBe(true)
+    expect(triage.filter((r) => !approvers.includes(r))).toEqual([
+      'Admin',
+      'Coordinator',
+      'Warehouse',
+      'Technician',
+      'Accounts',
+      'Driver',
+    ])
   })
 })

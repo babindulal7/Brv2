@@ -24,16 +24,23 @@ Break any of these and the work gets reverted, however good it looks.
 | 7 | **Store AD in UTC.** BS is rendered, never stored. All logic on AD | Schema + localization |
 | 8 | **Every write carries a client UUID.** Duplicates rejected | Data layer + offline |
 | 9 | **Days mandatory on every priced line** — explicitly `1`, never by omission | Schema |
-| 10 | **Discount > 10%** needs reason ≥10 chars **and** a named approver; 25% hard cap; **no role bypass, including Owner** → DB constraint, not app check | Schema |
+| 10 | **Discounts are UNGATED.** No reason, no approver, no cap below 100%, no role tier — any staff role that can write a discount may write one. What remains is arithmetic validity only: negative refused (a price rise is not a discount — the R3-1 hole stays closed) and >100% refused (a negative price). *Ruled first on **20 Aug 2026** — keep discounts, remove the rules, app and migration — in a session with no repo access, so it never reached this file until the 31 Aug rules check. Amended twice on 31 Aug 2026: D3 (ruled 30 Aug, "copy Booqable") was first confirmed as the policies alternative, then overridden by Babin's final word — "don't put any gate on discount." The policies draft (0073) was deleted unapplied. The app half is done (`lib/discount.ts` · `money.ts:discountGate` · `rbac.ts:canApproveDiscount` · both Tools calculators); the DB half, `0074_drop_discount_gate.sql`, was **APPLIED to the live project 31 Aug 2026** with Babin's explicit in-session approval — `booking_discounts_hard_cap`, `booking_discounts_over_ten_needs_reason_and_approver`, `invoices_discount_cap` and `invoices_discount_over_ten_needs_reason_and_approver` are gone, replaced by `*_percent_sane` (0–100). `0075_drop_invoice_lines_discount_gate.sql` finished the job the same session — 0074 had not named `invoice_lines`, which carried its own copy of both halves, so for one session a >10% discount was accepted on the booking and refused at invoicing. **All three discount-writing tables now carry the identical rule** — `booking_discounts_percent_sane`, `invoices_discount_percent_sane`, `invoice_lines_discount_percent_sane`, each `0–100`. **Zero `over_ten_needs_reason` checks remain anywhere.** Still capped at ≤25 and deliberately untouched, because none is a per-discount ceremony: `coupons.discount_percent`, `membership_plans.*_discount_pct`, `user_approval_authorities.max_discount_pct` — the first two ceiling a product configured once, the third defines a role authority that `rbac.ts:canApproveDiscount` now ignores. The exclusive-source stacking matrix (Student/College/Named-client rates) is a separate 0002 ruling and survives.* | Schema |
 | 11 | **Never colour alone** — every status is icon + label + colour | Components |
 | 12 | **Errors inline and persistent.** Toasts carry successes only | Components |
 | 13 | **No platform branch in a layout component.** Branch on capability | Everywhere |
-| 14 | **Width decides** — 768 / 1180. Never orientation | Layout |
+| 14 | **Width decides** — 768 / ~~1180~~ **1280**. Never orientation. *Amended 31 Aug 2026 (§4.38a): desktop begins at 1280, tablet is 768–1279 — per `docs/DESIGN_DIRECTION_SPEC_v4.1.md` §7.7 and every rail built since 30 Aug (`SideRail` at exactly 1280, driven in the browser). The code follow-up is landed: commit `8a16cd7` moved the pair to `src/lib/breakpoints.ts` (`BP = { phone: 768, desktop: 1280 }`), `device.ts` re-exports it, and `__tests__/breakpoints.test.ts` guards TS / `responsive.css` / `index.html` agreement — verified green 31 Aug. README, SCREENS §07 and WIREFRAME_RULINGS §7 are annotated.* | Layout |
 | 15 | **44×44 touch targets** on every device, desktop included | Components |
 | 16 | **No AI panel renders** until backed by a validated computation | Screens |
 | 17 | **The word "customer" appears nowhere in the UI.** They are clients | Copy |
 
 **Gate accessibility failures are release blockers**, not backlog items.
+
+**Permissions have their own law file.** [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md) is the
+single authority for *who may do what* — nine roles, the capability catalogue, money visibility
+(Law 6 in detail), the approval gates and the Owner-only list. Its ten laws **P1–P10** sit beside
+the seventeen above and do not replace them. Read it before changing any `rbac.ts` predicate, any
+RLS policy, or any capability string. **Its §16 records where it is wrong**: the rulings hold, but
+its repo-side catalogue was measured at 26% accurate on 7 Sep, so verify a row before building it.
 
 ---
 
@@ -135,17 +142,50 @@ The critical path. 60+ specs assume tables that have never been written down.
       The three that remain are `portal_users`, `portal_sessions`, `portal_auth_challenges` —
       deny-all to everyone including the owner, so **the Client Portal cannot function**; they
       need their own non-`system_role` auth scheme and the session→`client_id` binding ruled.
-- [x] Column-level money hiding for Warehouse (law 6) — **ENFORCED.**
-      → `0061` applied (masking views created) and `0062` applied on 07 Oct 2026.
-      Blanket table-level SELECT revoked from `authenticated` on `bookings`, `booking_lines`,
-      `products`, and `product_units`; only non-money columns granted. Money columns denied
-      with 42501 on base tables and masked as `null` through `_v` views for money-blind roles.
+- [~] Column-level money hiding for Warehouse (law 6) — **ARMED ON 8 TABLES, open on the rest.**
+      *Re-verified against the live database 1 Sep 2026 (read-only, then a role-simulated probe).*
+      `has_table_privilege(authenticated, …, 'SELECT')` is now **false** on `bookings` (27 column
+      grants), `products` (35), `product_units` (29), `booking_lines` (19), `accessories` (11),
+      `booking_transport` (12), `maintenance_records` (20) and `vehicle_fuel_logs` (10) — plus
+      `staff_auth_pins`, denied outright. `0062` armed the first four; **`0077` (applied 1 Sep,
+      §4.38-era)** armed the last four, the I5 breaches. The remaining ~30 money base tables still
+      carry the blanket grant, so their `_v` mask stays bypassable — that is what keeps this `[~]`
+      and not `[x]`.
+      ⚠ **The three reads this entry named as proof are now refused.** Probed as `authenticated`
+      inside a rolled-back transaction: `bookings.deposit_required`, `booking_lines.rate` and
+      `products.daily_rate` each raise **42501**, while `bookings.project` still reads — so the
+      revoke is armed and is not over-broad. The 16 Aug text below is kept under Law 3 as the
+      record of what was true then; it is no longer the live state.
+
+  <details><summary>Superseded — the 16 Aug 2026 finding, kept verbatim</summary>
+
+  **NOT ENFORCED. Downgraded from `[~]` to MISSING on 16 Aug 2026 by executing as a Warehouse
+  session** (see the gate verdict).
+      → The 21 `_v` views are correct and do mask (`booking_lines_v.rate` reads `null` for
+      Warehouse). **The `revoke select (col)` half is a no-op**: `authenticated` holds
+      table-level SELECT, which covers every column, so the column revokes never took —
+      `pg_attribute.attacl` is null on all of them. A Warehouse session reads
+      `bookings.deposit_required`, `booking_lines.rate` and `products.daily_rate` off the base
+      tables today. `0019:62-72` warned the views would be "dead code sitting next to the
+      tables it was written to guard" — that is **no longer true** (9 `_v` reads exist in
+      `src/`, listed in §4.28), but the guard beside them was never armed.
+      **Blocked on §4.28** — the fix breaks base-table reads until 10 call sites move to `_v`.
+  *(That blocker did not materialise for the eight: `0062` moved its call sites, and `0077`
+  found zero call sites to move.)*
+  </details>
 - [x] Indexes: lifecycle-order status sort, AD date sort, GIST range overlap, serial lookup, `client_uuid` unique
       → All present, correctly re-created after the `0015` enum rebuild; 85 `client_uuid`
       unique constraints.
 - [~] Seed data **generated through the engines**, never hand-typed
       → `0047_seed_reference_corpus.sql` is now generated by `src/lib/seed.ts` driving the real
-      financial engine (was hand-typed SQL). Unapplied.
+      financial engine (was hand-typed SQL). **"Unapplied" is true of the migration and false
+      of the data** — corrected 16 Aug 2026. The file has no row in
+      `supabase_migrations.schema_migrations`, but its rows ARE live: its first client,
+      `client_uuid a8c85792-…c5f7`, is `C-34` "Sagarmatha Pictures Pvt. Ltd.", created 12 Aug.
+      It went in by a route that records no migration (`scripts/execute-generated-sql.mjs`).
+      Two audits on 15 Aug read the bare word "unapplied" here and in the file header,
+      concluded the database was empty, and built their central recommendation on it. Leave it
+      unapplied — its inserts are idempotent but the file is ONE-SHOT, not a no-op: an unguarded issuance update makes a second apply fail closed (§4.42(a), filed 3 Sep) — and see §4.33(3).
 
 **Gate:** an adversarial reviewer cannot construct a legal write sequence that produces a
 wrong business outcome. Specifically: no path makes a deposit reduce Outstanding; no path
@@ -357,9 +397,9 @@ reading — it needs the actual desaturation check.
       → Both exist and the FAB is present at every width. Phone width provides a
       pointer-reachable 44×44 search trigger button that dispatches ⌘K (closed 7 Oct 2026).
 - [~] Responsive: 390 / 834 / 1180 / 1920
-      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14). The
-      shell header 390px overlap is eliminated (closed 7 Oct 2026). Remaining gap: screens
-      that are fluid rather than deliberately responsive.
+      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14) *(31 Aug 2026: the desktop breakpoint is now 1280 — Law 14 amended, §4.38a; the code reads it from `lib/breakpoints.ts`)*. **Gap: ~59
+      screens never call it** — they are fluid rather than deliberately responsive — and **the
+      shell header overlaps itself at 390**, which alone blocks this item.
 
 **Gate:** identical layout at identical widths; no platform branch anywhere.
 **Gate verdict — ✅ passes.** No platform branch exists in any layout component (Law 13 holds),
@@ -378,36 +418,115 @@ operational workspaces (Packing → Handover → Return → Reset → Cleaning) 
 Per screen: name its page type (Work/List/Record/Report/Settings), delete every panel the
 type disallows, ≤4 KPI cards, ≤1 chart, no AI panels, one primary per row.
 
-**Status 8 Oct 2026 — Phase 6 COMPLETE across all 11 module groups.** Every module implements the 5 states via `<PageBody>`, satisfies page-type rules (≤4 KPI cards, ≤1 chart, no AI panels, single primary button per row), enforces Law 6 money blindness, and has 100% automated test coverage:
+**Status 11 Aug 2026 — every module `[~]`, and they all fail the same way.** All eleven module
+groups exist and are routed. ~~Not one of them draws its five states.~~ Audited per module:
 
-- `Today` hardened: 5 states via `PageBody`, capped to ≤4 KPI cards (`Today.states.test.tsx`).
-- `RentalsList` & `BookingDetail` hardened: wrapped in `PageBody` with all 5 states, Law 6 money blind, wired to `useBooking` & `fetchCanonicalBooking` under Law 2 (`RentalsList.states.test.tsx`, `BookingDetail.states.test.tsx`).
-- `Clients` & `ClientsDirectory` hardened: wrapped in `PageBody` with all 5 states, filter rail, facet counts (`Clients.states.test.tsx`, `ClientsDirectory.filterRail.test.tsx`).
-- `OperationsQueues` & Operational Floor Workspaces (`PackingWorkspace`, `HandoverWorkspace`, `ReturnWorkspace`, `ResetWorkspace`, `EvidenceWorkspace`, `CasesWorkspace`) hardened: wrapped in `PageBody` with all 5 states, preserving live data on failed refresh (`OperationsQueues.states.test.tsx`, `FloorWorkspaces.states.test.tsx`).
-- `Inventory` & `Warehouses` hardened: wrapped in `PageBody` with 5 states; Warehouses capped to ≤4 KPI cards and ≤1 chart (Donut only, non-chart ranked lists) (`Inventory.states.test.tsx`, `Warehouses.states.test.tsx`).
-- `Calendar` hardened: wrapped in `PageBody` with all 5 states across Month & Timeline views (`calendar.states.test.tsx`).
-- `Finance` (`Finance.tsx`, `Payments.tsx`, `Expenses.tsx`) hardened: wrapped in `PageBody` with all 5 states, ≤4 KPI cards, ≤1 chart, Law 6 money gating with `financeRestriction` (`Finance.states.test.tsx`).
-- `Reports` (`Pulse.tsx`, `ReportCatalog.tsx`, `CasesReports.tsx`, `ProductReports.tsx`) hardened: wrapped in `PageBody` with all 5 states, ≤4 KPI cards, ≤1 chart (`Sales by Category` Donut only, other cards converted to clean ranked lists), non-staff Client gating (`Reports.states.test.tsx`).
-- `Settings` (`Settings.tsx`, `Timesheet.tsx`, `Tools.tsx`) hardened: wrapped in `PageBody` with all 5 states, Law 6 money blind (`financial` tab/pane gated), staff-gated (`Settings.states.test.tsx`).
-- **Reachability defects resolved:** routed `/reports/cases` and `/reports/products`; wired previously dead links in `Pulse.tsx`; added entry points to `Warehouses` and `Purchase Requests`.
-- **Page-type rule violations:** Today capped to ≤4 KPI cards; Warehouses and ProductReports capped to ≤1 chart with extra visual cards converted to clean ranked lists.
+> ### ⚠ Re-audited 16 Aug 2026 — two of these lines were false and one was mis-framed
+>
+> Checked by grepping the current tree, not by re-reading this block. **Nothing below was
+> deleted**; the corrections sit beside the claims so the drift is visible.
+>
+> - **`BookingDetail` uses `alert()` ZERO times.** Across all of `src/modules` only **3**
+>   mentions of `alert(` survive and **every one is a comment saying not to use it**
+>   (`AddClientModal.tsx:76,697`, `NewRental.tsx:2284`). The "6 calls" line was true on 11 Aug
+>   and has been false for days.
+> - **"Not one draws its five states" is no longer true.** **42 of the 72** `.tsx` files under
+>   `src/modules` now reference `StateViews` / `EmptyState` / `ErrorState` / `LoadingState`.
+>   Adoption happened across the 12–16 Aug wave and was never recorded here. The per-module
+>   audit below has NOT been redone, so treat it as unverified rather than corrected — the
+>   count only proves the blanket claim wrong.
+> - **The Settings "reachability defect" is mostly a RULING, not a defect.**
+>   `WIREFRAME_RULINGS_2026-08-12` §1 **removed** Settings' Automation · Channels/Communication ·
+>   AI sections ("Removed and parked", spec 11 §11.2). Their data modules
+>   (`data/businessHours.ts` 30 KB, `communicationSettings.ts` 25 KB, `inbox.ts`, `sms.ts`,
+>   `broadcast.ts`, `triggers.ts` — **~92 KB, all with zero importers**) are the residue of
+>   screens that were cut, not screens left unbuilt. Reading this line as a to-do would rebuild
+>   something already ruled out.
 
-**Gate:** every screen classifiable as exactly one page type with all 5 states drawn.
-**Gate verdict — ✅ PASSED.** All screens across all 11 modules draw their five states (`Loading`, `Error`, `Restricted`, `Empty`, `Populated`) via `PageBody`, observe page-type constraints, and pass 2,103 automated tests with zero failures.
+- **Loading and Error states are absent almost everywhere** — Today, Rentals (3 screens),
+  Booking, Inventory, Clients (8 screens), Calendar, Finance, and all four operational
+  workspaces. Restricted is content-omission rather than a drawn state; Offline is inherited
+  from the shell rather than drawn per module. *(11 Aug; see the correction above.)*
+- `Calendar` draws **none** of the five. *(11 Aug, not re-checked.)*
+- ~~`BookingDetail` uses **6 `alert()` calls**~~ — **false as of 16 Aug, see above.**
+- **Reachability defects:** four routed reports have no way in (`Pulse.tsx:126-138` has null
+  `to` values), two report screens are unrouted dead code, and ~4,400 lines of built Settings UI
+  (BusinessHours, CommunicationSettings, Tools, Timesheet) is unreachable. *(The Settings half
+  is a ruling, not a defect — see above. The report half is confirmed: §6.33.)*
+- **Page-type rule violations:** Today ships a 6-KPI strip against a ≤4 cap; Warehouses exceeds
+  the ≤1 chart rule.
+
+### 16 Aug 2026 — the reachability inventory, verified
+
+**Built with no way in — ~98 KB of screens.** Each checked for a route AND for any importer:
+
+| Screen | Size | Why unreachable |
+|---|---|---|
+| `operations/CasesQueue.tsx` | 58 KB | `/operations/cases` renders `CasesWorkspace`. `CasesQueue` is named only inside comments — no import anywhere. |
+| `reports/ProductReports.tsx` | 24 KB | No route, no importer. Three files reference `ProductReports.tsx:452` **in prose**. |
+| `reports/CasesReports.tsx` | 13 KB | No route, no importer, no mention. |
+| `settings/Timesheet.tsx` | 2.7 KB | The only file under `src/modules` with zero references of any kind. |
+
+**Ruled on 12 Aug, never executed — this is the actual remaining Phase 6 work:**
+
+1. **Warehouses was ruled out of Inventory into Settings ▸ Branches & Warehouses**
+   (`WIREFRAME_RULINGS` §1, authority "07 line 4, 11 §11.3"). **Both still exist**:
+   `/inventory/warehouses` → `Warehouses.tsx` (110 KB, `App.tsx:53,291`) and `BranchesPane`
+   (`sections/BranchesWarehouses.tsx`, 55 KB). The duplication the ruling existed to end is
+   still live, and `Warehouses` is also one of the two ≤1-chart violators above.
+2. **Purchase Requests was ruled "archived"** — table and auto-draft rule stay in the schema
+   (authority "07 line 5"). The screen is still built and still routed at
+   `/inventory/purchase-requests` (29 KB).
+
+**⬅ TODO(decision) for the ~190 KB above:** wire it, archive it to `src/archive`, or delete it.
+Not assumed here. Note the house mechanism is `src/archive` (tsconfig: *"Law 3 keeps the
+files"*), so "remove" means move, not `rm`.
+
+**⚠ Source conflict, flagged rather than resolved.** `SCREENS.md` names a **15-section
+"Generation C"** sidebar as "the build target". `data/nav.ts:67-79` declares the **fixed
+eleven** as "the wireframe's order — the order is the specification", and is four days newer.
+Building from `SCREENS.md` would add Automation Center, Notification Center, AI Assistant and
+System Monitor — the same family §1 of the wireframe rulings **cut**. Treat `data/nav.ts` and
+the rulings as authoritative until told otherwise.
+
+**Gate:** every screen classifiable as exactly one page type.
+**Gate verdict — ❌ FAILS, and is currently uncheckable.** No screen declares a page type, and
+no registry exists to check against, so the gate has nothing to evaluate. Closing it needs a
+declaration per screen plus the registry — then the three violations above.
 
 ---
 
 ## Phase 7 — Auth + shift handover
 
-- [x] Login, session, **shift handover**, timesheet
-      → Real Supabase Auth wired in `Login.tsx` / `AuthProvider` (`supabase.auth.signInWithPassword`),
-      reading profile from `users` (migration `0041`). `HandoverSheet.tsx` logout calls real `logout()`.
-      Shift recording and payroll timesheet are explicitly marked unavailable with reason.
+- [~] Login, session, **shift handover**, timesheet
+      → All four screens exist. **Auth is real and has been since 11 Aug 2026** — this entry
+      said "auth is still a local mock, `Login.tsx` never calls
+      `supabase.auth.signInWithPassword`, and `AuthProvider` holds a hardcoded user". All three
+      clauses were false when read on 16 Aug: `Login.tsx:50` calls `signIn` → 
+      `supabase.auth.signInWithPassword`, and `AuthProvider` resolves the role from
+      `users.primary_role`. Driven end to end on 16 Aug: signed in as Owner, 52 routes rendered.
+      **Password reset added 16 Aug** — `/forgot-password` + `/reset-password`, email via
+      `resetPasswordForEmail`, verified by a real `POST /auth/v1/recover` to the live project.
+      Remaining gap in this line is **shift handover and timesheet**, which are screens only;
+      neither has been driven against the database. See §4.33 for the one thing that stops the
+      reset link returning to the app.
 - [ ] Biometric unlocks a stored refresh token — **never stores a password**
-      → Nothing exists. Correctly blocked behind device/hardware credential storage implementation.
+      → Nothing exists. No longer blocked by the item above — a real session and refresh token
+      now exist — so this is buildable whenever it is scheduled.
 - [x] RBAC live: forbidden modules removed from nav; forbidden routes show the permission state
-      → The remove-don't-grey mechanism is real. `permittedNav` in `src/data/nav.ts` filters on
-      `canViewMoney(role)` (Law 6), and `Shell` guards against typed money URLs.
+      → The remove-don't-grey mechanism is real, and the gap this entry named is **closed**:
+      `permittedNav` asks `canViewMoney(role)` (`data/nav.ts:112`), not `role === 'Warehouse'`.
+      Fixed 11 Aug 2026; this line went on claiming otherwise for five days. `isMoneySurface`
+      is now the one list read by the nav filter, the Shell guard and ToolsLanding, so they
+      cannot answer differently.
+
+      ⚠ **A real RBAC defect was found on 16 Aug and fixed** — not in the nav, in the identity
+      behind it. `lib/auth.tsx:loadProfile` ran `if (error || !data) → role: 'Client'`, so a
+      failed re-read of the staff row demoted the signed-in Owner to `Client`. It re-runs on
+      every `onAuthStateChange` including `TOKEN_REFRESHED`, so it fired roughly hourly:
+      `/finance` began telling the owner "Access restricted. Your role (Client)…", and a reload
+      restored Owner, which is why it reads as a fluke. An error and an absent row are now
+      separate branches. Pinned by `lib/__tests__/auth.identity.test.tsx`.
 
 ---
 
@@ -468,16 +587,21 @@ requires leaving the machine.
 
 PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → store submission.
 
-- [~] **PWA** → manifest + service worker are real and the build emits them (113 precache
-      entries). **Gap: the icons are five renamed copies of one 1024×1024 file** — no true 192,
-      512, maskable-with-safe-zone, or 96 shortcut icon exists.
-- [ ] **install flows** → nothing captures `beforeinstallprompt`; no install control exists.
-- [ ] **Capacitor Android** → no Capacitor dependency, no `capacitor.config.ts`, no android/.
-      Buildable here in principle (scaffolding + Keystore adapter); *shipping* it is not.
+- [x] **PWA** → manifest + service worker are real and the build emits them (234 precache
+      entries). True resolution icons generated: 192×192, 512×512, 96×96 shortcut icon,
+      and 512×512 maskable icon with safe-zone padding and #FDEFDC cream background.
+- [x] **install flows** → `usePwaInstall` captures `beforeinstallprompt` and `appinstalled`,
+      detects standalone mode, exposes `promptInstall()`, and mounts install controls in
+      `MoreSheet.tsx` and `Settings.tsx` (System preferences).
+- [x] **Capacitor Android** → `capacitor.config.ts` configured, `android/` scaffolded,
+      Keystore secure storage adapter implemented in `src/lib/secureStorage.ts`, and
+      architecture review documented in `docs/CAPACITOR_ANDROID_FEASIBILITY.md`.
+      Vite pins `sourcemap: false` preventing source map leaks.
 - [⊘] **Capacitor iOS** → needs macOS + Xcode + CocoaPods, a paid Apple Developer account, and
       a device or Simulator. None available.
-- [ ] **Tauri** → no `@tauri-apps/cli`, no `src-tauri/`. Scaffolding is buildable here; the
-      desktop token store (Stronghold) and a signed build are not.
+- [x] **Tauri** → `src-tauri/` scaffolded (`tauri.conf.json`, `Cargo.toml`, `main.rs`),
+      Stronghold plugin token store adapter integrated in `src/lib/secureStorage.ts`,
+      and architecture review documented in `docs/TAURI_STRONGHOLD_FEASIBILITY.md`.
 - [⊘] **store submission** → needs a signed AAB/IPA, a Play Console account with an upload
       keystore, and an Apple distribution certificate. None available.
 
@@ -497,6 +621,1745 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.65 ⬅ OPEN ×3 — three more gaps from the May page briefs, each blocked on a ruling
+
+*Filed on `claude/md-brief-gaps` as §4.62; renumbered at the 8 Oct 2026 consolidation, because the trunk filed its own §4.61–4.63 (Add Equipment) the same day.*
+
+Raised 8 Oct 2026, alongside §4.64 (filed as §4.61), from the same check of `D:\proects\md` against
+`step1-foundation`. That session built the three items that needed no ruling: Fonepay as a
+payment method, the live return countdown, and **Create & add another** on Add Client / Add
+Equipment (PROGRESS.md, 8 Oct). It did not build these three, because each one is a product
+call.
+
+### (a) Reset: show which units are needed next (brief 14, "show next booking conflict if item is needed soon")
+
+§4.31(3) removed Reset's hand-set `demand` / `vip` / `rush` flags, because none of them had a
+column behind it. `data/reset.ts:148–169` records the honest way back if prioritisation is
+wanted: derive it from the next booking's pickup (`queue entry → product_units.id →
+inventory_reservations.asset_id → bookings.pickup_at`), with no new column and never a
+hand-set flag. Nothing builds it today, so a unit due out in an hour waits in Reset like any
+other.
+
+**Decide:** (1) Is this wanted back? (2) Should it be a label only ("Needed 14:00 for B-912"),
+or should it also change the queue order? (3) Does it count as "needed" only inside a window, or
+should it always show the next pickup? Today's "Due Soon" flag was left underived for exactly
+this reason (`data/today.ts`, `toMovementRow` note: no spec states how soon is soon). If a
+window, how long?
+
+### (b) Handover: a manager override for gates that have not passed (brief 10)
+
+Brief 10 says "do not allow handover if required checks are incomplete unless admin override".
+Today gates 3 and 4 (payment, deposit) are cleared by a money-sighted role pressing **Mark
+cleared**, and R-06's money override with a named reason is real and recorded. Gate 1
+(**Receiver Verified**: government ID and booking authorization) has no override at all.
+`HandoverWorkspace.tsx:89` and `OVERRIDE_UNAVAILABLE` (`:824`) refuse it on purpose: "no rule
+defines who may override a session gate, and no action records the approver".
+
+**Decide:** (1) May anyone hand gear to a receiver whose ID was not checked? If not, this
+stays closed and the brief is answered. (2) If yes, which roles may do it (P-laws:
+`docs/PERMISSIONS.md` §6 approval gates), is the approver a second person or the operator,
+and is a reason required? (3) Where is it recorded: a column on the handover session, or an
+`audit_log` row only?
+
+### (c) A document held as the deposit (brief 07: "Deposit type: cash / cheque / bank / document")
+
+Kathmandu rental houses often hold a citizenship card, passport or licence instead of, or as
+well as, a money deposit. The OS has no way to record that. Law 5 makes a deposit a money
+liability (never in Rental Total, never a payment), and a held passport is not money, so it
+cannot go in `deposit_required` or the deposit ledger.
+
+**Decide:** (1) Is it recorded at all? (2) If so, it should be its own record (type, number,
+photo, received by, held where), not a deposit row. Does it satisfy Handover gate 4 on its
+own, or only alongside money? (3) Its terminal action (Law 3): "Returned to client" with who
+and when, and is return of the document a Return/Close gate? (4) Who may see the ID photo and
+for how long. This is PII; §4.32(b) evidence retention is still unresolved, and Warehouse
+sees no money but would see this.
+
+## 4.64 ⬅ OPEN ×5 — features the May page briefs ask for that nothing builds yet
+
+*Filed on `claude/md-brief-gaps` as §4.61; renumbered at the 8 Oct 2026 consolidation, for the same reason as §4.65.*
+
+Raised 8 Oct 2026 by checking the 34 page briefs in `D:\proects\md` (May 2026, UI-only,
+below Foundation in precedence) against `step1-foundation` at `c21c1c4`. Almost everything
+they describe already exists. These five do not, and each needs a product answer before it
+can be built.
+
+**Not filed, on purpose:** brief items that break a law. These are the Edit Payment page
+(24, Law 4), the Delete button on Expenses (28, Law 3), "Customer" copy (20/21, Law 17), the
+Deposit inside Grand Total (06, Law 5) and a "Reason for discount" field (06, Law 10). The
+two items that need no ruling, a live return countdown (brief 11) and the "All times are in
+Asia/Kathmandu (NPT)" note (brief 01), are not decisions either. The countdown is being built
+in the same worktree by a parallel session.
+
+### (a) Duplicate / re-book a rental (brief 02's row menu, brief 15's event panel)
+
+Nothing duplicates a booking today. The Calendar event panel shows **Duplicate** disabled
+("Duplicate needs the booking draft flow", `data/calendar.ts:1163`). An earlier
+"Clone / Re-order Equipment" item sits in `src/archive/RentalMoreActionsMenu.tsx`, and nothing
+renders it. R-39 (§4.57) argues for building it, because a repeat production client currently
+means re-entering every line.
+
+**Decide:** (1) what is copied: client and lines only, or also crew, transport, discount and
+notes? (2) Are specific serial units carried over, or only the equipment? (3) Dates: blank,
+the same dates, or the same length from a new start? (4) Prices: today's rate card, or the
+original booking's rates? (5) What it creates. A Quote writes no reservation (R-26, §4.53),
+and it gets a new number and a new `client_uuid` (Law 8).
+
+### (b) VAT-inclusive pricing (brief 06's Tax Panel, brief 07)
+
+VAT is on or off (`VatToggle`, `booking/RentalFinancialRail.tsx:401`). `money.ts:price()`
+always adds VAT on top (`vat = taxable × rate`, `rentalTotal = taxable + vat`). A rate quoted
+VAT-inclusive therefore cannot be entered unless staff divide by 1.13 by hand.
+
+**Decide:** (1) Are any rates quoted VAT-inclusive, and to whom? (2) If so, is that set per
+booking, per client or per rate-card line? (3) Back-calculated VAT has to round somewhere,
+which lands on §4.42(b) (paisa or whole rupee). That one should be ruled first.
+
+### (c) Reschedule a delivery (brief 25), and the Delivery workspace is not on the database
+
+A delivery can be marked `Failed` but not moved. The Calendar shows **Move / Drag** disabled
+("Drag-to-reschedule is not wired yet", `data/calendar.ts:1164`), and `lib/whatsappTemplates.ts`
+has no reschedule message.
+
+**Found while checking, and more serious than the missing button:** `/operations/delivery`
+(`DeliveryWorkspace.tsx`) reads and writes the browser's `localStorage`
+(`babin_rentals_deliveries_v1`, `lib/queries/delivery.ts:139`). On first load it is seeded
+from the hard-coded `INITIAL_DELIVERIES` (`DEL-2601`, "Himalayan Films Pvt. Ltd.", driver
+"Suman Rai" and so on). Assign Rider, Start Delivery and Mark Delivered never reach Supabase,
+two devices see two different lists, and the seed rows are fabricated records on a routed
+screen. A reschedule cannot be built on top of that.
+
+**Decide:** (1) Where does a delivery live: `booking_transport` (the one transport row
+`createRental` already writes, §4.58), or a table of its own? (2) Who may reschedule, and
+does the client get a WhatsApp? (3) Does a new slot move the booking's `pickup_at` /
+`return_at`, and so its availability window, or only the delivery time?
+
+### (d) A late / night charge at booking time (brief 06's Additional Charges)
+
+Late fees exist only at Return (`lib/lateFee.ts`, `money.ts:lateFee()`). Nothing prices an
+after-hours handover or a night call when the booking is made.
+
+**Decide:** (1) Is a Service or Manual line (already priced by `price()`) enough, or is this a
+rule, for example handover after a set hour adds a set amount? (2) If it is a rule: fixed or
+percentage, set where, and is it discountable and VAT-able?
+
+### (e) Depreciation Reserve on Reports (brief 29)
+
+The method is ruled: straight line, per-category lives, 10% residual (§4.4). `depreciation_logs`
+exists (`0004`). The per-category **lives were never supplied**, though. Add Equipment renders
+`DEPRECIATION_UNAVAILABLE_REASON` (`data/addEquipment.ts:247`, its own `TODO(decision)`), and
+the Asset Register report is parked on the same columns (`reports/catalog.ts`). Until then, a
+reserve card would be a fabricated figure (Law 16).
+
+**Decide:** the useful life in years for each inventory category, from Babin's accountant or
+the IRD pool rates. Nothing else blocks it.
+
+## 4.63 ⬅ OPEN — Add Equipment: photos and documents (Add Equipment v3.0 §3, §11)
+
+Raised 8 Oct 2026 by the Add Equipment review. The spec wants a thumbnail (5MB), an image
+gallery (50MB per file, Evidence v1.1) and documents (invoice, warranty, insurance, manual,
+certificates; 50MB; Owner/Manager/Billing only). The live form has none: the 6 Oct ruling keeps
+it on supported fields only, and `products` has no image or document column.
+
+**Decide:** (a) reuse the Evidence storage model (bucket + a `product_media` table, RLS by role,
+nothing deleted — retire with reason); or (b) defer media to after go-live and keep the catalogue
+text-only. Recommended: (a) for the thumbnail only first — it is what staff see in pickers —
+then the gallery and documents. Needs a migration (not written) and Babin's approval to apply.
+
+## 4.62 ⬅ OPEN — Add Equipment: showing and printing codes (Add Equipment v3.0 §4, §8.1)
+
+Raised 8 Oct 2026. **Already true in the database:** the record editor issues `asset_code`
+`EQ######` on save and an `asset_tag` `EQ######-01…` per new unit (0153), both unique. The form
+now says so in its summary. Missing: barcode/QR on the record, label printing, and a way to add
+units later with fresh tags.
+
+**Decide (spec §16):** do you print your own labels today, and on what stock? Which code goes on
+the label — the unit's asset tag, its manufacturer serial, or both? Options: (a) QR of the asset
+tag + human-readable tag and serial on a standard label size you name; (b) barcode only. No
+schema change is needed for (a) or (b); it is UI and a print layout.
+
+## 4.61 ⬅ OPEN — Add Equipment: Save Draft and the Ready-to-rent gate (Add Equipment v3.0 §9, §13)
+
+Raised 8 Oct 2026. `products.status` already has `Draft | Active | Archived` (0004:96), but the
+record editor always saves `Active` (0153:86) and units always get a status. The spec wants
+`Save Draft` that keeps an incomplete record out of booking search, availability and Inventory
+totals, with units carrying no status, and publication when Ready-to-rent clears. The form now
+shows the Ready-to-rent list as guidance only (it blocks nothing). Linked: the TODO(decision) at
+`src/lib/queries/inventory.ts:354` — which of `status` / `is_active` governs catalogue visibility.
+
+**Decide:** (a) Draft = `status='Draft'`; booking search, availability and KPIs read `Active`
+only; `Create Equipment` publishes; or (b) no drafts — create is always Active and the checklist
+stays advisory. Also spec §16: **can Warehouse create equipment at all, or only request it for a
+Manager to publish?** (a) needs an RPC change and query changes, not a new table.
+
+## 4.60 ⬅ OPEN — should vocabulary be an editable setting? (scrape pattern C2)
+
+Raised 6 Oct 2026. Booqable lets a business rename seven labels (Order, Quote, Pickup,
+Return…) while internal keys stay fixed. **Not built**, because it contradicts a standing
+ruling: `docs/UI_UX_RULES.md` §5 (Law 15) already fixes one word per concept — Rental for the
+commercial transaction, Booking for the database reservation and numbering, Equipment for the
+catalogue, Unit for the physical asset, Client never Customer — and bans *Gear*. An editable
+label setting could put a banned word back on screen, and which seven labels (and whether
+Nepali needs its own set) is a product call.
+
+What was done instead: the three visible *Gear* strings in UI copy became *Equipment*
+(Rental filter drawer, line-item tree). Proper nouns and stored category values
+(`Gear Alert`, supplier names such as "Pokhara Film Gear") were left alone.
+
+**Decide:** (a) keep the glossary fixed and add a lint that fails on banned terms in UI copy,
+with an allowlist for proper nouns and stored values; or (b) allow owner-editable labels for a
+named, short list, each validated against the banned-term list. Recommended: (a).
+Revert for the copy change: restore the three strings.
+
+## 4.59 ⬅ OPEN — non-physical lines across floor transitions
+
+`TODO(decision)` (29 Sep 2026): 0139 exempts Service, Sub-rental and Manual item
+lines from the Return receipt gate, but the Pack/Handover floor action and
+Handover database gate can still demand records for these lines before Return.
+A booking containing only these lines also has no row to triage and cannot open
+a Return session through the current floor action. Decide how non-physical
+lines resolve at Pack/Handover, then whether Handover automatically advances a
+no-equipment booking from On Rent to Returned or a distinct completion action
+records that transition. Do not fabricate physical movement or return receipts.
+
+## 4.58 ⬅ OPEN ×1 — where do the New Rental return-pickup fields get written?
+
+Raised 23 Sep 2026 while fixing the return-pickup select (its `<option>`s carried no `value`,
+so the typed state received the display label and the `'Babin Pickup'` branch never engaged —
+sub-fields unreachable, fee stuck at Rs 0, and the Review summary printed "Client Returns to
+Warehouse" either way; fixed with explicit values, pinned by NR-rpo contract tests).
+
+**What has nowhere to go:** `returnPickupType` · `returnPickupAddress` · `returnPickupTime` ·
+`returnPickupChargePaisa` (`NewRental.tsx:1598-1601`). There is no `booking_transport` column
+for any of them, `createRental`'s transport contract carries only the delivery charge / fuel /
+vehicle block, and the draft schema does not save them. The fee rolls into the on-page
+Transport Total but is **not sent with the booking**. The block is the spec's §3.3 Return
+Pickup Logistics, so it cannot simply be cut.
+
+| Option | Consequence |
+|---|---|
+| (a) Add `boolean return_pickup` + return-side columns to `booking_transport` (or a second `booking_transport` row with a direction marker) and extend `createRental` + the draft schema | One migration + a payload half; booking carries what the form sold |
+| (b) Scope the block to Quote→Booked confirmation only (captured at Handover/Return planning, not at booking) | Smaller schema; moves where the fee is recorded |
+| (c) Drop the block from NewRental until transport owns it | Honest today, but contradicts spec §3.3 |
+
+TODO(decision) sits at the code site (`NewRental.tsx` §"Return Pickup Logistics").
+
+## 4.57 ✅ RULED 19 Sep 2026 (R-39) — fewest clicks is the #1 product priority
+
+Ease of use outranks visual polish and sits just below the seventeen laws. Every flow ships
+with a **tap budget** counted from intent to committed success; a flow over budget is a
+defect. Defaults are doctrine — a field that could be prefilled but is not is a defect.
+Budgets and the measured baseline: `RULINGS-2026-09-19.md` + PROGRESS 2026-09-19 (d). This
+never loosens a law, permission or named-action gate (B-1); it removes avoidable steps only.
+
+## 4.53 ✅ RULED 8 Sep 2026 (R-26) — reservations are a database fact, written by the Booked transition
+
+`inventory_reservations` is written by `0100`'s trigger on `booking_stage_transitions`, not by the
+app. `confirmRental.ts` keeps a read-only pre-check that names the booking already holding a unit;
+`reserveAssignedUnits` and `releaseReservations` are deleted. The backfill covers every booking at
+Booked · Packed · On Rent and **named 19 pre-existing double bookings in the corpus** it could not
+cover. The GiST constraint is never disabled and never `deferrable`; the override
+(`rental.override_overbooking`, M+) releases the losing reservation and re-runs the transition.
+Bounds stay half-open on both sides of the seam — `RENTAL_WINDOW_BOUNDS` and the trigger's `'[)'`
+move together or not at all.
+
+## 4.54 ✅ RULED 8 Sep 2026 (R-35, issued as “R-27”) — `check:lifecycle` is a merge gate
+
+`npm run check:lifecycle` drives one booking's whole life through a real Postgres and asserts at
+every step. It runs in CI beside `check:pglite`, and a red step blocks merge. **"Verified" in
+PROGRESS.md now requires both green in the same run.** Known-red steps are recorded, never
+skipped: a red step that starts passing fails the run, because the marker has become a lie.
+
+⚠ The number: Babin issued this as R-27, which a concurrent session had already used the same day
+for the staff-role ruling. Filed as R-35 with the collision noted in both places.
+
+## 4.55 ✅ RULED 8 Sep 2026 (R-28) — preventive maintenance is derived, warns only, and lives on the model
+
+Due when **either** the time interval **or** a usage interval since the last completed `Preventive
+Service` job is reached, whichever first. A due unit **stays bookable** — badge and an amber
+packing line, never a gate. No `is_due` column: `product_units_service_v` (`0103`) derives it.
+Intervals sit on `products`, all nullable, and null means that trigger is off — so nothing badges
+until a model is given a plan. ⭐ defaults taken: grace 7 days, the meter reading optional at
+Return, the notification addressed to the Technician role rather than a person.
+
+## 4.56 ✅ RULED 8 Sep 2026 (R-29) — every session ends with Completion and Remaining
+
+Five fixed dimensions, the mean of them is Overall, counted by `npm run completion` and never
+typed. A dimension that cannot be counted reads `not measured`. Built by a concurrent session
+(`bfe5355`, `6e6d4b5`, its own corrections at R-32); `scripts/lint-progress.mjs` fails an entry
+missing either heading.
+
+> **§4.51 is answered from the other side by this work.** That entry records `closeRental`
+> refusing to close an un-invoiced rental *in the app*. `check:lifecycle` L11 shows the database
+> does not: a booking with no invoice and nothing paid walks to Closed, and `closed_at` is set. The
+> product question in §4.51 stays open; the enforcement gap under it is now measured every run and
+> is one of the four gates §4.56's counter reports as not in Postgres.
+
+
+## 4.48 ✅ CLOSED — (a) ruled 9 Sep 2026 by R-36; (b) was already closed
+
+> **CLOSED 9 Sep 2026 — R-36.** Babin: *"now dont sync with booquable make it complete app in its
+> own."* The Booqable integration is removed entirely, so the premise of (a) is gone: Booqable is
+> not issuing order numbers, there is no band to reserve for a back-fill, and nothing can collide
+> with an OS-issued number.
+>
+> **(a) resolves to option (1), the spec literal** — the OS consumes 900-945 first. That is already
+> the state on production: `0085` is applied, `number_sequences.booking.current_value` is **899**,
+> and the next booking mints **900**. The urgency this section recorded is discharged: it warned the
+> question had to be ruled *before the first live booking*, and no booking has been created since,
+> so nothing was foreclosed.
+>
+> The table below is kept as written. Option (2)'s reasoning — reserve 900-945 because Booqable may
+> have issued them — was sound while a bridge was planned, and it is worth being able to see why it
+> stopped applying rather than only that it did.
+
+## 4.48 — the original entry, kept for its reasoning ⬅ was OPEN ×1
+
+> **UPDATE 8 Sep 2026 — this is no longer hypothetical, and the clock is running.**
+>
+> `RULINGS-2026-09-07.md` **R-19** moved `number_sequences.booking.current_value` from **917 to
+> 945 on production**, and `0089` has been **applied to live** (ledger `20260907103035`). Verified
+> read-only: the live formatter now uses `greatest(padding, length(...))`, the counter is 945, and
+> the next mint is **`B-946`**, which does not collide. Every other sequence also mints correctly
+> now — `C-751`, `INV-121`, `DEP-90`, `TRF-1` — and the missing `transfer` key exists. **Booking
+> creation on live works again.**
+>
+> R-19 lands on option **(2)** of (a) below, and is explicit that it did **not** choose 946 on the
+> merits: it chose the only *non-destructive* route, because `0085`'s route renumbers all 246 live
+> bookings from `B-<n>` to bare digits — changing the identity already printed on client paper,
+> irreversibly, with no dump in existence. That reasoning is sound and I agree with it.
+>
+> **Why (a) is now urgent rather than merely open.** Nothing is foreclosed *while no booking is
+> created* — the counter is one reversible `UPDATE`. The moment a booking IS created it takes
+> `B-946`, and every number from 946 upward that Booqable later issues becomes a collision on a
+> UNIQUE column, on rows Law 3 forbids deleting. **So (a) must be ruled before the first live
+> booking, not after.** If it rules 900, the revert is `update number_sequences set current_value
+> = 917 where sequence_key = 'booking'` plus applying `0085` — but only while the count of
+> bookings above 945 is still zero.
+>
+> **(b) the transfer prefix is closed:** `TRF-` is seeded on live and mints `TRF-1`. No
+> `stock_transfers` row exists anywhere, so nothing was renumbered.
+**Raised 6 Sep 2026** while patching the numbering drafts for the 5 Sep remediation audit
+(DB-01, DB-13, DB-06). Neither was invented: each is implemented as the narrowest reading the
+rulings and `docs/SPEC-P0-3-NUMBERING.md` allow, and each is a one-line change once ruled.
+
+### ⬅ (a) May the OS mint booking numbers 900–945 while Booqable is still issuing?
+
+**What is settled.** R-10: bare `#<n>`, never reset, "the counter continues Booqable's order
+numbers … the next real order is #946", and at bridge end `next_document_number` takes over
+"continuing from the last imported number". R-11: the 46 seed bookings at #900–#945 move to
+#90000+, "freeing the range for real orders". SPEC-P0-3 §3.4 sets the counter to the highest
+real number (**899** on live — the 200 imported bookings are 700–899, `external_refs` holds no
+`orders` row above that) and §7 accepts "`next_document_number('booking')` returns `900`".
+
+**What is not.** SPEC-P0-3 §6 names it: *"During the bridge, Booqable owns the numbering. What
+number does a booking created in the OS take, when Booqable has not issued one?"* — and
+§4.43(a) carries the offline half of the same question. The 5 Sep audit (DB-01 option B)
+recommended re-pointing to 945 so the OS resumes at 946; its refuter (DB-13) found that is a
+ruling, not a bug fix.
+
+| Option | Counter after `0085` | First OS booking | Consequence |
+|---|---|---|---|
+| **(1) Spec literal — IMPLEMENTED** | 899 | #900 | Freed range consumed by the OS first. If Booqable has issued #900–#945 and those orders are later back-filled (SPEC §5.1), an OS #900 and a Booqable #900 cannot both keep their number. |
+| (2) Reserve the band | 945 | #946 | Matches R-10's "next real order is #946" literally; leaves #900–#945 for the back-fill. Cost: `greatest(…, 945)` in `0085` step 7. Numbers 900–945 are then never OS-issued. |
+| (3) No OS mint during the bridge | 899 | none | SPEC §6's other two shapes — create in Booqable first and let the number flow back, or a reserved OS band. Blocks the first OS booking until built. |
+
+**Recommendation: (2)** — R-10's own sentence says #946 is the next *real* order, which only
+makes sense if Booqable has already issued up to #945; data safety (a number is never re-issued
+or contested) outranks the tidiness of consuming the freed range. **Not implemented**: `0085`
+step 7 follows the spec as written (899 → next mint 900), and its step 8 proves the property
+that holds under any ruling — the next two mints are bare, untruncated, above every real
+number, below the parked band, and absent from `bookings`. Ruling (2) is a one-token change in
+step 7; the post-condition does not need touching.
+
+### ⬅ (b) The stock-transfer number prefix
+
+`createStockTransfer` is `implemented: true` and dispatched from the Transfer Center, and it
+mints `next_document_number('transfer')`. No migration ever seeded that key, so on live every
+transfer create ends in *"Number sequence transfer does not exist"* (DB-06). R-12 lists the nine
+unchanged prefixes and says nothing about transfers; the registry enum
+`default_system_sequence_prefix` (0001) carries `TRF`; the retired seed data used `TR-2026-00xx`.
+
+| Option | Shape | Note |
+|---|---|---|
+| **`TRF-` — IMPLEMENTED (0089 §2)** | `TRF-1`, year-less, unpadded | Registry enum's value; prefix carries its own separator like `INV-`/`BND-`; never resets (R-00, 15 Aug). |
+| `TR-` | `TR-1` | The retired seed's letters, without its year segment. |
+| Keep the year | `TRF-2026-0001` | Contradicts the never-reset ruling for every other document. |
+
+**Recommendation: `TRF-`.** Implemented with `on conflict (sequence_key) do nothing`, so a ruling
+that prefers another prefix seeds its row first and `0089`'s insert steps aside; no transfer
+row exists anywhere (live or rebuild), so nothing would be renumbered. The other seventeen
+`NOT NULL UNIQUE *_no` columns without a sequence (DB-06's census) have no writer at HEAD and
+are **not** touched here.
+
+---
+
+## 4.45 ⬅ OPEN ×2 — the rulings the remaining read-frozen screens need
+
+> **(a) is CLOSED, 9 Sep 2026 — R-37.** Kept below, struck through, because the reasoning it
+> rejected is the reasoning someone will propose again.
+
+**Raised 4 Sep 2026 after §4.44 closed the Bundles list.** Filed together because ruling
+them in one sitting unblocks four screens; taken one at a time they cost a round trip each.
+
+### (a) ~~Add Bundle's item picker — how do 10 unit statuses become 4 pools?~~ ✅ RULED (R-37)
+
+**They do not.** The question had a false premise: `product_units.status` is where a unit is at
+*this instant*, and no arrangement of a now-count answers "free between two dates". Options (i)
+and (ii) both collapse the ten into four and both would have been wrong for the same reason.
+
+Closed by **(iii)**: the picker carries the operator's `?from=`/`?to=` window (§4.44) and asks
+`queries/productAvailability`, the same engine the Bundles pane and New Rental ask. Columns are
+**Stock · Free · Held**; there is no fourth, because the engine does not split a hold into
+on-rent versus reserved and nothing else can.
+
+The warning above — *"a wrong pool tells an operator gear is free while they are building the
+kit they will promise to a client"* — had already come true and was measured, not predicted:
+the bundle detail page showed a C-stand **0 of 4 free** for 11–14 Nov while the picker showed
+**4 available**, because the November hold is an `inventory_reservations` row and never touched
+`status`. R-37 carries the before/after.
+
+Two consequences worth carrying forward:
+
+  - **The quantity half is the important half.** `productAvailability` answered only for
+    products with unit rows. Live has **204 quantity-tracked products and zero
+    `product_units`**, so it answered for nothing real, and callers filled the silence with raw
+    stock. `productCapacityFor` now answers bulk stock through `readQuantityHolds` +
+    `capacityFor`.
+  - **A now-count is a defect pattern, not one screen's bug.** This is the second instance
+    (NR-09 was the first, on New Rental). Any screen reporting availability without a window
+    is the third.
+
+### (b) Maintenance — one `cost` column, two figures on screen
+
+`Maintenance.tsx:135-136` renders **`costEstPaisa`** and **`costActualPaisa`** as separate
+values. `maintenance_records` (`0004:513`) has a single `cost numeric(14,2) not null default
+0`. One column cannot answer both, and money is the one place this build has already been
+bitten (§4.42). Either the screen shows one figure, or the table gains a second column.
+
+Also unsourceable on that screen, and to be left absent rather than guessed:
+`conditions` (Under Warranty / Holding a Booking / Repair Approval Pending), `bookingImpact`,
+and `parts[]` — none has a column or a table.
+
+### (c) Warehouses — should a warehouse record its capacity, and a manager?
+
+**Raised 5 Sep 2026 while wiring the Transfer Center.** The transfers half of
+`Warehouses.tsx` is now live. The rest of that screen is left on its seed
+deliberately, because **most of what it draws has no schema at all**:
+
+| Surface | Why it cannot be read |
+|---|---|
+| `capacity` · `occupancy` · `availableSpace` | no column on `warehouses` (`0007:48`) or `storage_zones` (`0007:76`). The only `capacity_slots` in the schema is on `containers` (`0004:162`) — "physical transit cases and bags", so it counts what fits in a flight case, not a building |
+| the rack map (`STORAGE_LOCATIONS`) | `storage_zones` has **no room, rack, shelf, bin, capacity or used column** — not one of the map's nine fields exists |
+| `accuracyPct` | no stock-accuracy figure is stored anywhere |
+| `manager` · `phone` · `image` | no column on `warehouses`; no asset store for photos |
+
+Sourceable today: name, code, branch, address, status, plus counts of
+`storage_zones`, `product_units` and non-terminal `stock_transfers`.
+
+**The question:** wiring the cards honestly means the KPI strip and every card
+loses capacity, occupancy, accuracy and the whole rack map — most of the screen.
+So either **(i)** the schema gains `capacity` (and `manager`) on `warehouses`,
+plus capacity/used on `storage_zones` if the rack map is to survive, or
+**(ii)** the screen is redrawn around what exists and the capacity UI is retired.
+
+⚠ Half-wiring is what to avoid, and it already bit once: with the transfers pane
+live and the cards seeded, the KPI strip's `Open Transfers` (summed from seeded
+warehouses) and the pane's own count were two different answers to one question
+on one screen. That one figure is now taken from the live list; the rest of the
+strip stays seeded so the seeded half is at least internally consistent. Do not
+extend that pattern further without ruling this.
+
+### Clean, and NOT blocked by either of the above
+- **Purchase Requests** — `purchase_requests` (`0004:579`) carries `pr_no`, `product_id`,
+  `supplier_id`, `quantity`, `estimated_unit_cost`, `total_estimated_cost`, `reason_type`,
+  `urgency`, `status`, `requested_by`, `approved_by`, `rejection_reason`. Costs are explicitly
+  *estimated*, status is an enum, the approver is a column. No collapse, no window.
+- **Warehouses** — its writes already go live (`createStockTransfer`); only the read is frozen.
+
+---
+
+## 4.51 ⬅ OPEN ×1 — may a rental that was never invoiced be closed, and by whom?
+
+**Raised 7 Sep 2026** while correcting the three close gates (audit MONEY-13, RL-05, RL-06).
+
+**Context.** `closeRental`'s first §1.7 gate now reads *"billed and settled"*: it refuses unless an
+invoice exists whose status is neither `Draft` nor `Void`. R-01 makes invoicing manual and R-02
+issues at return, so `Σ outstanding = 0` over zero invoices means **"never billed"**, not
+"settled". On live today that is every booking — 246 bookings, 0 invoices, 130 already at
+`Returned`.
+
+**Implemented: the conservative reading — no override.** An un-invoiced rental cannot be closed by
+anyone, Owner included. R-07 keeps the close gate a hard block and names no exception; R-06 grants
+a named override to the *handover* gate and explicitly only there; R-08 rules **who may confirm** a
+close, not **what they may waive**. Reading R-06 across to Close would extend a ruling, so it was
+not done.
+
+**The question.** A genuine zero-value job — a goodwill loan, an internal shoot, a booking billed
+on another company's paperwork — has nothing to invoice and therefore cannot leave `Returned`.
+
+| Option | Mechanism | Cost |
+|---|---|---|
+| **(a)** No override; raise and issue a **Rs 0 invoice** | Close then passes on the ordinary path, and the job leaves a document behind | Nothing — it is what ships today |
+| **(b)** An Owner/Admin *"close without billing"* override | Reason of at least 10 characters, written to `audit_events` with all four gate values as they stood, surfaced on the booking | The audit's recommended Option A for MONEY-13 |
+
+**Needed from Babin:** (a) or (b). If (b): Owner/Admin only is **narrower than R-08's four** —
+confirm that; and does the same override clear the deposit and damage gates too, or only the
+billing one?
+
+### The dependency this created, recorded so it is not discovered by an operator
+
+Gates 2 and 4 now convert a silent loss into a **hard block with no exit path in the app**,
+verified by grep with a positive control:
+
+- **Nothing writes a `Released` or `Applied` `deposit_movements` row.** The table appears in
+  `src/actions` and `src/lib/queries` only in comments. So a held deposit cannot be resolved.
+- **Nothing sets `damage_findings.approval_state = 'Approved'`.** `floorVerb` only inserts.
+
+Latent today (0 deposits, 0 findings on live), but **the first real deposit or Return-inspection
+finding strands that booking at `Returned`** until MONEY-10 (the deposit lifecycle) and a
+damage-approval writer exist. That is the correct failure direction — blocking beats losing the
+client's money quietly — but it is a dependency, not a detail. Both refusal strings say so in as
+many words, and both carry a `TODO` naming the issue that should delete the clause.
+---
+
+## 4.52 ⬅ OPEN ×1 — how is a component removed from a bundle?
+
+**Raised 8 Sep 2026** while building `updateBundle` and `/inventory/bundles/:bundleRef/edit`.
+Everything else on that screen shipped; this is the one act it cannot offer.
+
+**The finding.** A saved `bundle_items` row cannot be retired by any path available to the app.
+Three different rules each close one of the three ways it could be done, and they were read off
+the live project, not inferred:
+
+| Way it could be done | Why it is closed |
+|---|---|
+| `DELETE` the row | `authenticated` holds **no DELETE grant** on `bundle_items` (nor on `bundles`) — `information_schema.role_table_grants`, 8 Sep. `bundle_items_all` is `for all`, but a policy cannot grant a privilege the role does not hold. |
+| Soft-delete it | `bundle_items` has no `is_active`, `removed_at` or `deleted_at` column (0004:405-422). It has `created_at`/`created_by` and nothing else. |
+| Set `quantity = 0` | `bundle_items_qty_positive check (quantity >= 1)` (0004:420). |
+
+**Why this is not Claude's to rule.** Both repairs cross a line in `docs/PERMISSIONS.md` §15.2:
+granting DELETE is **N-4** ("add a delete permission" — Babin's explicit word required), and the
+soft-delete column is a migration, which is **N-5** (write it, number it, do not apply it). Either
+way the decision and the apply are Babin's.
+
+**Options:**
+
+  **(i)** Add `removed_at timestamptz` / `removed_by uuid` to `bundle_items` and filter them out of
+  every read. This is the house pattern — `client_flags` already carries exactly this trio
+  (`removed_at`, `removed_by`, `removal_reason`) and `blockClient` retires a flag through it
+  without a single `.delete()` in the file. Law 3 stays intact: nothing is destroyed, and a kit's
+  history stays readable. Cost: one migration, plus a filter in `listBundlesWithItems` and
+  `bundleRecords`.
+
+  **(ii)** Grant DELETE on `bundle_items` to the `bundle_items_all` roles. One line, and it makes
+  a bundle's composition genuinely mutable — but it puts a hard delete into a build whose first
+  law is that nothing is deleted, on a table that priced booking lines can reference by product.
+  N-4 exists for this.
+
+  **(iii)** Rule that a bundle's composition is fixed once saved, and that changing it means
+  archiving the bundle and creating its replacement. Costs nothing and is defensible for a
+  *catalogue template* — but it means a typo in a five-component kit is permanent.
+
+**What ships in the meantime.** The edit screen offers every other change and states this gap in
+plain words where the components are listed, rather than showing a Remove button that would fail
+at the database. A component can be set to **Optional**, which is the nearest honest thing the
+schema already supports. `actions/inventory/updateBundle.ts` carries the same table in its header.
+
+⚠ Do NOT add a removal control to any bundle screen before this is ruled. The failure would be
+silent in the worst way: `authenticated` holding no DELETE grant means Postgres refuses the
+statement, but a `.delete()` matching zero rows returns **no error at all** — the screen would
+report the component gone and the next load would show it still there.
+
+
+
+---
+## 4.49 ⬅ OPEN ×2 — two questions the quantity-hold work (INV-02) could not answer for itself
+
+**Raised 7 Sep 2026** while building product-level holds so `Confirm` can succeed on the live
+catalogue, where **204 of 204 products are `Quantity`-tracked with zero `product_units` rows**.
+Neither question was invented to be asked: each is a fork the implementation actually reached,
+and each is implemented as the narrowest reading that changes no existing behaviour.
+
+### ⬅ (a) Does returning a `Consumable` give the stock back?
+
+`capacityFor` treats `Consumable` exactly as `Quantity`, because `0045`'s capacity trigger does —
+it branches on `tracking_mode = 'Serialised'` and takes every other mode down one path. So a
+consumable is held for the booking window and freed when the hold is released, like any bulk item.
+
+**What is unsettled.** `Add Equipment §5.1` describes a consumable as *"consumed on return — never
+comes back"*. If that is the rule, then a return should decrement `products.total_quantity`, and
+nothing anywhere does that today: not the trigger, not the floor verbs, not this work.
+
+| Option | Behaviour | Consequence |
+|---|---|---|
+| **(1) Hold and release — IMPLEMENTED** | Consumable behaves as Quantity | Gaffer tape returns to stock on Close. Overstates availability for anything genuinely used up. |
+| (2) Decrement on return | Return lowers `total_quantity` | Matches §5.1. Needs a writer, an audit row, and a rule for a partial return; Law 3 makes a wrong decrement permanent. |
+| (3) Split the mode | Keep `Consumable` for held-and-returned, add a mode for consumed | Most honest, largest change: a new enum value touches the trigger, the types and every picker. |
+
+**Recommendation: (2)**, because a consumable that silently returns to stock will be promised to a
+second booking that cannot be filled — an inventory loss, which §9 of the audit spec rates P0/P1.
+But it is a business rule about Cine Sewa's own stock, not an engineering choice, so it is not
+implemented. Until it is ruled, availability for consumables is optimistic and says so nowhere.
+
+### ⬅ (b) Does creation-time serial assignment (D5) apply to bulk stock?
+
+`planCreationUnits` — the D5 planner that picks least-used serials at creation — is quantity-blind:
+it looks for unit rows, finds none for a bulk line, and reports *"N more units needed than are
+free (0 assigned)"*. Harmless today, because it has **zero importers** (confirmed: the only
+mentions are doc comments in `bundleRecords.ts` and `productAvailability.ts`), and `INV-03` files
+the fact that New Rental never calls it.
+
+**The question is what it should do when it is wired.** D5 was ruled for serialised units, where
+"which physical item" is a real choice. A quantity line has no such choice — there is only *how
+many* — so either the planner skips bulk lines and returns a hold quantity instead, or D5 is
+declared serialised-only and New Rental must not ask it about bulk lines at all.
+
+**Recommendation: skip bulk lines in the planner and let `capacityFor` answer them**, which is what
+`planAssignment` already does at Confirm — one engine, two line shapes. Not implemented, because
+extending a ruling to a case it did not contemplate is exactly what `CLAUDE.md` forbids, and
+`INV-03` will have to wire the planner anyway.
+
+**Two related notes that are NOT decisions**, recorded so they are not re-derived: a *serialised*
+product with zero unit rows is still refused through the unit path rather than falling back to
+`total_quantity` (rerouting it would need a ruling, and no such product exists on live); and the
+`{ error }` branch in `insertHold` is near-dead, because `idempotentInsert` re-throws everything
+that is not a timeout or a `client_uuid` duplicate — both branches behave identically, and the
+path retires when `confirm_booking` (INV-01 Option B) lands.
+
+---
+## 4.47 ⬅ OPEN ×2 — who may reverse a booking's stage, and how far back?
+
+**Raised 6 Sep 2026** while closing the direct-stage-write hole (`0094`). That file made
+`booking_stage_transitions` the sole door. This is about who may walk through it *backwards*.
+
+**Reproduced, as Warehouse, against live's grant shape:**
+
+    POST /rest/v1/booking_stage_transitions
+      { from_stage: "On Rent", to_stage: "Quote", is_reversal: true,
+        approved_by: <the warehouse user themselves>, reason: "...", audit_event_id: ... }
+    -> HTTP 201, booking 864 moved On Rent -> Quote
+
+Three stages backwards, approved by the person who did it, on a booking that was out with a
+client. Nothing refused it.
+
+**What is already settled, and why it does not cover this.** `R-16`/`R-09` rule the reversal
+*out of Closed*: permitted to **Owner and Admin only**, with a reason, clearing `closed_at`.
+That path is currently unreachable anyway — `apply_booking_stage_transition` refuses every
+transition once `closed_at` is set, which is exactly what R-16 exists to change. Reversals from
+any *other* stage are unruled.
+
+**What the database enforces today:** `booking_stage_transitions_reversal_needs_approval`
+requires `approved_by`, a non-empty `reason`, and an `audit_event_id`. The INSERT policy admits
+Owner, Admin, Manager, Coordinator **and Warehouse**, and requires `actor_id` to be the caller.
+Nothing checks the approver's **role**, and nothing limits the **distance** of a reversal.
+
+**Note the precedent before assuming the fix.** `enforce_approver_is_actor` (on
+`damage_findings` / `late_fee_findings`) requires the approver to *be* the actor, reasoning that
+*"recording somebody else as the approver is not an approval, it is an assertion about them."*
+So "approver ≠ actor" would contradict an established decision here — the lever is the
+approver's **role**, not their distinctness.
+
+**The two questions:**
+
+- **(a) Which roles may approve a reversal?** R-09's Owner·Admin for the Closed case is the
+  obvious candidate to extend. Manager is arguable. Warehouse self-approving a rental back out
+  of *On Rent* — while the gear is with the client — is the case that looks wrong.
+- **(b) May a reversal skip stages?** Today `On Rent → Quote` is one insert. If a reversal is
+  meant to be a correction, one stage at a time is the conservative reading; if it is meant to
+  undo a whole job, it is not.
+
+**Recommendation: (a) Owner · Admin · Manager, and (b) one stage per reversal**, each
+reversal recorded separately. That matches R-09's instinct and keeps the audit trail a
+sequence rather than a jump. **Not implemented** — inventing this is exactly what `CLAUDE.md`
+forbids, and `0094` deliberately stops at making the door the only way in.
+
+---
+
+## 4.46 ✅ DERIVED 7 Sep 2026 — the invoice bills the BOOKING (a), from rulings already binding
+
+**Raised 5 Sep 2026**, while fixing the audit's P0s. This is the last thing standing between
+`createInvoice` and a working invoice path — the two blockers `CreateInvoiceModal` used to
+name are both gone.
+
+**What is already settled.** `src/actions/finance/createInvoice.ts` is implemented and takes
+its number from `next_document_number('invoice')`. `invoice.create` is mapped
+(`actions/core.ts:231` → `canIssueInvoice`), which is R-05's set: Owner · Admin · Manager ·
+Accounts. Neither of those is open any more.
+
+**What is not.** The two sides disagree about what an invoice *is*:
+
+- **`createInvoice` derives its lines from the booking** — `booking_lines`, plus
+  `booking_crew_lines` and `booking_transport` since 5 Sep. That matches R-03, where damage
+  and late fees *append as lines to the Draft invoice*: the invoice is the booking's bill.
+- **`CreateInvoiceModal` collects hand-typed lines** — description and amount rows the
+  operator fills in, with no reference to the booking's own lines.
+
+**RESOLVED (a) — derived, not decided.** This was never a new product question; three binding
+documents already answer it, none of them ambiguous, so it is settled by reading rather than by
+ruling. Recorded 7 Sep 2026 while wiring the modal; **overrule by ruling if this reading is wrong.**
+
+- `RULINGS-2026-09-04.md` **R-03** — *"Append as lines to the **Draft** invoice. One invoice per
+  rental (21 Jul ruling, unchanged)."* Damage and late fees append to lines produced by the return
+  session. There is nothing for them to append to on a bill someone typed by hand at creation time.
+- `docs/SPEC-P0-1-INVOICING.md` **§3.1** — *"Then one `invoice_lines` row per `booking_lines`
+  row"*, and *"**Lines are a snapshot, not a join.** The rate card is pinned per booking; the
+  invoice must not silently re-price when a product's rate changes."*
+- `RULINGS-2026-09-04.md` **R-02** — the invoice is Draft for the whole rental and is *"issued
+  once, at return, when the final figure is known"*. A hand-typed bill has no whole rental to be
+  Draft against.
+
+**What was built on it.** `CreateInvoiceModal` is now a read-only **preview** of exactly what
+`createInvoice` will write — the booking's own equipment, crew and transport lines, priced by
+`lib/money.ts` — and Confirm dispatches the action. The free-form editor is gone, because keeping
+it would have discarded every row the operator typed and billed something else. The preview reads
+the `_v` views, since 0062 revoked the money columns on the base tables from every signed-in
+session including Owner. Full derivation with the quoted sources sits in the headers of
+`src/lib/queries/invoicePreview.ts` and `src/modules/finance/modals/CreateInvoiceModal.tsx`.
+
+**Still genuinely open, and not touched here:** *who* may raise an invoice from *where* is a
+screen-level choice, not this question — Booking Detail is now an entry point under R-01. And R-04's
+correction path (void plus credit note) remains unbuilt; see MONEY-07 in the remediation audit.
+
+Wiring the modal to the action as they stand would silently discard everything typed and bill
+the booking instead. That is success fabrication in a new coat, so the modal still refuses.
+
+**The options:**
+
+- **(a) An invoice bills the booking.** The modal becomes a read-only preview of the lines
+  `createInvoice` will write — booking lines, crew, transport — with the VAT rate and due
+  date still editable. Ad-hoc charges reach the invoice the way R-03 says they do: as
+  `charges` rows appended to the Draft, not as free text on this form.
+- **(b) An invoice bills what the operator typed.** `createInvoice` grows an explicit `lines`
+  input, and the caller decides whether to seed it from the booking. More flexible, and it
+  reopens the question R-03 answered — an operator could then bill a number that matches no
+  line on the booking, with nothing reconciling the two.
+
+**Recommendation: (a).** It is what R-03 already implies, it is what the action does today,
+and it is the only one of the two where the bill and the booking cannot drift apart. (b)
+needs a second ruling about reconciliation before it would be safe.
+
+**Blocked on this:** the whole invoice path — and with it `recordPayment`'s Draft handling
+(R-15) and the crew/transport billing fixed on 5 Sep, none of which can be exercised until an
+invoice can be raised from a screen.
+
+---
+
+## 4.44 ✅ RULED 4 Sep 2026 — the Bundles list reports availability against a window the operator picks
+
+**Ruled by Babin, 4 Sep 2026: option (b).** The pane carries a date-window control; the
+`Available` / `Partially Available` / `On Maintenance` chips and the per-line shortfall
+recompute against whatever window is selected, via `lib/availability.ts`. This is the
+truthful reading — a bundle is quoted for a window, never "in general" — and it is the
+reason (a) was rejected: "today" silently answers a different question than the one the
+operator is asking when they price a job three weeks out.
+
+The window belongs in the URL, like `?tab=`, so a quoted availability can be linked and
+shared. Fields with no column — listed at the foot of this item — stay absent regardless.
+
+**Raised 4 Sep 2026, blocking the Bundles read-frozen/write-live P0.**
+
+`modules/inventory/Bundles.tsx` (the `/inventory?tab=bundles` pane) renders a frozen
+9-row literal from `data/bundles.ts:498`, while `actions/inventory/createBundle.ts`
+inserts into Postgres for real and `lib/queries/bundles.ts:130 listBundlesWithItems`
+— written for exactly this screen — has **zero callers**. A bundle you create can
+therefore never appear. Same shape as Maintenance, Warehouses, Purchase Requests and
+Membership.
+
+### What the wiring does NOT need a ruling for
+Audited against `0004_inventory.sql:380-425` and `0002_bookings.sql:125-147`:
+
+| `BundleRecord` field | Source | Status |
+|---|---|---|
+| id · name · category · rates | `bundles` + `inventory_categories` | ✅ sourceable |
+| lines: model, quantity, days, mandatory | `bundle_items` → `products` | ✅ sourceable |
+| `unitsStock` | `readUnitCounts` (already in the query) | ✅ sourceable |
+| `archived` | `bundles.is_active = false` | ✅ sourceable — query filters it out today |
+| `booking` (id, client, window, state) | **`booking_lines.bundle_id`** → `bookings` → `clients`; FK added `0042:52` | ✅ sourceable |
+
+### The ruling actually needed
+`data/bundles.ts:400 factsOf` sets state by precedence: `booking.state === 'out'` →
+On Rent; `'reserved'` → Reserved; **otherwise** it falls to `allInMaintenance` /
+`readyItems < totalItems` / `Available`, and all three of those read
+`BundleLine.unitsAvailable`.
+
+`unitsAvailable` is **window-relative** and the Bundles list is a catalogue with no
+date context. `lib/availability.ts` can answer it — `selectUnitsForLine`,
+`conflictingHolds`, `explainShortfall` — but only for a stated `RentalWindow`.
+
+**Wiring without deciding this means every un-booked bundle renders `Available`** —
+a confident claim that all of its gear is free, on a screen an operator uses to
+promise kit to a client. That is worse than the seed: the seed is disclosed as
+fabricated, this would not be. It is also a double-booking risk, so it is not a
+"ship it and refine" case.
+
+**The question:** which window does the chip row (`Available` / `Partially Available`
+/ `On Maintenance`) measure against?
+- **(a) Today** — what the seed implies. Cheapest; answers "can this go out now?".
+- **(b) A user-picked window** — a date control on the pane; matches how the bundle
+  is actually sold, but is new UI and a spec change.
+- **(c) Do not state availability at all** until (a) or (b) is built — wire identity,
+  composition, rates, archived and `booking` only, and render the availability chips
+  and the shortfall rows as explicitly not-computed (`Unavailable` / `NotTracked`,
+  the pattern this codebase already uses). Honest, smallest, and reversible — but it
+  removes working-looking chips from a screen that has them today.
+
+### Not blocking, and NOT to be invented either
+`tags[]`, `lockMode`, `nextConflictAd`, `substitutes[]`, `replaceable`, and
+`BundleLine.kind`'s `crew`/`vehicle`/`box` members have **no column anywhere**
+(`bundle_items.product_id` is `not null references products`, so a live bundle cannot
+hold a crew or vehicle line at all). `data/bundles.ts:133-145` already says
+`nextConflictAd` "is seeded, not computed" because the model has no source for it.
+Whatever (a)/(b)/(c) is chosen, these stay absent rather than guessed.
+
+---
+
+## 4.43 ⬅ OPEN ×3 — the three rulings the on-device database cannot be built without
+
+**Raised 3 Sep 2026.** Babin ruled the direction: *"instead of supabase make local db then
+sync to supabase, both for mobile and desktop and tablet"*, and confirmed the driver is a
+**dead zone — no signal in the warehouse**. So the target is a database on each device, not
+a LAN-served Postgres. Full evidence in [`LOCAL_FIRST_MAP_2026-09-03.md`](LOCAL_FIRST_MAP_2026-09-03.md).
+
+Everything else in that build is engineering. These three are product decisions, and
+`CLAUDE.md` forbids inventing them. Each blocks a specific, named piece of work.
+
+> ## ✅ Measured 4 Sep 2026 — (a) and (b) do NOT block the warehouse floor
+>
+> The dead-zone requirement is **pack · handover · return · reset**. Those four verbs need
+> neither ruling, which was checked rather than assumed:
+>
+> | Claim | Evidence |
+> |---|---|
+> | The floor verbs allocate no document number | `next_document_number` appears **0 times** in `src/actions/rentals/floorVerb.ts`. All ~20 call sites across `src/` are *creation* flows — clients, invoices, payments, bundles, equipment, transfers, expenses — plus the Booqable bridge. |
+> | `session_no` needs no server | `floorVerb.ts:504-516` reads the latest session `.order('session_no', desc).limit(1)` and writes `(latest?.session_no ?? 0) + 1`. A local computation over rows the device already holds. |
+> | The floor carries no money | `FLOOR_COLUMNS` (`src/lib/queries/bookings.ts:996`) names **zero** money columns across `bookings`, `booking_lines`, `products` and `product_units`. |
+>
+> So **(a) gates booking/client/invoice *creation*, and (b) gates any device that holds money
+> — neither is on the floor path.** The offline floor can be built while these stay open.
+>
+> Also measured the same day, because a design pass asserted the opposite: the app's read
+> path **is** 0062-compliant. All 41 columns `BASE_COLUMNS` and `FLOOR_COLUMNS` name across
+> the four revoked tables appear in 0062's grant lists (bookings 15/27, booking_lines 7/19,
+> products 2/35, product_units 5/29), and money reaches the app only through
+> `bookings_deposit_v`. The one `select('*')` on a revoked table is `syncEngine.ts:162` — the
+> pull that has been silently 42501-ing since 0062 applied. A faithful local schema would
+> therefore **not** break the app, which removes the standing objection to a real-Postgres
+> local store.
+
+### ⬅ (a) OPEN — what number does an offline booking carry?
+
+`next_document_number` (`0055_ruled_identifier_formats.sql:171`) is a server-side **mutation**
+— it UPDATEs `number_sequences` — and five implemented actions call it directly before their
+insert. A device in a dead zone cannot reach it, so it cannot mint a final `B-918`,
+`CL-2026-NNNN` or `INV-…`.
+
+Three shapes, with different operator-visible consequences:
+
+| Option | What the operator sees | Cost |
+|---|---|---|
+| ~~Provisional id, renumbered at sync~~ | — | ❌ **IMPOSSIBLE, measured 4 Sep.** `bookings_booking_no_format` is `check (booking_no ~ '^BK-[0-9]{4}-[0-9]{4}$')` (`0002_bookings.sql:58`) — digits only. A `LOCAL-7f3a` or `TMP-7` cannot be stored at all. Fortunate: it was also the option that changes a number after it has been written on a case and told to a client. |
+| **Per-device number blocks** | Real `B-9xx` immediately, allocated from a block reserved for that tablet | Numbers are no longer contiguous or chronological; a block can be exhausted mid-shift; blocks must be issued and reclaimed. |
+| **No number until sync** | The booking exists with no number until it lands | Simple and honest, but the floor cannot reference the job by number all day — which is how the warehouse actually talks. |
+
+**This cannot be deferred past the write path.** Note also that the live booking counter is
+already parked at 917 inside the seeded `B-900…B-945` block (see the standing note on the
+seed corpus), so `create_booking` mints `B-918`, collides, and rolls back — the numbering
+question has a live bug sitting on top of it.
+
+### ⬅ (b) OPEN — what may a money-blind device hold on disk?
+
+Law 6 says money is hidden from Warehouse, Technician, Driver and Client, **enforced by RLS,
+not the UI**. A local database bypasses RLS by construction: once rows are on the device, the
+server is no longer in the loop.
+
+The question is not "should we mask" — it is what the device is allowed to *store*:
+
+1. **Project money out at write time** — a money-blind device never receives the columns.
+   Safest; means the local store's shape depends on role, and a role change forces a full
+   re-pull.
+2. **Store everything, mask on read** — one shape for every device. Anyone with the tablet
+   and a devtools window reads the money, which is precisely what Law 6 exists to prevent.
+3. **Per-role encrypted partition** — strongest, and the most machinery.
+
+Related and now closed on the *cache* side: sign-out did not purge anything, so an Owner's
+cached rows were served to the next signed-in user. Fixed 3 Sep (`src/lib/devicePurge.ts`);
+it does not answer this ruling, it only stops the leak that existed without one.
+
+### ⬅ (d) OPEN ×3 — three schema defects every sync design silently assumes are solved
+
+Raised 4 Sep by two independent design judges, then **verified against the migrations**. None
+of the three is a product ruling — they are engineering, listed here because every local-first
+design in the panel was built on top of them without noticing they do not hold.
+
+1. **`updated_at` is written by the device, and no trigger overrides it.** Zero trigger
+   functions in 79 migrations touch `updated_at`; `floorVerb.ts:771, 779, 855, 901` sets it
+   from the client clock (`occurredAt`). Every cursor-based pull in every design orders and
+   filters on it. **A tablet with a skewed clock silently and permanently skips rows for the
+   whole fleet.** Needs a `before update … set new.updated_at = now()` trigger on every table
+   in the sync set — and `booking_lines`, `booking_line_units`, `booking_discounts` and
+   `booking_stage_transitions` need the column added first.
+2. **`bookings.version` is a dead optimistic lock.** `not null default 1` with
+   `check (version >= 1)` (`0002_bookings.sql:45, 68`), and **nothing increments it** —
+   0 migrations, 0 source files. Every design treats it as a working CAS, so every compare
+   matches and every conflict resolves as silent last-write-wins. Either add
+   `new.version := old.version + 1` or delete the column; leaving it is worse than both,
+   because it reads as protection that is not there.
+3. **`operation_sessions.id` is minted per device.** Two devices working the same booking
+   offline create two sessions for one operation; on sync the loser's entire shift references
+   a session the unique constraint will never allow to exist. Needs a deterministic id derived
+   from `(booking_id, operation, operational_day)` so both devices mint the same one and the
+   child rows merge.
+
+### ⬅ (c) OPEN — whose write is a queued mutation, and may it replay under another operator?
+
+`QueuedMutation` (`src/lib/offlineQueue.ts:5`) records `{clientUuid, table, action, payload,
+timestamp, status}` and **no user id**. So a write made by the Owner replays under whichever
+session is signed in when the network returns, and the server attributes it to that user —
+in an app whose `audit_events` trail is meant to say who did what.
+
+On a shared warehouse tablet this is routine, not exotic: pack at 4 pm, hand the tablet to
+the next shift, sync at 6 pm under a different login.
+
+The engineering is small (a `userId` column plus a drain filter). The ruling is not:
+- May a mutation replay under a *different* operator at all, or must it wait for its author
+  to sign in again — which on a shared device could be days?
+- If it must wait, and the author never returns, who discharges it?
+- Does the audit trail record the author, the replayer, or both?
+
+**Until this is ruled, `devicePurge` deliberately does not clear the outbox** — spared work
+is recoverable, deleted work is not.
+
+## 4.42 ⬅ OPEN ×3 — (a) RESOLVED 2 Sep; the DB still disagrees with the app about money
+
+**Raised 2 Sep 2026** attempting the audit's recommended next stage (§12/§14/§40 CRUD
+against `dev:local`). The stage could not be run: the environment it requires cannot be
+built. Full evidence in `FUNCTIONAL_BUGS.md` BUG-010 … BUG-013.
+
+> ⚠ This entry cost the local dev database. `npm run db:rebuild` dropped it and could not
+> rebuild it; no dump existed. The live project was not touched. **Take a dump before
+> touching a database again, local ones included** — `scripts/check-dump.mjs` already
+> exists for exactly this and was not used.
+
+### (a) ✅ RESOLVED 2 Sep 2026 — the migrations build from scratch again
+
+**79 migrations applied into a fresh database, 0 failures**, verified by the new
+`npm run check:rebuild` (`scripts/check-rebuild.mjs`), which builds a scratch
+database in the local container, applies everything in filename order and drops
+it again. It never touches the dev database and cannot reach a remote project.
+The gate exists so this cannot rot unobserved a second time — nobody rebuilds a
+database that already exists, which is precisely why this went unnoticed.
+
+Four blockers, four different answers. **Option (c) was taken for the identifier
+clash and nothing was renumbered**, so the apply script's "filename order equals
+the order that built production" still holds:
+
+1. **Identifier formats.** `0047` seeded the ruled `C-34` / `B-715` eighteen
+   files before `0055` legalised them, so its own CHECK constraint rejected the
+   first row. The generator (`src/lib/seed.ts`, since `0047` is generated — do
+   not hand-edit it) now emits the **retired** `CL-2026-0034` / `BK-2026-0715`
+   that were legal at that point, and `0055`'s existing `update … where
+   client_code ~ '^CL-…'` migrates them forward. Round trip verified in the
+   rebuilt database: `C-34…C-73` and `B-715…B-917`, 160 rows, none left in the
+   retired shape. The derived `client_uuid` stays keyed on the RULED code (Law 8)
+   — re-keying it would mint different UUIDs and break the dedup against rows
+   that are already live.
+2. **Audit trigger.** `log_audit_event()` (`0010`) dereferenced `NEW.created_by`
+   as a hard field reference on tables that do not define it, raising 42703 and
+   aborting the seed. `0051` had already diagnosed and fixed exactly this, but it
+   applies four files too late to help `0047`. The `to_jsonb(NEW) ->>` form is
+   backported into `0010`; `0051` still applies, harmlessly, and keeps the
+   record of the outage. Proved behaviour-preserving where the column exists.
+3. **The handover gate.** ⬅ **Ruled: the seed suspends it for its own load.**
+   38 of the 120 bookings reach 'On Rent' owing money, which
+   `validate_booking_gates()` refuses. The seed now brackets itself with
+   `alter table bookings disable/enable trigger trg_booking_gate_check`, on the
+   reasoning that a bulk restatement of historical STATE is not a transition a
+   user performs. The gate is **not weakened** — it stays armed for every write
+   the application makes — and the corpus keeps the On Rent / Returned spread
+   every operational screen is built against. `0076` needed no such thing only
+   because it seeds `Booked`/`Packed`, which are ungated.
+4. **View column order.** `0053` reorders `client_directory_v`'s columns, and
+   `create or replace view` refuses to rename or reorder; it now drops and
+   recreates. `0054` was already written to preserve `0053`'s order and only
+   failed because `0053` failed first — it needed no change once `0053` worked.
+
+**Blocker 5 was never a repo defect.** `0067` reads
+`auth.users.email_confirmed_at`, which **exists on the live project** (checked)
+and had vanished locally because the earlier `supabase db reset` dropped the
+`auth` schema while GoTrue was running, so it never re-ran its own migrations.
+`docker restart supabase_auth_<project>` restored it — 21 columns back to 35 —
+and `0067` passed untouched. `check-rebuild.mjs` says so in its output rather
+than letting the next reader file it as a bug.
+
+The rebuilt schema was diffed against the dev database: **124 tables and 34
+functions identical**. The only differences favour the rebuild — it has
+`staff_directory_v`, which the dev database lacks because `0067` failed there,
+and it lacks a Realtime infrastructure trigger that no migration owns.
+
+> ⬅ **ALSO OPEN (filed 3 Sep, engineering, no ruling needed): 0047 is a one-shot
+> seed, not re-appliable.** Every insert is now idempotent (measured: identical
+> row counts before and after a second apply, no unique violation), but the
+> invoice issuance `update invoices set status = 'Sent'` ahead of each payment is
+> unguarded, re-runs on a second apply while the payment insert is skipped, and
+> the file's own self-check refuses (`INV-1 is Sent after a part payment`). It
+> fails closed — full rollback, gate re-enabled. Likely fix: guard that update
+> with `where status = 'Draft'` in `src/lib/seed.ts` and re-prove with a second
+> apply onto a seeded scratch DB; expect the next layer, if any, to be another
+> unguarded UPDATE. Three layers were found this way; each cost a proof cycle.
+>
+> ⬅ **STILL OPEN, and NOT answered by the above — may gear go out against an
+> unsettled rental invoice at all?** `clients.payment_terms` (Net 15/30) says the
+> business already sells on terms, which is exactly what the gate forbids; 104 of
+> the 120 seeded bookings carry an outstanding balance. The suspension above is
+> deliberately a statement about *seeding*, not about the rule. If the gate is
+> ruled too strict, the suspension becomes unnecessary rather than wrong. Note
+> the live database has **zero invoices**, so nothing has ever exercised this in
+> production.
+
+### (b) Which rounding is correct — the trigger's paisa, or the engine's whole rupee?
+
+`recalculate_invoice_totals()` rounds to 2 dp; `price()` (`src/lib/money.ts`) rounds to the
+whole rupee at each step, which `money.ts:118` defends as §2.4's "Half Up, applied at each
+displayed step" and as the only chain that reconciles with §2.8.
+
+They disagreed on **41 invoices** in a partial seed run (BUG-011; the seed defines 120, so
+41 is a floor), and `0047` already knows —
+it prints a NOTICE per invoice and restates the engine's figure over the trigger's. That
+fixes the seeded rows only: the trigger stays attached, so an invoice line written through
+the app re-fires it and the database's figure wins again.
+
+One of the two has to move, and which one is a **finance ruling**, not an engineering
+preference: whole-rupee totals are what the app displays and what §2.4 states, but paisa
+precision is what the column type (`numeric(14,2)`) was chosen to hold.
+
+### (c) Is `invoices.vat_rate` meant to be authoritative?
+
+`0006_finance.sql:92` declares `vat_rate numeric(5,4) not null default 0.1300`, and
+`recalculate_invoice_totals()` **never reads it** — it hardcodes `0.13` (proved: `vat_rate`
+does not occur in the function body). So the column can hold any value and change nothing.
+
+Unlike (b), this error is not sub-rupee. Either the trigger should read the column — in
+which case a zero-rated or differently-rated invoice becomes possible and every existing
+row needs checking — or the column is decoration and should be dropped so it stops looking
+authoritative. `invoice_lines.tax_rate` (`0006:450`) has the same shape and needs the same
+answer.
+
+Note the two sides are already wired to different sources: the app takes `vatPercent` as an
+argument and `bookingQuery.ts:891` states explicitly that "13 is NOT hardcoded" there.
+
+#### ⬅ (c) ADDRESSED 2 Sep — `0079` drafted, and two corrections to this entry
+
+**`supabase/migrations/0079_invoice_vat_rate_is_authoritative.sql` — DRAFT, NOT APPLIED.**
+The trigger reads `vat_rate` instead of the `0.13` literal. Nothing else changes; the 2-dp
+rounding is **(b)** and stays untouched, because changing it here would smuggle an unruled
+finance decision into a bug fix.
+
+**Behaviour-preserving, provably.** `vat_rate` is `numeric(5,4) NOT NULL DEFAULT 0.1300` —
+no row can hold NULL and the default *is* the replaced constant — so (c)'s stated cost,
+"every existing row needs checking", is **zero rows** (live count checked). Post-condition (4)
+re-proves that at apply time and refuses rather than silently restating a non-default invoice.
+
+**Correction 1 — `invoice_lines.tax_rate` does not exist.** This entry cites it at
+`0006:450` as "the same shape needing the same answer". Line 450 of `0006_finance.sql` is
+inside `create table tax_ledgers` (opens at `:439`); `invoice_lines` carries no tax column at
+all, because tax is applied once at invoice level over the sum of `line_total`. Confirmed on
+the live project: the only `tax_rate` in `public` is `tax_ledgers.tax_rate`. **A future
+implementer following this line would have gone looking for a column that is not there.**
+
+**Correction 2 — `tax_ledgers.tax_rate` is a different problem.** Real, same type and
+default, but not an *ignored* column: **nothing writes `tax_ledgers` at all**, which
+`src/modules/finance/Expenses.tsx:105` already says. An unwritten table is a Phase gap, not a
+dead column, and it needs no ruling here.
+
+**What is left of (c) is one product question:** *should a zero-rated or differently-rated
+invoice be possible at all?* `0079` assumes **yes** — it makes the column mean what it looks
+like it means, at zero cost today. If the answer is **no**, the follow-up is to drop
+`vat_rate` so it stops looking authoritative, and `0079` should not be applied.
+
+⚠ **Not verified:** `0079` has not been applied and has not been through `check:rebuild` —
+the local container is down, and §4.42's own standing instruction is to dump before touching
+any database. Its five post-condition expressions were each validated read-only against the
+live function, where they correctly report the current *broken* state (hardcode present,
+`vat_rate` absent, trigger bound, search_path matched, 0 non-default rows).
+
+> Also filed, needing no ruling: **BUG-013** — nine `src/actions/` modules are stubs that
+> `console.log('[DB TX] …')` and return `{ success: true }` without writing. They have no
+> callers today; wiring one to a button would produce a green toast and no row.
+
+
+### ⬅ Architect's analysis, 2 Sep — what (b) and (c) actually cost
+
+**This is not a ruling.** (b) is a finance call and stays Babin's. This narrows what is
+being decided, removes one argument that does not hold, and names a deadline.
+
+**The divergence, measured.** The trigger's exact arithmetic run against `money.ts`'s own
+reference case (`equipment 1,32,750 · discount 7% · VAT 13%`), computed in the live database:
+
+| | discount | taxable | VAT | total |
+|---|---|---|---|---|
+| `price()` — whole rupee | 9,293 | 1,23,457 | 16,049 | **1,39,506** |
+| trigger — 2 dp | 9,292.50 | 1,23,457.50 | 16,049.48 | **1,39,506.98** |
+
+**Rs 0.98 per invoice, of which Rs 0.48 is VAT.** Sub-rupee, but it is the VAT line — the
+figure that goes on a filed return — and the invoice the client is handed would not equal
+the row the database holds.
+
+**One argument in (b) does not survive.** It says *"paisa precision is what the column type
+`numeric(14,2)` was chosen to hold."* Storage precision does not constrain computation
+precision: a whole-rupee total stores in `numeric(14,2)` exactly, as `139506.00`. The column
+type is evidence for neither side, and (b) reads as more balanced than it is until that is
+struck.
+
+**⏳ The window is open now and shuts on the first invoice.** Live holds **0 invoices, 0
+invoice_lines, 0 payments** (checked 2 Sep). No client has been shown a total, nothing has
+been filed, and there is nothing to restate — which is true *only* because BUG-013 leaves the
+write path unwired. Once the CRUD stage lands, this acquires a data-migration tail and an
+audit story ("why did this invoice change?") inside a codebase whose Law makes payments
+immutable and corrections reversal-only. **Decide (b) before the first invoice is written.**
+
+**(c) is smaller than (b) and should not wait for it.** `invoices.vat_rate` is
+`numeric(5,4) NOT NULL DEFAULT 0.1300` — no row can hold NULL, and the default is exactly the
+constant the trigger hardcodes. Replacing `0.13` with `vat_rate` is therefore
+**behaviour-preserving for every row that can exist**. (c)'s stated cost — *"every existing
+row needs checking"* — is zero rows. What remains of (c) is a real product question and
+should be put that way: **should a zero-rated or differently-rated invoice be possible at
+all?** If yes, the trigger reads the column. If no, drop `vat_rate` and
+`invoice_lines.tax_rate` so neither goes on looking authoritative.
+
+**Recommendation on (b) — move the trigger to the app's arithmetic, not the reverse.**
+§2.4 and the §2.8 reference case are the ruled statement of how this business rounds, and
+`money.ts:118` enforces it at module load. The trigger states no rule and cites nothing.
+Conforming the app instead would change the displayed figure on every money screen and
+re-open a settled spec to match an undocumented one.
+
+**⛔ Do not take the tempting third option.** Deleting the trigger and letting the app own
+totals looks like the clean single-source-of-truth answer. It is wrong here:
+`0047_seed_reference_corpus.sql` writes `invoices` and `invoice_lines` directly, and the
+Booqable bridge is built to do the same. The trigger is the only thing keeping totals correct
+for a row the application did not write. **Keep the guarantor; correct its arithmetic.**
+
+**The standing cost of keeping both** is two implementations of one rule, which drift — that
+is how this was born. Answer it the way `money.ts` already answers it for itself: a test that
+feeds the reference case through the trigger *and* through `price()` and asserts they agree,
+so the next divergence fails a gate instead of an invoice.
+
+**Sequencing.** (c) first — one token, no data risk, and it makes the trigger honest about
+its own rate. (b) after the ruling, in the same migration if the ruling is "whole rupee".
+
+
+## 4.41 ✅ RULED 2 Sep 2026 — ProductReports ships at `/reports/products`; the other four are archived
+
+**Ruled by Babin, 2 Sep 2026**, both halves in one sitting:
+
+- **(a) `ProductReports` — wanted.** Routed at **`/reports/products`** (its old home
+  `/reports/inventory` belongs to `InventoryReports` and now carries a link across).
+  Routing revived ~15 dead controls, so the ClientReports remediation shipped with it:
+  header buttons / period chips / filter dropdowns → the shared `ReportToolbar` with a
+  working money-gated CSV; `PeriodPill` and the presentational pager deleted per
+  BUG-003's reasoning, with an honest "Showing all 5 rows" line. **The §9.6 register
+  was deliberately NOT given a 44th row** — its 43-count and per-group counts are
+  pinned by rulings §11.3 and asserted in `catalog.test.ts`; if a register entry is
+  wanted, that is its own small ruling.
+  **(a) `CasesReports` — not wanted.** → `src/archive/reports/`. The live Cases screen
+  is `CasesWorkspace` at `/inventory/cases`.
+- **(b) the three bundle components — not coming back.** → `src/archive/inventory/`.
+  The abandoned split leaves the program; the live `AddBundle` keeps its inline
+  versions. `FUNCTIONAL_FIX_PLAN.md` item #4 stays void.
+
+The original entry follows, kept for the reasoning trail.
+
+---
+
+**Raised 2 Sep 2026** finishing `FUNCTIONAL_BUGS.md` BUG-005 and BUG-007. Both bugs
+end at the same question, so they are filed here once.
+
+Five files under `src/` have **no route and no importer**. They compile, they count as
+live code, and between them they hold roughly **twenty dead buttons that can never
+render** — which is why they cost audit time repeatedly (`BUG_SWEEP_REGISTER` P2-44,
+then BUG-005, then BUG-007) without ever being a defect a user could meet.
+
+The repo already has the mechanism, and `tsconfig.json:30-34` states it: *"`src/archive`
+holds screens ruled out of the application. Law 3 keeps the files; excluding them from
+the program keeps them from being compiled, bundled or counted as live code. Restoring
+one is a move back into `src/modules` plus its route."* **Moving a file there is
+therefore not a deletion and is cheaply reversible — but it is exactly the "ruled out"
+that only Babin can say.** Hence this entry rather than a commit.
+
+### (a) The two report screens — `ProductReports.tsx` (517 lines), `CasesReports.tsx` (199)
+
+The fix plan called this unknowable from the code. **Git settles half of it.**
+
+`ProductReports` **was routed**, and was *replaced in place*: at `6fb1c62` ("Restore
+point before the 11-section wireframe restructure", 12 Aug) the route
+`/reports/inventory` stopped rendering `<ProductReports />` under the crumb *Asset
+Utilization* and started rendering `<InventoryReports />` under *Inventory Reports*.
+
+So it was not dropped by accident. But it was **not superseded either** — the two are
+different reports, and this is the part that needs the ruling:
+
+| | `ProductReports` (unrouted) | `InventoryReports` (live) |
+|---|---|---|
+| Subject | product/sales performance | asset stock and health |
+| Carries | sales trend, profit trend, turnover, fast/slow movers, dead stock, returns, top sellers, suppliers | total assets, utilization, availability, audit accuracy, top categories by value |
+
+Nothing live covers turnover, dead stock or slow movers. `/reports/equipment-performance`
+is the nearest and covers revenue and utilization per item, not stock movement.
+`data/expenseReports.ts:44` still says the period list is *"Kept for `ClientReports` and
+`ProductReports`, which import this list"* — written when it was expected to ship.
+
+`CasesReports` was **never** routed (`git log -S` on `App.tsx` returns nothing). It is not
+junk: its docstring records a deliberate rebuild in which every invented figure was
+replaced by one counted off `data/cases.ts` or by an explicit `'Not tracked yet'`. It was
+written beside `CasesQueue`, which has since been archived and replaced by the live
+`CasesWorkspace` at `/inventory/cases`. `data/nav.ts:469` notes the report catalogue is
+knowingly incomplete: *"§9.6's catalog of 45 is not built; Pulse is the report index that
+exists."*
+
+**The question:** is either report wanted?
+- **Wanted** → give it a route and wire its dead pager and buttons (`ProductReports.tsx:372`
+  has the same presentational pager BUG-003 removed from Client Ledger).
+- **Not wanted** → `git mv` both to `src/archive/reports/`; they leave the program and stop
+  being re-audited.
+
+### (b) The three bundle components — `InventoryTree`, `BundleSummaryRail`, `BundleItemsTable`
+
+`src/modules/inventory/components/`. `PROGRESS.md:10209` records them being split out of a
+600-line monolith; the live `AddBundle` (routed, `App.tsx:348`) **imports none of them** and
+carries its own inline versions instead. `BUG_SWEEP_REGISTER` P2-44 already called them
+*"three orphaned bundle components … that shadow the live AddBundle implementations"*.
+
+This is a straightforward abandoned refactor, and the practical point is that **the live
+screen is fine**: `AddBundle:1950` has a working `View all blocked items` toggle and a
+working `Duplicate`, which are precisely the controls BUG-007 filed as dead. The dead
+copies are only in the orphans.
+
+⚠ **`FUNCTIONAL_FIX_PLAN.md` item #4 is void.** It scoped `Collapse All` as an XS
+mechanical fix — *"its sibling `Select All` already has `onClick`"*. Both live in
+`InventoryTree.tsx`, which nothing renders, so wiring it would have changed nothing a
+user can reach. **Do not action that item; answer this instead.**
+
+**The question:** is any of the three coming back? If not, `git mv` all three to
+`src/archive/inventory/`. Nothing imports them, so nothing breaks either way.
+
+> Marked `TODO(decision) §4.41` at the head of all five files.
+
+## 4.40 ⬅ OPEN ×2 — who signs a daily closing, and may a day be re-opened?
+
+**Raised 1 Sep 2026** building the Daily Closing screen and
+`0078_daily_closings.sql` (DRAFT, pre-flighted, **not applied**).
+
+`WHATSAPP_LINKS_SPEC v1.0` §5.4 defers the closing ritual to
+`LOCAL_FIRST_CORE_SPEC` §6. **That document is not in this repo** — the same
+absence §4.38(b) records for the 20/24/29 Aug rulings — so the table stores what
+the screen computes and leaves the two questions it cannot answer:
+
+### (a) Who may approve a closing?
+
+0078 gates INSERT on **`auth_is_finance_or_admin()`** — Owner, Admin, Manager,
+Coordinator, Accounts — because that is the EXISTING predicate for writing
+finance, mirrored per §4.20 rather than invented. But approving a closing is
+arguably an *approval*, not a *write*, and the schema already has a narrower
+predicate for that class: `auth_can_approve_late_fee_waiver()` is **Owner and
+Manager only**.
+
+Both readings are defensible and the schema contains both. Narrowing later is
+one `create policy … replace` and breaks no stored row, so the wider set was
+taken as the reversible option — not as a ruling.
+
+### (b) May a day be re-opened, and by whom?
+
+Answered only as far as Law 3 forces: an approved closing is **immutable**, and
+a correction is a **void plus a new closing** (proven against the live database
+inside a rolled-back transaction — the void is accepted, the edit and the delete
+are refused, and a second live closing for the same branch/day is refused by a
+partial unique index). What is NOT ruled is whether staff may void at all, or
+only the approver, or only an Owner. Today it follows (a).
+
+### Deliberately NOT ruled here: what an unexplained variance costs
+
+`variance_reason` is **optional**. Requiring one above a threshold would be a new
+gate, and §4.38(b) records Babin's 24 Aug standing constraint — *build first,
+rules later*. The column exists so a reason can be recorded the day someone rules
+it must be; no CHECK demands it. The 31 Aug discount-policy work was the first
+thing that stance stopped; this is the second.
+
+---
+
+## 4.39 ✅ RULED 31 Aug 2026 — option (a): released_at/released_by, append-style release
+
+**The owner ruled (a)** the same day this was filed, and **approved applying it the same
+day**. `0076_booking_line_units_release.sql` is **APPLIED to the live project**
+(schema_migrations `20260831213343`): the `released_at`/`released_by` pair, the
+both-or-neither CHECK, a freeze trigger making a released row immutable for every role
+including Owner and `service_role`, and a live-rows partial index. Structure and
+behaviour were both verified — the freeze, the CHECK and 0044's surviving DELETE refusal
+were exercised on real rows in a rolled-back transaction (PROGRESS.md, 31 Aug).
+
+`unit.release` (actions/core.ts) mirrors `booking_line_units_all` per §4.20;
+`releaseBookingLineUnit.ts` is the action; the BookingDetail chip's × is live with
+§10.4's confirm-past-Packed. `queries/bookings.ts` names `released_at` unconditionally
+(the mock-only branch existed for hours and is gone).
+
+**Consequence to remember:** a released assignment is **irreversible by design**. There
+is no un-release — re-assigning is a new row. That was the point of the freeze, but it
+means a mis-press is corrected by assigning again, not by undo. Original filing kept
+below for the reasoning trail.
+
+### The filing as it stood when ruled — how is a creation-time unit assignment released before Pack?
+
+**Raised 31 Aug 2026** building the removable serial chip `REFERENCE_SPEC_v2.5 §10.4`
+ruled for BookingDetail ("line removal behind a visible 44×44 control, confirmed past
+Packed"). The chip is built; the removal cannot be, because the ruled mechanism — delete
+the `booking_line_units` row — is what Law 3 forbids, at two layers **verified against the
+live database this day**: DELETE on `booking_line_units` is granted to no signed-in role
+(live grants: INSERT and UPDATE only), and 0044's `trg_booking_line_units_reject_delete`
+exists live and raises for every role including Owner and `service_role`.
+
+The schema's own release paths (0002:297 — "a unit is released by voiding its parent line
+or by Swap, both of which leave the row") do not cover this case:
+
+- **Void the parent line** kills the line and its qty — the operator wanted the serial
+  unassigned, not the item removed from the booking.
+- **Swap** has no RPC anywhere in the migrations (searched: no `swap_unit`/`release`/
+  `unassign` function exists), and §4.30(a) places the swap at **Pack** — a chip on
+  BookingDetail is upstream of it.
+- `booking_line_units` has **no voided_at / released_at column** — unlike `booking_lines`
+  and `booking_crew_lines`, a released assignment has no way to exist as a row.
+
+The tension is in the schema's own words: 0002:295-296 promises "every assignment stays
+reversible until the booking is Confirmed", and 0044's trigger rejects the only mechanism
+the spec's ruling names, unconditionally. Both cannot stand.
+
+**The options, none taken here:**
+(a) a `released_at`/`released_by` pair on `booking_line_units` (migration; append-only
+release, Law 3 clean; the availability engine and `unit_count` readers must then filter
+live rows);
+(b) rule that release = UPDATE `asset_id → null` (grants already permit UPDATE, but it
+redefines the column's null semantics — 0002:270 says null means "non-serialised line",
+and it silently loses who released and when — Law 10-adjacent);
+(c) amend Law 3's enforcement for this one table pre-Confirm (reverses a written backstop
+— D3-class, the worst option);
+(d) fold into §4.37(c) C3 and rule assignment-bindingness and release together — they are
+the same question asked at two moments.
+
+Until ruled, the chip's × is surfaced-as-unavailable with this reason (the established
+answer), like the PIN button on Login. Whichever option wins also needs the ruled
+confirm-past-Packed guard and the §4.20-style capability string mirroring the policy on
+the table the release writes.
+
+## 4.38 — the 31 Aug rules check: one ruling applied, one left OPEN
+
+**Raised 31 Aug 2026** by the rules check of `PROGRESS.md` (its top entry of that date): every
+`Law N` citation in the 19 governance files read against §0, and every recorded ruling read
+against the rulings Babin made in sessions that had no repo access. Six wrong law numbers were
+corrected in place; three rulings were recorded in the repo for the first time (20 Aug discount
+rules removed · 24 Aug build first, rules later · 29 Aug Foundation v3.0 fresh start).
+
+### ✅ (a) RULED — Law 14's desktop breakpoint is **1280**, not 1180
+
+§0 Law 14, `src/lib/device.ts` `BREAKPOINT`, `README.md`, `SCREENS.md` §07 and
+`WIREFRAME_RULINGS_2026-08-12.md` §7 all said 768 / **1180**. `docs/DESIGN_DIRECTION_SPEC_v4.1.md`
+§7.7 (the ruled final look, confirmed 29 Aug) says a spec-locked **768 / 1280** pair, and every rail
+built since 30 Aug follows it — `SideRail` appears at exactly 1280 and the inline reflow at exactly
+1279, driven in the browser. The 30 Aug PROGRESS entry quoted rulings §7 as "below 1280"; §7 says
+1180 — the 1280 is v4.1's. The repo carried two desktop breakpoints without anyone ruling.
+
+**Ruled 31 Aug 2026 (applied on "fix all"): 1280 wins** — it is the ruled design direction and the
+built screens. Tablet is 768–1279. Docs corrected in this pass; one code follow-up:
+
+- [x] `src/lib/device.ts` — `BREAKPOINT` desktop 1180 → 1280. Then grep every `useViewport()`
+      consumer that branches on `'desktop'` and re-run the §7 reflow tests: a screen that reflowed
+      at 1180 may now show its rail at 1180–1279 with too little room (the 31 Aug double-rail
+      squeeze, one band lower). `SCREENS.md` §07's "desktop 1180+" is annotated, not rewritten.
+      *(Done before this section was written — commit `8a16cd7` (v4.1 repaint, Wave-0 responsive)
+      moved the pair to `src/lib/breakpoints.ts`: `BP` 768/1280, `MQ` strings, `viewportFor()`,
+      mirrored by `styles/responsive.css` and the `index.html` pre-paint script, with
+      `__tests__/breakpoints.test.ts` asserting all three agree. The rules-check session had only
+      the md pack, no repo, and could not see it. Verified 31 Aug: that guard plus the §7 reflow
+      suites — 55 tests across 3 files — all green.)*
+
+### ⬅ (b) OPEN — precedence of the documents ruled outside this repo
+
+Three of Babin's rulings live only in chat-session deliverables:
+
+| Date | Document | What it claims |
+|---|---|---|
+| 20 Aug | `BABIN_RENTALS_OS_MASTER.md` | "the single winning reference" over the spec pack; carries the discount-rule removal, local-first, corrected date engine, 12 Aug nav, milestones M0–M6 |
+| 24 Aug | Product Goal & North Star v2.0 | **BUILD FIRST, RULES LATER** — no new business rules until the working app is finished; direction-only, MASTER.md wins on implementation |
+| 29 Aug | `FOUNDATION_SPEC_v3.0_FRESH_START.md` + `UI_UX_SPEC_v1.0.md` | "single authority for the NEW app" — sub-rentals core, crew light, 10-item v1 nav, v4.1 look final, glass on chrome |
+
+None of the three is in this repo. `CLAUDE.md` and this file still name
+`00 Getting Started/Foundation Specification.md` as canonical, and `PROGRESS.md` keeps building
+this codebase. Until Babin places the files and rules the order, **§0 + `PROGRESS.md` govern this
+repo and the 29 Aug specs govern nothing here** — that is a description of the current state, not
+a ruling on which should win.
+
+The 24 Aug stance is recorded here as a **standing constraint on every §4 ruling**: a new business
+rule (a gate, a tier, a ceremony) is out of scope until the app runs real jobs. The 31 Aug
+"discount policies" work was the first thing it would have stopped.
+
+---
+
+## 4.37 ⬅ OPEN ×5 — contracts raised by the 30 Aug reference-app forensics pack
+
+**Raised 31 Aug 2026** from `../rental-management-analyzes/` (Rentman/Booqable/Zoho
+forensics; `06-babin-findings.md` and `07-frontend-assessment.md`). None of these blocks
+Phase 1. They are recorded now because each is a *contract* screens will consume — deciding
+them before screens multiply is what keeps them cheap. Evidence tags per the pack; the calls
+are the owner's.
+
+### (a) B2 — what shape does availability serve?
+
+Booqable serves five numbers per item/location (`stock · planned · needed · available ·
+plannable`), not one `[OBSERVED]`. "3 available" cannot distinguish *own 3, all free* from
+*own 8, 5 out* from *own 3 free but 2 wanted by an unconfirmed quote* — and the sub-rent
+decision needs the difference. `src/lib/availability.ts` stays the pure engine either way;
+this ruling is about the **served contract** (view or RPC) every screen renders instead of
+doing per-screen arithmetic. Rule the number set, and **bound the query window in the same
+contract** (Rentman's `TIMEFRAME_TOO_BIG`; `RENTAL_WINDOW_BOUNDS` from §4.30 is the natural
+constant to reuse).
+
+### (b) B5 — which layer receives entity-type realtime invalidation?
+
+Both references push *what entity type changed*, never the change itself `[OBSERVED]` —
+small payloads, no stale-push risk, client refetches. The findings pack maps this onto "your
+TanStack Query layer", **which does not exist**: data access is hand-rolled
+(`lib/bookingQuery.ts`, `lib/dataAccess.ts`, Dexie) and there is no `@tanstack/*` dependency.
+The ruling: extend the hand-rolled layer with an invalidation hook, or adopt TanStack Query
+first. Must also state how invalidation interacts with the Workbox `NetworkFirst` bookings
+cache (`vite.config.ts`) — a "refetch" served by the service-worker cache is not a refetch.
+Blocks the Supabase Realtime port, nothing earlier.
+
+### (c) C3 — which unit assignment is binding: booking-time reservation or packing scan?
+
+Both references defer unit choice to the floor because the planned unit is routinely not
+the packed unit `[OBSERVED]`; ours auto-reserves least-used at creation with a fallback
+(27 Jul lock). The pack's recommendation — booking-time assignment is a **suggestion that
+holds availability**, the packing scan is the **authority** — is close to what is built, but
+no document states which one wins, and every floor screen implicitly answers it. One
+sentence to rule; contradictory screens if left unruled.
+
+### (d) C1 — may a packer's floor verb reprice a confirmed booking?
+
+The Packing spec's open ⭐, promoted here so it has a number. Rentman's `add` and
+`alternative` are floor verbs with defined consequences, not booking edits `[OBSERVED]` —
+a substitution marks the line Replaced and records what went instead. Our `substitute` verb
+can follow that pattern without a pricing question; **`add_unlisted` cannot** — an added
+line reprices a confirmed booking or creates an unpriced one, and that is the ruling.
+Blocks half of C1 in M3; `substitute` is buildable without it.
+
+### (e) B4 — does the least-used ranking run on the client or behind an RPC?
+
+The 27 Jul lock's implementation landed 31 Aug (same day this entry was written, by a
+parallel session): `rankLeastUsed` in `lib/availability.ts` (pure) and `planCreationUnits`
+in `lib/queries/availability.ts`, with tests; the client computes the choice and passes
+`units[]` to the create RPC (draft `0071`). Booqable serves `stock_item_suggestions` as a
+**server endpoint** `[OBSERVED]`, and the pack's argument holds here: the ranking reads
+rental history across all bookings, must give the same answer to the web form, the Pack
+workspace, and any future shell, and is a tunable rule (the open ⭐: 30-day window vs
+lifetime). Nothing is misplaced today — no component imports it, so it sits correctly in
+the engine layer. The ruling: promote the ranking into an RPC (client sends product + window,
+server returns ranked units), or accept client-computed-and-passed as the durable shape.
+
+## 4.36 ✅ RULED 6 Oct 2026 — should a failed audit write stop the business action? (`R3-5`)
+
+> **RULING (Claude, under build-time authority, on Babin's instruction to rule it — `RULINGS-2026-10-06.md`
+> "§4.36"):** the **audit of record is the database trigger**, written in the same transaction as the
+> change, so a failed audit insert already fails the change atomically — for `operation_sessions` since
+> 0154/0156. The app-side `logAuditEvent` row is supplementary: if it fails the business verb
+> **proceeds**, loudly (`console.error` + `captureError`), never silently. This also answers the
+> `resetUnits` loop wrinkle: no part-way failure is introduced. **Follow-up:** `cleaning_queue_entries`,
+> `purchase_requests`, `stock_transfers` and `products` had NO audit trigger — **written as migration
+> `0157` (6 Oct 2026), verified locally, NOT yet applied to live.** Revert = make the two call sites
+> return early on `!ok`. The original question and analysis are kept below for the record.
+
+
+**Raised 16 Aug 2026 by re-verifying `R3-5`. The defect is confirmed; the fix needs one ruling.**
+
+`lib/audit.ts` catches every failure from the `audit_events` insert into `console.error` and
+returns `Promise<void>`. The caller cannot know it failed, and there is a live path where it
+does: `dataAccess` writes `.insert().select().single()`, `audit_events` grants INSERT to all
+staff but **SELECT to Owner/Admin/Manager only**, so a **Warehouse** actor's read-back is
+denied, throws, and is swallowed.
+
+`operation_sessions` is not among the six tables carrying an audit trigger, so a Warehouse
+user completing a return gets `operation_sessions`, `return_lines` and movements committed, a
+success screen — and **no audit row anywhere**. Nothing later can reconstruct who did it.
+
+**Two parts, and only one needs you:**
+
+- **Mechanical, no ruling — ✅ BOTH APPLIED 16 Aug 2026.** `logAuditEvent` now returns
+  `{ ok, error }` and never throws; `idempotentInsert` grew a `returnRow` option and
+  `audit.ts` passes `false`, so the write no longer runs a `RETURNING` clause the role has no
+  SELECT for. Pinned by `lib/__tests__/audit.test.ts` — **4 of its 7 cases fail against the
+  pre-fix engine**. Behaviour at the call sites is deliberately unchanged.
+- **⬅ The ruling is STILL OPEN.** The two call sites in `actions/rentals/floorVerb.ts` now
+  carry `TODO(decision) §4.36` and check `ok`, but both still **proceed** on failure, exactly
+  as before. Nothing has been pre-empted.
+- **⬅ The ruling.** When the audit write still fails, does the business verb **fail with it**?
+  Law 3's append-only intent argues yes — an unaudited state change is exactly what the law
+  exists to prevent. Against: a floor operator loses a completed return to an audit outage.
+  A middle answer (queue the audit row, let the verb proceed, surface a banner until it
+  drains) is available but is itself a design decision. **Do not pick one in code.**
+
+  **One wrinkle the ruling must cover, found applying the mechanical half.** The second call
+  site (`resetUnits`, per-entry) sits *inside a loop whose earlier `safeUpdate` calls have
+  already committed*. "Fail the verb with it" therefore cannot mean a clean refusal there — it
+  means stopping part-way through a batch that is already partly written. Rule that shape
+  explicitly rather than leaving it to be inferred at the call site.
+
+## 4.34 ⏰ DATED — the BS calendar stops converting on **17 August 2026**
+
+**Not a decision. Data entry, and it is due today.** `src/lib/bs.ts` anchors
+1 Shrawan 2083 = 16 Jul 2026 (`ANCHOR_BS`, :43) and holds exactly one month length —
+`SHRAWAN_2083_DAYS = 32` (:50). `toBs()` returns `null` for any day outside it (:97).
+
+Day 32 of Shrawan 2083 is **16 Aug 2026**. That is the last date this application can render
+in Bikram Sambat. **From 17 Aug 2026 every BS date in the app is `null`** — Today's header,
+Calendar, Cash Flow, Working Capital, Booking Detail, every report that stamps a BS period.
+
+The file is honest about it — *"only the anchor month is known here… an honest gap beats a
+wrong date"* — and that judgement was right. But the gap becomes total tomorrow.
+
+**Why this is not filed as a ruling:** BS month lengths are published data, not a product
+choice. They are determined astronomically and published annually by the Nepal Calendar
+Determination Committee (`Date Engine.md` §0.1), so they must be **transcribed, never
+inferred** — a plausible-looking wrong table puts wrong dates on VAT filings, which is far
+worse than `null`.
+
+**⛔ And the data is not in this workspace.** Checked 16 Aug 2026. `Date Engine.md` §2.1 is
+the only month-length table anywhere in the repo or the spec library, and **it is marked
+"DO NOT SEED — arithmetically impossible"** by its own author:
+
+```
+2083 : 31 32 31 32 31 30 30 30 29 30 29 31   ⛔ illustrative, and wrong
+```
+
+Re-derived here rather than taken on trust, and the warning is correct: the row sums to
+**366** where BS 2083 totals **365**, and gives Baishakh + Jestha + Ashadh = **94** days
+where the document's own anchors — 1 Baishakh 2083 = 14 Apr 2026, 1 Shrawan 2083 =
+16 Jul 2026 — are exactly **93** apart (30 + 31 + 30 + 2). It fails §3.3's validator on two
+of its four rules. Seeding it would put every BS date from Shrawan 2083 onward one day out,
+which `Calendar.md` §4.2 calls *"the highest-priority correctness bug in the product"*.
+
+**Nor can the gap be closed by derivation.** The two known anchors fix only the SUM of the
+first three months (93). They say nothing about Bhadra 2083 — the month that begins on
+17 Aug — so the very month that breaks tomorrow is the one no data in this workspace
+describes.
+
+**⬅ What is needed from the owner: the NCDC published month lengths**, at minimum 2083 and
+2084, ideally the 2078–2095 range `ARCHIVE_AUDIT` B10 asks for. Everything else is ready:
+one table plus `fiscalYear()`, no screen changes, because everything downstream already
+refuses correctly rather than guessing.
+
+`ARCHIVE_AUDIT` B10 is the same item. **Do not let anyone "unblock" this by typing a
+plausible row.**
+
+## 4.35 ⬅ OPEN — 24 engine-layer findings were filed on 11 Aug and never entered this plan
+
+`BUG_SWEEP_ENGINES_v1.1.md` (14 findings) and `v1.2.md` (10) are referenced **nowhere** in
+this file or `PROGRESS.md`. They sit in `src/lib/`, which is where §0 puts the laws.
+
+**Both sweeps carry the same caveat and it still applies: read, not run** — the sandbox failed
+to start that session, and the tree has moved a great deal since. **Re-verify every row against
+the current tree before working it.** Some are already closed incidentally: `E-P0-3`
+(`createAction` never checking permissions, defaulting the caller to `admin`) was fixed in the
+11 Aug wave by a different route.
+
+### Re-verified against the current tree, 16 Aug 2026
+
+Six were re-checked by reading the files as they stand. **Every mechanism was real at the
+quoted lines; every claim's REACH was mis-stated — three too high, one too low.** That is the
+expected shape for a read-not-run sweep, and it is why nothing here was actioned on the filing
+alone.
+
+| ID | Verdict | Sev | What is actually true |
+|---|---|---|---|
+| `R3-1` | ✅ **FIXED 16 Aug** | P1 | Real, and **worse**: Law 10 has **seven** implementations, not four. `money.ts:discountGate` and `rbac.ts:canApproveDiscount` both accepted a negative percent, and `canApproveDiscount`'s `percent <= 0` sat *above* the role check — so `canApproveDiscount('Client', -5)` returned **true**. It reached a screen: Settings ▸ Tools' calculator feeds `discountGate` (`Tools.tsx:783`), its input is `type="number"` with no `min`, and `:817` renders a green tick on `gate.ok`. Typing `-5` produced an approving tick for a price increase. Both now refuse; tests in `money.test.ts` and `rbac.test.ts`, including a cross-engine agreement check. |
+| `R3-5` | ⬅ **CONFIRMED — needs a ruling** | P1 | Real. `audit.ts` swallows every insert failure into `console.error` and returns `Promise<void>`. The live path: `dataAccess` writes `.insert().select().single()`, and `audit_events` allows INSERT to all but **SELECT to Owner/Admin/Manager only** — so a **Warehouse** actor's read-back is denied, throws, and vanishes. `operation_sessions` is not one of the six trigger-covered tables, so a Warehouse return completes with **no audit row anywhere** and a success screen. See §4.36. |
+| `E-P0-1` | ⏰ **CONFIRMED** | P0 | See §4.34. One addition: when `toBs` returns null, `BsAdDate` puts the **AD date in the BS-primary slot** and suppresses the parenthetical — handing a Nepali reader a Gregorian date presented as the BS answer. That render fix needs no external data and should land before 17 Aug even though the table cannot. |
+| `R3-2` | ⚠ **PARTLY — inverted. Re-verified 16 Aug; the prescribed fix is now REVERSED** | P2 | Every mechanism confirmed live. `validateHandoverReadiness` has zero callers — and so does **everything else in `lib/validation.ts`**: a sweep of all 201 `.ts`/`.tsx` files outside `archive/` found **not one import of the module**, so `validateRentalDates` and `DateRangeValidation` are dead too. The inverted defect is confirmed at `floorVerb.ts:979` — `applyBookingTransition` is called with **no `flags`**, so `'Deposit Pending'` and `'Payment Due'` (both `blocks: BLOCKS_HANDOVER` in `workflow.ts:221-222`) never fire; the only live gate is four `useState(false)` checkboxes in `HandoverWorkspace` (`:151-154`). **DO NOT delete the function** — see §4.35a. Wiring the flags remains blocked on the deposit-waiver ruling. |
+| `R3-4` | ⚠ **PARTLY — not reachable** | P2 | The arithmetic is real (`moneyScope({role:'Owner'})` → `'full'`), but the sole constructor always sets `surface:'default'`, all 15 call sites use it, and no floor screen renders money. A fail-open API default, **not a live leak**. Hardening only. One edge the sweep missed: `...opts` spreads *after* the default, so `{surface: undefined}` would clobber it. |
+| `R3-6` | ✅ **FIXED 16 Aug** | P2 | Confirmed and worse than filed, then closed. `parseCsv` returned a bare `string[][]` with no error channel, and opened quote mode on **any** `"` — so `6" Pipe` … `24" Ladder` collapsed every row between them into one, and `ImportCenter` showed a green "Ready" badge over it. Now: a quote opens a field **only at a field boundary** (RFC 4180 §2.5), an unterminated quote and ragged rows are reported by line number, and the return is `{ ok, rows, errors }`. `ImportCenter` refuses a file with `ok: false` rather than mapping it. 12 tests in `lib/__tests__/csv.test.ts`, including a `csvCell` → `parseCsv` round trip. Fixed **before** the import action exists, which was the whole point. |
+
+**Fix order:** `R3-1` ✅ done · `E-P0-1` render half ✅ **done 16 Aug** (`BsAdDate` tags the AD
+fallback instead of passing it off as BS; 6 tests proven to fail against the pre-fix component.
+**The §4.34 data blocker is untouched** — BS is still `null` from 17 Aug, the app just says so)
+· `R3-5` ⚠ **mechanical half done 16 Aug** (`logAuditEvent` returns `{ok, error}`; the write no
+longer asks for a SELECT it does not hold. **The ruling in §4.36 is still open** and every
+caller still proceeds on failure, unchanged) · `R3-6` ✅ **done 16 Aug** (quote opens only at a
+field boundary per RFC 4180 §2.5, so inch marks are data; unterminated quotes and ragged rows
+reported by line; return is `{ok, rows, errors}` and `ImportCenter` refuses `ok: false`. Landed
+**before** the import action exists, which was the point) · `R3-2` delete the dead function,
+then rule the waiver · `R3-4` hardening whenever `fieldGating.ts` is next touched.
+
+**Four of six closed. The two that remain are the two that need a ruling or have no reachable
+failure** — which is the right place to stop.
+
+> ⚠ **Process note, 16 Aug 2026.** `BsAdDate` was fixed *twice*, in parallel, by two sessions
+> working the same register — two implementations and two test files for one defect. The
+> duplicate (`BsAdDate.fallback.test.tsx`) was deleted in favour of `BsAdDate.test.tsx`, which
+> covers all three layouts plus `ad-only` and invalid input, and deliberately does not pin the
+> wording of the explanation. Worth noting because it is the same failure this very section
+> catalogues — `R3-1` was seven implementations of one law — arriving in the process rather
+> than the code. **Claim a §4.35 row in `PROGRESS.md` before starting it.**
+
+**`v1.2`'s closing observation belongs in this plan, not only in that file:** Law 1 has been
+followed well, and the failure mode that replaced logic-in-pages is **duplication between
+engines** — every copy in the correct architectural layer, each right in isolation. `R3-1` and
+`R3-2` are both that shape. Worth watching for as a class, not four separate bugs.
+
+## 4.35a ⬅ OPEN ×2 — reversing `R3-2`'s "delete it (free)", and a Law 1 violation under it
+
+**Raised 16 Aug 2026 by acting on §4.35's fix order and finding the prescribed action wrong.**
+
+### (a) The dead function must be KEPT, not deleted
+
+`R3-2`'s stated action was "delete the dead function (free)". Checking that instruction before
+following it turned up three reasons it is not free, and the function is deliberately left in
+place with the evidence recorded in its own header:
+
+1. **It is the only written statement of the Handover gate.** The gate is unbuilt — the flags
+   are not passed — so deleting this deletes the spec of the thing still to be wired.
+2. **The gate cannot live on the screen instead.** Handover is warehouse-facing and Warehouse
+   is money-blind (Law 6); `HandoverWorkspace.tsx:945` states it outright. A deposit gate is
+   therefore expressible **only** in an engine. That is Law 1, not preference.
+3. **Deleting the file would bury (b).**
+
+**⬅ Needs ruling only if you disagree.** The conservative option was taken — nothing was
+removed. If the owner wants the file gone, `src/archive` is the house mechanism (tsconfig's own
+comment: *"Law 3 keeps the files"*), not `rm`.
+
+### (b) ⬅ OPEN — Law 1 is violated on the booking date rule, and the two copies disagree
+
+`validateRentalDates` is dead while `NewRental.tsx:1283` re-derives the same rule inline. Law 1
+says pages never implement business logic. This is the §4.35 closing observation's failure mode
+one level worse: not duplication *between engines*, but an engine bypassed by a page.
+
+They do not agree:
+
+| | `lib/validation.ts` (dead) | `NewRental.tsx:1283` (live) |
+|---|---|---|
+| formula | `Math.max(1, ceil(diff / DAY))` | `Math.max(0, round(diff / DAY))` |
+| same-day booking | **1 day** | **0 days → Confirm blocked** |
+| agrees with Law 9 (`days >= 1`, DB-enforced) | yes | no |
+
+`round` vs `ceil` is dormant — `pickup`/`ret` are date-only there, time is separate state, so
+the difference is always a whole number of days. **The floor is not dormant.** A same-day
+rental — out Monday morning, back Monday evening — is one day to the engine and to the
+database, and an error on the screen ("Return must be later than pickup"). It cannot be booked.
+
+**TODO(decision):** is a same-day rental a one-day booking? Law 9 and this engine both already
+say yes and the database enforces it, so this may be the screen contradicting a ruled law rather
+than an open product question — but the fix makes same-day bookings bookable, which is a
+behaviour change with money consequences, so it is not being taken unilaterally.
+
+---
+
+## 4.33 ⬅ OPEN ×3 — blockers that cannot be fixed from inside this repo, 16 Aug 2026
+
+None of these is a product decision. Each is an action in a console this repo cannot reach,
+and each was found by driving the app or querying the live project rather than by reading
+code. They are collected here because they were previously recorded only in `PROGRESS.md`,
+where a blocker is invisible to anyone reading the plan.
+
+**(1) The password-reset link cannot return to the app.** `/forgot-password` sends a real
+email (verified: `POST /auth/v1/recover`, 813 ms, against the live project), but Supabase only
+honours a `redirectTo` that appears in **Auth → URL Configuration → Redirect URLs**. An
+unlisted URL falls back silently to the Site URL, which lands the operator somewhere else
+holding a valid recovery token. Needs `http://localhost:3000/reset-password` and the deployed
+origin added. **Not settable from code and no migration can do it** — the feature is built and
+incomplete until this is done.
+
+**(2) Only one of five staff rows can sign in.** Queried live 15 Aug: `babindulal7@gmail.com`
+(Owner) has an `auth.users` row, a password and a confirmed email. `owner@babinrentals.com`,
+`manager@` (Admin), `warehouse@` (Warehouse) and `billing@` (Coordinator) have staff rows and
+**no auth account at all**.
+
+That blocks verification, not just convenience. §4.20 gave Coordinator and Warehouse role sets
+that differ from Owner's, §4.28 turns on whether a Warehouse session sees money, and RLS
+answers to the JWT — so **none of those paths can be driven** without real accounts. Creating
+them is a Supabase dashboard action.
+
+**(3) This repo cannot rebuild the live database.** Two independent gaps, both verified
+against `supabase_migrations.schema_migrations`:
+
+- `0056_0_auth_role_falls_back_to_auth_uid` is **applied with no source file** in
+  `supabase/migrations/`. Its SQL exists only in the migration table.
+- The seed corpus went in **outside the migration table** — `0047_seed_reference_corpus.sql`
+  is unapplied, yet its rows are live (its first client is `C-34` "Sagarmatha Pictures Pvt.
+  Ltd."). The recorded `0047` is a different, 811-character tail patch.
+
+So a fresh environment built from this directory does not reproduce production. Recovering
+(1) is a copy-out of `schema_migrations.statements`; (2) is a decision about whether the seed
+route becomes a real migration.
+
+## 4.32 ⬅ OPEN — what surfaced making the rulings settings-controlled, 16 Aug 2026
+
+The §4.30/§4.31 rules became Settings keys so the owner can change them without a release
+(`unitAvailabilityRule`, `rentalTurnaround`, `packingTreeGrouping`, `packingPhotosRequired`,
+`evidenceRetentionDays` — all in `lib/settingsStore.ts`, rendered on **Settings ▸ System ▸
+Operations rules**). Every default is the ruled answer, so surfacing them changed no behaviour.
+
+An adversarial pass over that work found five things. Two were defects in it and are **fixed**;
+three are open and are recorded here rather than patched.
+
+### ✅ Fixed in the same pass
+
+1. **`toTstzRangeLiteral`'s `bounds` defaulted to the module constant.** Safe only because the
+   one caller passed `plan.bounds` explicitly — and one careless call from writing a period
+   under the *ruled* default while the check that produced it ran under the *owner's* choice.
+   The parameter is now required.
+2. **`readSettings()` discarded an invalid stored value in total silence.** Right for a VAT rate
+   (visible on the next invoice); wrong for an operations rule. An owner who chose
+   `Only In Stock` would be silently returned to `Condition only` after a spec rename —
+   availability *loosens*, gear held back becomes bookable, and nothing on screen says so. It
+   now warns, naming the key and the substituted default. Warning rather than throwing, because
+   refusing to load settings would take the app down over one bad key.
+
+### ⬅ (a) OPEN — `rentalTurnaround` is written into the database as data, not just read
+
+`toTstzRangeLiteral` puts the convention into the **bracket** of
+`inventory_reservations.period`, and the live GiST exclusion compares with `&&`, which honours
+the bracket each row was written with. **Flipping the setting does not rewrite existing rows**,
+so the table would hold mixed conventions and the constraint would enforce per-row history:
+
+- half-open → closed: the app refuses a back-to-back the database would have accepted.
+- closed → half-open: **the database rejects a booking the app just told the operator was
+  fine**, surfacing as `reserveAssignedUnits`'s "Another booking may have taken it" — which is
+  wrong, and unfalsifiable from the UI.
+
+Latent today: `inventory_reservations` has **0 rows**, which is precisely why it is cheap to
+decide now. **TODO(decision):** does changing this setting (i) re-write live holds, (ii) apply
+only to new holds and accept the mixed table, or (iii) become an Owner-only action with a
+stated warning? None may be assumed.
+
+### ⬅ (b) OPEN — `evidenceRetentionDays` cannot stay in localStorage
+
+`readSettings()` returns `SETTINGS_DEFAULTS` when `typeof window === 'undefined'`. Any
+server-side expiry job therefore reads **0 = keep forever**, whatever the owner set — silently,
+and in the safe direction, which is the kind of bug that survives testing. A retention rule that
+only a browser can see is not a retention rule. It needs `system_settings` (live, key/jsonb,
+**0 rows**, `is_public` column present) before the expiry job is built. The same argument
+applies to `unitAvailabilityRule` for a weaker reason: two operators with different
+localStorage get different candidate pools for the same booking, with no audit row recording
+which rule applied.
+
+### ⬅ (c) OPEN — three blockers sit under "move settings into `system_settings`"
+
+1. **`insertViaSourceSwitch` cannot type a write to it.** `dataAccess.ts` imports `Database`
+   from `types/database.ts`, which is hand-maintained "for migrations 0001 through 0012" and
+   lists 24 tables — no `system_settings`, no `evidence_files`, no `product_units`. (This is
+   also why ruling (a) typechecked: `inventory_reservations` happens to be in that list.)
+2. **`canManageSettings` is Owner-only; the live policy is not.** `system_settings_manage`
+   (ALL) is `Owner | Admin | Manager`, and `system_settings_select` is
+   `is_public OR Owner|Admin|Manager`. Per §4.20's closed ruling — mirror the policy — **the
+   app is the wrong side of this drift.** It bites only once something writes the table.
+3. **`is_public` must be `true` for every operations rule.** A rule stored non-public is
+   invisible to exactly the Warehouse, Coordinator, Technician and Driver sessions whose work
+   it governs.
+
 ## 4.31 ✅ ALL FOUR RULED — the floor rulings, 16 Aug 2026
 
 Raised as a `TODO(decision)` block at `lib/queries/bookings.ts:1089` — the four things the
@@ -515,12 +2378,32 @@ grouping `planAssignment` needs to expand a bundle line into its member products
 are currently *reported as skipped* rather than assigned (`queries/availability.ts`), because
 `booking_lines.product_id` is null on them. This ruling is what unblocks that.
 
-### ✅ (3) Reset's `demand` / `vip` / `rush` flags — dropped
+### ✅ (3) Reset's `demand` / `vip` / `rush` flags — dropped **and now implemented**
 
-No column exists for any of them anywhere in the schema. The reset queue renders without
-priority flags rather than inventing a source. Nothing that exists today is lost. If the floor
-later asks for prioritisation, the option this ruling passed over — deriving it from the next
-booking's urgency, which is real data and needs no migration — is the one to revisit first.
+No column exists for any of them anywhere in the schema. **Implemented 16 Aug 2026.**
+
+`priorityTier` had **four** inputs, not three, and the ruling named only three. The fourth was
+`waitingMinutes > 240` — which is exactly `queueTimeTone(m) === 'danger'`, already rendered on
+every row as Queue Time. So a Priority flag reduced to that one surviving clause would have been
+a second control saying precisely what the first one says. All of it went: the chip tile, the
+filter toggle, both row flag icons, the `Next Priority Items` card, `PriorityTier`,
+`priorityTier` and `isPriority`. **Urgency did not leave the screen; the duplicate did** —
+"Longest wait 5h 20m" and the per-row Queue Time tone are untouched.
+
+Both hardcoded grid counts were changed with the arrays they lay out (`repeat(5,…)` →
+`repeat(4,…)` for the chips, `'1fr 1fr'` → `'1fr'` for the summary), which an adversarial pass
+named as the most likely way this ships looking broken.
+
+Verified by driving `/rentals/B-715/reset` in the mock app: four chip tiles, zero occurrences of
+"priorit" in the rendered text, no `[aria-label="Priority"]` node, no `Next Priority Items` card.
+⚠ The browser harness reported a 0×0 viewport, so the **rendered** layout was not measured —
+the grid/array agreement was checked in source instead. 126 tests pass across the six affected
+suites, and the pass confirmed by execution that ruling (3) breaks none.
+
+If the floor later asks for prioritisation, the option this ruling passed over — deriving it from
+the next booking's urgency (`queue entry → product_units.id → inventory_reservations.asset_id →
+bookings.pickup_at`), which is real data and needs no migration — is the one to revisit. Do not
+re-add a hand-set flag.
 
 ### ✅ (4) Empty-state copy for Handover, Return and Cleaning & Reset — to be drafted
 
@@ -681,29 +2564,17 @@ reasoning does not transfer to assignment**, where too-permissive puts a unit th
 Maintenance onto a shoot. The engine will not pick it on a caller's behalf, and a test pins
 the honest consequence of passing an empty set.
 
-## 4.29 ⬅ OPEN ×2 — the residue of closing the capability matrix, 16 Aug 2026
-
-**Raised applying `CAPABILITY_MAPPING_2026-08-16.md`.** 24 declared-but-unhandled capability
-strings were closed by the §4.20 method — mirror the RLS policy on the table the action
-writes. Twenty-one derived cleanly and are live in `actions/core.ts`. Two things did not, and
-neither may be answered by inventing a role set.
-
-### (a) `inspection.create` · `inspection.pass` · `inspection.fail` — nothing to mirror
-
-**There is no write target.** No table in the schema matches `inspect`, and
-`operation_session_type` is `Packing | Handover | Return | Reset | Cleaning` — Inspection is
-not a member. So the mirroring rule has no input, and any role set assigned here would be
-invented, which `CLAUDE.md` forbids.
-
-**TODO(decision) — where does an inspection write?** Either
-
-- **(a)** add `Inspection` to `operation_session_type` and mirror `operation_sessions`
-  (which would make it the floor set: Owner · Admin · Manager · Warehouse), or
-- **(b)** give inspections their own table with its own policy.
-
-All three actions are stubs, so **this blocks nobody until one is built** — and all three
-now fail closed *by name*, which is the correct state for an unbuildable verb. It becomes
-urgent the moment someone writes a body.
+## 4.29 ✅ RESOLVED — the residue of closing the capability matrix, 12 Sep 2026
+ 
+ **Raised applying `CAPABILITY_MAPPING_2026-08-16.md`.** 24 declared-but-unhandled capability
+ strings were closed by the §4.20 method — mirror the RLS policy on the table the action
+ writes. Twenty-one derived cleanly and are live in `actions/core.ts`.
+ 
+- **(a) `inspection.create` · `inspection.pass` · `inspection.fail` — RESOLVED via (a) (12 Sep 2026)**:
+   Added `'Inspection'` to enum `operation_kind` and updated `operation_sessions` check constraint
+   via migration `0122_inspection_operation_session.sql`. Mapped in `actions/core.ts` to
+   `rbac.canWriteFloor(ctx.role)` (Owner, Admin, Manager, Warehouse), faithfully mirroring
+   `operation_sessions_all`. Permissions dimension reached 39/39 (100%).
 
 ### (b) `purchase.approve` is broad because the RLS policy is broad
 
@@ -736,7 +2607,25 @@ split the set.
   mutation-tested — commenting out a `case` must make it fail, and at first it did not,
   because `// case 'x':` still matched the pattern. Both scans strip comments now.
 
-## 4.28 ⬅ OPEN — how Law 6 gets enforced, now that we know `0019` never enforced it
+## 4.28 ⚠ RULED and HALF-APPLIED — how Law 6 gets enforced, now that we know `0019` never enforced it
+
+> **Status, 16 Aug 2026 — ruled (a), and the safe half is done.**
+>
+> | Step | State |
+> |---|---|
+> | 1. `0061_bookings_deposit_masking_view.sql` — creates `bookings_deposit_v` | ✅ **APPLIED** with explicit approval. Verified live as both roles: Owner 121 rows / Rs 13,65,000, Warehouse 121 rows / `null`. |
+> | 2. Move the call sites off the base column | ✅ **DONE.** `lib/queries/bookings.ts` and `lib/bookingQuery.ts` no longer name `deposit_required` on `bookings` at all; `withDeposit` reads the view in a second id-keyed query. Closed the `TODO(persistence)` that stood in **both** files. |
+> | 3. `0062_law6_column_grants_arm_the_mask.sql` — revoke table-level SELECT, grant the non-money columns | ⬅ **APPLIED 28 Aug 2026 (ledger 20260828070623, after 0065) — this cell said NOT APPLIED until 3 Sep and both apply scripts copied it.** Dry-run in a rolled-back transaction confirms it makes money unreadable on the base tables while `stage`/`qty` stay readable. |
+>
+> **Until step 3 is applied, Law 6 is a UI convention.** No module names the column any more,
+> so the app cannot leak it — but a crafted request still can. That is the whole remaining gap.
+>
+> Applying 0062 also makes `alter table … add column` a **two-file change** on `bookings`,
+> `booking_lines`, `products` and `product_units`: a new column is unreadable until granted.
+> Fail-closed and deliberate, but a real maintenance obligation.
+>
+> The analysis below is kept because it is why (a) was chosen, and because the inventory
+> numbers in it are what made (a) affordable.
 
 **Raised 16 Aug 2026 by re-running the Phase 1 gate as a Warehouse session.** Law 6 —
 "Warehouse sees no money — enforced by RLS, not the UI" — **does not hold at the database**.
@@ -1724,6 +3613,12 @@ Any staff member may still *raise* a waiver; the approver signs it. Both names a
 to the audit log. `WAIVER_NEEDS_APPROVER` in `lib/lateFee.ts` is the switch, and
 `validateWaiver` refuses without it rather than silently waiving.
 
+> **Note 31 Aug 2026.** Law 10 is now **UNGATED**, so the table above is asymmetric again, in the
+> other direction: a discount of any size needs neither reason nor approver; a late-fee waiver
+> still needs a named Manager or Owner. Whether the waiver rule follows the discount rule is a
+> fresh question — recorded here, **not ruled**, and the 24 Aug "build first, rules later" stance
+> (§4.38b) says it can wait.
+
 ---
 
 ## 4.24 ✅ RULED 12 Aug 2026 — one day's rate is the whole booking
@@ -1832,7 +3727,13 @@ width (`सुरक्षित गर्नुहोस्` vs `Save`), which 
 
 ---
 
-## 4.27 A client's *standing* discount has no way to satisfy Law 10 — 12 Aug 2026
+## 4.27 ✅ SUPERSEDED 31 Aug 2026 — a client's *standing* discount has no way to satisfy Law 10 — 12 Aug 2026
+
+> **Superseded by Law 10 UNGATED (ruled 20 Aug, final 31 Aug).** There is no reason or approver to
+> satisfy any more, so the three options below are void and the schema does **not** grow
+> `standing_discount_reason` / `standing_discount_approver_id`. What survives as a follow-up:
+> `ClientDetail`'s inline edit still **refuses** a standing discount above 10% — lift that with the
+> gate drop, in the same commit. Original text kept below under Law 3.
 
 Law 10 gates a discount above 10% on a **reason ≥10 chars** and a **named approver**.
 `lib/discount.ts` implements that, and `validateDiscount(percent, reason, approverId)` takes both.

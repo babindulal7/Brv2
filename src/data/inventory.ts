@@ -51,39 +51,85 @@ export type InvStatus =
   | 'Retired'
 
 /**
- * §4.2 — colour. `On Rent` is **green, never red**: an item out earning money
- * is the business working, and rendering it the same red as Missing makes a
- * healthy fleet look like a crisis. Where a token repeats, the label and icon
- * separate the states.
+ * Status → the SOLID block pair it paints, plus the icon that separates the
+ * statuses sharing a hue — DESIGN_DIRECTION_SPEC_v4.1 §4, inventory map.
+ *
+ * ## What this table used to say, and why every line of it was wrong
+ *
+ * The comment here was the old §4.2 ruling: *"`On Rent` is **green, never
+ * red**"*. v4.1 supersedes that outright — On Rent is ORANGE ("out with the
+ * client") and green moved to meaning "home & ready · coming home". The
+ * sentence is gone rather than edited, because keeping it invites the next
+ * reader to restore the palette it argues for.
+ *
+ * Three entries were repainted with it:
+ *
+ *  - **`In Stock` was `bg: 'transparent'` with green ink** — a green OUTLINE
+ *    chip. §2 is unambiguous that "gold is the ONLY outline on screen" and §4
+ *    that every status is a solid block, so a green outline broke both halves
+ *    of the rule at once. It is now the solid green block, and the two screens
+ *    that had grown local `bg === 'transparent' ? …` patches around it
+ *    (`rentals/NewRental.tsx:1876`, `:2583`) render identically without them.
+ *  - **`Maintenance` was `--st-in-*` (GREEN).** §4's inventory map puts
+ *    Maintenance in the workshop with Cleaning: yellow. Green here meant a
+ *    bench full of dead gear read as "home & ready" on a shelf scan — the
+ *    single most expensive way for this table to lie.
+ *  - **`Retired` was `--st-neutral-*` (GRAY).** Gray is v4.1's "not started
+ *    yet"; a retired unit is the opposite, finished. §4 gives it dim.
+ *
+ * ## Keep this in step with `INV_TONE`
+ *
+ * `INV_TONE` below maps the same ten statuses to the same ten hues as
+ * `StatusKey`s, and it is what `<Badge tone=…>` consumes. This table exists
+ * only for the handful of call sites that need raw CSS values rather than a
+ * component. **A change to a hue here must be made there too** — they are two
+ * spellings of one §4 row, and the whole reason `Maintenance` could sit green
+ * here while `INV_TONE` already had it yellow is that nothing enforces the
+ * pairing. Nothing enforces it now either; this note is the enforcement.
  */
 export const INV_STYLE: Record<InvStatus, { bg: string; fg: string; icon: 'box' | 'calendar' | 'checklist' | 'truck' | 'return_arrow' | 'eye' | 'sparkles' | 'tool' | 'alert_triangle' | 'close' }> = {
-  'In Stock': { bg: 'transparent', fg: 'var(--success-text)', icon: 'box' },
+  'In Stock': { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', icon: 'box' },
   Reserved: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)', icon: 'calendar' },
   Packed: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', icon: 'checklist' },
   'On Rent': { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)', icon: 'truck' },
   Returning: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', icon: 'return_arrow' },
   Inspection: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', icon: 'eye' },
   Cleaning: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', icon: 'sparkles' },
-  Maintenance: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', icon: 'tool' },
+  Maintenance: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', icon: 'tool' },
   Missing: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', icon: 'alert_triangle' },
-  Retired: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', icon: 'close' },
+  Retired: { bg: 'var(--st-dim-bg)', fg: 'var(--st-dim-fg)', icon: 'close' },
 }
 
 /**
- * The dot the parent row draws beside each status in its breakdown. `On Rent`
- * uses a solid green *fill* token, so its text colour is white — unreadable as
- * a dot on a card. Text-safe equivalents only.
+ * The dot the parent row draws beside each status in its breakdown.
+ *
+ * A dot has no fill behind it — it IS the mark, sitting on the card. So this
+ * is the one table that legitimately holds text-safe *-text tokens instead of
+ * the solid `--st-*` pairs above: a block's fill token (`--warn`, `--success`)
+ * is chosen to be readable *under* its on-colour, not to be readable as a 7px
+ * dot on `--card`.
+ *
+ * ⚠ `On Rent` read `var(--success)` — the solid GREEN fill token. That is the
+ * v4.0 "On Rent is green" semantic hiding in a value rather than a comment,
+ * and it survived the repaint because nothing about the name `--success` says
+ * "out with the client". §4 makes On Rent orange, so the dot is `--warn-text`,
+ * the text-safe orange. The old note here explained why On Rent needed a
+ * special case *at all* ("its text colour is white") — that reasoning belonged
+ * to a build where `--st-out-*` was the faked-solid green pair; it isn't true
+ * of any token in v4.1 and is dropped with it.
  */
 export const INV_DOT: Record<InvStatus, string> = {
   'In Stock': 'var(--success-text)',
   Reserved: 'var(--primary-text)',
   Packed: 'var(--progress-text)',
-  'On Rent': 'var(--success)',
+  'On Rent': 'var(--warn-text)',
   Returning: 'var(--success-text)',
   Inspection: 'var(--progress-text)',
   Cleaning: 'var(--progress-text)',
   Maintenance: 'var(--progress-text)',
   Missing: 'var(--danger-text)',
+  /* `--muted` is muted TEXT, not v4.1's `--dim` FILL (theme.css:45-48) — which
+     is exactly what a dot wants. Same hue as the Retired block, ink weight. */
   Retired: 'var(--muted)',
 }
 
@@ -106,10 +152,22 @@ export const INV_ORDER = (Object.keys(INV_STYLE) as InvStatus[]) satisfies reado
 /**
  * Status → the tone its glance dot and avatar wear.
  *
+ * This is also what every `<Badge tone=…>` on an inventory status reads, so it
+ * is the §4 inventory map in its canonical form: green here/coming home ·
+ * blue committed · yellow in the workshop · orange with a client · red decide
+ * now · dim finished.
+ *
+ * `Retired` was `'neutral'`. §4 lists it under dim, and `lib/status.ts` spells
+ * out the difference the two keys carry: gray is "not started yet", dim is
+ * "finished / inactive". A retired unit is the second thing, and painting it
+ * the same gray as an untouched Quote made the end of a unit's life look like
+ * the beginning of one.
+ *
  * ⚠ `data/equipmentIntel.ts:20-31` holds a byte-identical PRIVATE copy of this
  * map, built for the `ParentRow` mock path. It is not exported, so this is a
  * second copy rather than a reuse. Both should collapse into this one when the
- * mock path is deleted; until then a change to either must be made to both.
+ * mock path is deleted; until then a change to either must be made to both —
+ * including the `Retired` fix above, which that copy still needs.
  */
 export const INV_TONE: Record<InvStatus, StatusKey> = {
   'In Stock': 'in',
@@ -121,7 +179,7 @@ export const INV_TONE: Record<InvStatus, StatusKey> = {
   Cleaning: 'progress',
   Maintenance: 'progress',
   Missing: 'danger',
-  Retired: 'neutral',
+  Retired: 'dim',
 }
 
 /**
@@ -155,7 +213,7 @@ export type Condition = UnitCondition | 'Mixed'
 /**
  * The mockup badges the Condition cell, so it is a badge here too.
  *
- * §5.5's table maps the five conditions onto `--green-600 · --blue-600 ·
+ * §5.5's table maps the five conditions onto `--success / --primary ·
  * --amber-600 · --red-600 · --gray-600` — which *are* Foundation §4.2's five
  * hues, reused. §4.2 caps the palette at five colours; it does not reserve them
  * for status alone, so there is no conflict to resolve here and nothing to
@@ -172,13 +230,40 @@ export const CONDITION_TONE: Record<Condition, StatusKey> = {
 }
 
 /**
+ * The same six conditions as **ink on a surface**, the way `INV_DOT` is the
+ * ink form of `INV_STYLE`. Use this wherever a condition tints text or a dot
+ * rather than filling a block; use `CONDITION_TONE` with `<Badge>` everywhere
+ * a block is what is wanted.
+ *
+ * This exists because `Inventory.tsx`'s §7.1 chip row was reaching for
+ * `STATUS[CONDITION_TONE[c]].fg` and using it as a text colour. `.fg` is a
+ * block's **on-colour** — the ink that goes ON the fill — so the Damaged chip
+ * was painting `--on-danger`, i.e. plain white, on `--card`. Readable, and
+ * completely mute: the one chip whose whole job is to shout "damaged" was the
+ * only one with no colour in it. A `-fg` token is never a text colour on a
+ * page surface, and the fix is a table rather than a call-site cast so the
+ * next screen cannot make the same reach.
+ */
+export const CONDITION_INK: Record<Condition, string> = {
+  Excellent: 'var(--success-text)',
+  Good: 'var(--primary-text)',
+  Fair: 'var(--progress-text)',
+  Damaged: 'var(--danger-text)',
+  /* Gray's ink form is the secondary text colour — `--neutral` is a FILL and
+     reads as a smudge at 12px. Both of these mean "no live signal here". */
+  Lost: 'var(--text2)',
+  Mixed: 'var(--text2)',
+}
+
+/**
  * `07_INVENTORY.md` line 3 — **Equipment · Bundles · Stock Check · Maintenance.**
  *
  * Line 4 disposes of the rest in prose, which is what makes these removals real
  * rather than an omission in an ASCII box (`WIREFRAME_RULINGS_2026-08-12.md` §1):
  *
  *  - *"Sub-Rental and Cases dropped as duplicates"* — both were tabs here and
- *    both keep their own routes (`/operations/sub-rental`, `/operations/cases`).
+ *    both keep their own routes: `/operations/sub-rental` still, and Cases at
+ *    `/inventory/cases` since 30 Aug (`/operations/cases` replace-redirects).
  *    Nothing is deleted; they simply stop being reachable twice.
  *  - *"Warehouses moved to Settings"* — see the note on
  *    `modules/inventory/Warehouses.tsx`. The file and its route stay put.
@@ -190,8 +275,9 @@ export const CONDITION_TONE: Record<Condition, StatusKey> = {
  * tab is what it lists. Matches `data/nav.ts`'s `SPEC_TABS['/inventory']`,
  * which `data/nav.test.ts:236` pins.
  */
+// RULING 2026-10-07: four visible tabs; legacy Sub-Rentals URLs still resolve.
 export const TABS = ['Equipment', 'Bundles', 'Stock Check', 'Maintenance'] as const
-export type InventoryTab = (typeof TABS)[number]
+export type InventoryTab = (typeof TABS)[number] | 'Sub-Rentals'
 
 /**
  * The tab in the URL.
@@ -211,12 +297,14 @@ export type InventoryTab = (typeof TABS)[number]
 export const TAB_SLUG: Record<InventoryTab, string> = {
   Equipment: 'equipment',
   Bundles: 'bundles',
+  'Sub-Rentals': 'sub-rentals',
   'Stock Check': 'stock-check',
   Maintenance: 'maintenance',
 }
 
 /** `?tab=` → the tab, or `Equipment` for a missing or unknown value. */
 export function tabFromSlug(slug: string | null): InventoryTab {
+  if (slug === 'sub-rentals' || slug === 'sub-rental' || slug === 'subrental') return 'Sub-Rentals'
   return TABS.find((t) => TAB_SLUG[t] === slug) ?? 'Equipment'
 }
 
@@ -776,7 +864,7 @@ export const FILTER_RAIL: RailRow[] = [
     label: 'Brand',
     icon: 'flag',
     reason:
-      'products.brand is a real column (0004:90) — what is missing is the list of brands to tick. That is a distinct-value query, and lib/queries/inventory.ts filters the catalogue rather than enumerating it.',
+      /* products.brand is a real column (0004:90) — what is missing is the list of brands to tick. That is a distinct-value query, and lib/queries/inventory.ts filters the catalogue rather than enumerating it. */ "products.brand is a real column (0004:90) — what is missing is the list of brands to tick. That is a distinct-value query, and shared tools filters the catalogue rather than enumerating it.",
   },
   { kind: 'live', key: 'Status', label: 'Status', icon: 'activity', options: INV_ORDER },
   {
@@ -805,7 +893,7 @@ export const FILTER_RAIL: RailRow[] = [
     label: 'Booking',
     icon: 'calendar',
     reason:
-      'Reaching a booking from a unit is three hops — product_units → booking_line_units → booking_lines → bookings (0002:229, FK 0004:258) — and the middle one must go through the money-masked booking_lines_v. That is a second query, not a column on this list.',
+      /* Reaching a booking from a unit is three hops — product_units → booking_line_units → booking_lines → bookings (0002:229, FK 0004:258) — and the middle one must go through the money-masked booking_lines_v. That is a second query, not a column on this list. */ /* Reaching a booking from a unit is three hops — product_units → booking_line_units → booking_lines → bookings (0002:229, FK 0004:258) — and the middle one must go through the money-masked booking_lines_v. That is a second query, not a column on this list. */ "Related rentals are not available yet.",
   },
   {
     kind: 'blocked',
@@ -826,7 +914,7 @@ export const FILTER_RAIL: RailRow[] = [
     label: 'Purchase Value',
     icon: 'dollar',
     reason:
-      'products_v.purchase_price is a real, money-masked column (0048:616-619). Like Purchase Date it needs a range control this rail does not have — and the query module deliberately never names purchase_price in a select.',
+      /* products_v.purchase_price is a real, money-masked column (0048:616-619). Like Purchase Date it needs a range control this rail does not have — and the query module deliberately never names purchase_price in a select. */ "products_v.purchase_price is a real, money-masked column (0048:616-619). Like Purchase Date it needs a range control this rail does not have — and the recorded details deliberately never names purchase_price in a select.",
     money: true,
   },
   { kind: 'live', key: 'Condition', label: 'Condition', icon: 'eye', options: CONDITIONS },
@@ -958,6 +1046,7 @@ export function inventoryGlance(row: InventoryListRow, gctx: GateContext): Intel
     subtitle: row.category ?? '—',
     badges: breakdown.slice(0, 2).map((b) => ({ label: `${b.count} ${b.status}` })),
     lines,
+    primaryAction: { label: 'Open equipment', to: `/inventory/${encodeURIComponent(row.assetCode)}` },
   }
 }
 

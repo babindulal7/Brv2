@@ -60,7 +60,17 @@ begin
       'Success',
       TG_TABLE_NAME,
       NEW.id,
-      coalesce(NEW.created_by, v_actor_id),
+      /* Read through to_jsonb(NEW), never as a hard field reference: this
+         trigger is attached to tables that do not define the column at all
+         (payments has neither created_by nor updated_by; clients has
+         created_by but no updated_by), and in PL/pgSQL `NEW.created_by` on such a row
+         raises 42703 and aborts the statement. A missing key yields NULL
+         here, so the coalesce fallback that was always the intent runs.
+         Backported from 0051, which diagnosed it — that file still applies
+         the same fix, harmlessly, and records the outage it caused. Without
+         the fix HERE, 0047's seed cannot insert and no database can be
+         built from scratch (BUG-010, PLAN.md §4.42a). */
+      coalesce(nullif(to_jsonb(NEW) ->> 'created_by', '')::uuid, v_actor_id),
       to_jsonb(NEW)
     );
     return NEW;
@@ -89,7 +99,7 @@ begin
       'Success',
       TG_TABLE_NAME,
       NEW.id,
-      coalesce(NEW.updated_by, v_actor_id),
+      coalesce(nullif(to_jsonb(NEW) ->> 'updated_by', '')::uuid, v_actor_id),
       to_jsonb(OLD),
       to_jsonb(NEW)
     );

@@ -1,0 +1,221 @@
+.new-rental-pricing-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.new-rental-pricing-adjustments,
+.new-rental-pricing-totals {
+  min-width: 0;
+}
+
+.new-rental-pricing-presets [role='group'] {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px !important;
+  margin-top: 10px !important;
+}
+
+.new-rental-pricing-presets [role='group'] button {
+  min-height: 44px !important;
+  padding: 6px !important;
+  line-height: 1.25;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.new-rental-pricing-presets [role='group'] button:hover {
+  border-color: var(--primary-text) !important;
+}
+
+.new-rental-pricing-custom-discount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.new-rental-pricing-discount-details,
+.new-rental-pricing-deposit-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.new-rental-pricing-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-meta);
+  line-height: 1.45;
+}
+
+.new-rental-pricing-vat {
+  margin-top: 16px;
+  padding: 7px 0;
+  border-block: 1px solid var(--border);
+}
+
+.new-rental-pricing-vat [role='switch'] {
+  min-height: 44px !important;
+}
+
+.new-rental-pricing-options > summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-height: 52px;
+  padding-block: 10px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  list-style: none;
+}
+
+.new-rental-pricing-options > summary::-webkit-details-marker {
+  display: none;
+}
+
+.new-rental-pricing-options > summary > svg {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.new-rental-pricing-options[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.new-rental-pricing-options > summary:focus-visible,
+.new-rental-pricing-policy > summary:focus-visible {
+  outline: 2px solid var(--primary-text);
+  outline-offset: 2px;
+  border-radius: var(--r-btn);
+}
+
+.new-rental-pricing-option-state {
+  color: var(--muted);
+  font-size: var(--t-meta);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.new-rental-pricing-options-body {
+  padding-bottom: 4px;
+}
+
+.new-rental-pricing-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: var(--t-meta);
+}
+
+.new-rental-pricing-checkbox input {
+  /* The associated 44px label is the target; the native tick stays compact. */
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: inherit;
+  flex-shrink: 0;
+  accent-color: var(--st-primary-bg);
+}
+
+.new-rental-pricing-checkbox:focus-within {
+  outline: 2px solid var(--primary-text);
+  outline-offset: 2px;
+  border-radius: var(--r-btn);
+}
+
+.new-rental-pricing-promo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.new-rental-pricing-promo > input {
+  width: auto !important;
+  min-width: 100px;
+  flex: 1 1 120px;
+}
+
+.new-rental-pricing-notice,
+.new-rental-pricing-payment-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: var(--t-meta);
+  line-height: 1.45;
+}
+
+.new-rental-pricing-notice > svg,
+.new-rental-pricing-payment-note > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.new-rental-pricing-notice--info {
+  padding: 10px;
+  border-radius: var(--r-btn);
+  color: var(--primary-text);
+  background: color-mix(in srgb, var(--primary) 8%, var(--card2));
+}
+
+.new-rental-pricing-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.new-rental-pricing-total {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.new-rental-pricing-policy > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text2);
+  font-size: var(--t-meta);
+  cursor: pointer;
+}
+
+.new-rental-pricing-policy > summary::before {
+  content: '+';
+  width: 18px;
+  font-size: 16px;
+}
+
+.new-rental-pricing-policy[open] > summary::before {
+  content: '−';
+}
+
+.new-rental-pricing-override {
+  margin-top: 10px;
+  padding-block: 7px;
+  border-top: 1px solid var(--border);
+}
+
+.new-rental-pricing-override > .new-rental-pricing-option-state {
+  margin-left: auto;
+}
+
+.new-rental-pricing-payment-note {
+  margin: 0;
+  padding-inline: 2px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .new-rental-pricing-presets [role='group'] button {
+    transition: none;
+  }
+}

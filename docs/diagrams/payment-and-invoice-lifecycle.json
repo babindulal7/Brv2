@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Payment and invoice lifecycle",
+    "quality_profile": "showcase",
+    "viewBox": [980, 600]
+  },
+  "lanes": [
+    { "id": "main", "label": "Invoice state" },
+    { "id": "collection", "label": "Collection activity" },
+    { "id": "adjustment", "label": "Adjustments" },
+    { "id": "terminal", "label": "Terminal state" }
+  ],
+  "states": [
+    { "id": "draft", "type": "start", "label": "Draft", "sublabel": "Invoice prepared", "lane": "main", "col": 0, "step": "01" },
+    { "id": "issued", "type": "active", "label": "Issued", "sublabel": "Amount due", "lane": "main", "col": 1, "step": "02" },
+    { "id": "balance", "type": "decision", "label": "Recompute balance", "sublabel": "Payment state derived", "lane": "main", "col": 2, "step": "03" },
+    { "id": "partial", "type": "waiting", "label": "Partially paid", "sublabel": "Balance remains", "lane": "main", "col": 3, "step": "04" },
+    { "id": "paid", "type": "success", "label": "Paid", "sublabel": "No amount due", "lane": "terminal", "col": 2, "step": "05", "yOffset": -70 },
+    { "id": "payment", "type": "external", "label": "Record payment", "sublabel": "Immutable receipt", "lane": "collection", "col": 0 },
+    { "id": "refund", "type": "failure", "label": "Refund or reversal", "sublabel": "Adjusts net paid", "lane": "adjustment", "col": 1, "tag": "recoverable" },
+    { "id": "void", "type": "failure", "label": "Voided", "sublabel": "Terminal invoice state", "lane": "terminal", "col": 0, "tag": "terminal", "yOffset": -70 }
+  ],
+  "transitions": [
+    { "id": "payment-balance", "from": "payment", "to": "balance", "label": "recompute", "variant": "emphasis", "fromSide": "top", "toSide": "bottom", "route": "straight" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Derived payment state", "items": ["Payment and reversal triggers recompute the invoice state.", "A partially paid invoice remains collectible until the due amount is zero."] },
+    { "dot": "rose", "title": "Integrity", "items": ["Payment records are immutable; corrections use refund or reversal flows.", "Void is a terminal invoice outcome, separate from collection."] }
+  ]
+}
