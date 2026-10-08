@@ -100,10 +100,14 @@ describe('RecordForm - shared client form (Add)', () => {
     expect(open).toEqual(['true', 'true', 'false', 'false', 'false'])
   })
 
-  it('has one persistent action bar: Cancel / Create client', async () => {
+  /* UPDATED: the bar was exactly Cancel / Create client. Create & add another
+     now sits in `RecordActions`' `extra` slot — the slot UI_UX_RULES §Action bar
+     reserves for added actions — so a run of new clients is not
+     Create → back → Add → Create each time (md brief 20, R-39). */
+  it('has one persistent action bar: Cancel / Create & add another / Create client', async () => {
     await mount('client')
     const bar = container.querySelector('[aria-label="Record actions"]')!
-    expect([...bar.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Create client'])
+    expect([...bar.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Create & add another', 'Create client'])
   })
 
   it('refuses an invalid save, shows inline errors and a clickable summary, and writes nothing', async () => {
@@ -167,6 +171,72 @@ describe('RecordForm - shared client form (Add)', () => {
     await type('name', 'B Films')
     await click(button('Create client'))
     expect(saveRecord.mock.calls[1]![0].clientUuid).not.toBe(saveRecord.mock.calls[0]![0].clientUuid)
+  })
+
+  it('Create & add another saves, stays on the page and hands back a blank, clean form', async () => {
+    saveRecord.mockResolvedValue({ id: 'new-1', code: 'CL-0002', revision: 'r', values: {}, rows: [] })
+    await mount('client')
+    await type('name', 'Fresh Films')
+    await type('phone', '9801234567')
+    await type('notes', 'first one')
+    await click(button('Create & add another'))
+    await flush()
+    expect(saveRecord).toHaveBeenCalledTimes(1)
+    expect(saveRecord.mock.calls[0]![0].values.name).toBe('Fresh Films')
+    expect(where()).toBe('/clients?tab=new&q=rai')
+    expect((field('name') as HTMLInputElement).value).toBe('')
+    expect((field('phone') as HTMLInputElement).value).toBe('')
+    expect((field('notes') as HTMLTextAreaElement).value).toBe('')
+    expect(container.textContent).toContain('CL-0002')
+    // Clean, not merely blank: Cancel leaves at once instead of asking to discard.
+    await click(button('Cancel'))
+    expect(container.textContent).not.toContain('Discard unsaved changes?')
+    expect(where()).toBe('/clients')
+  })
+
+  it('gives the next record a NEW idempotency key, even when its content is identical', async () => {
+    /* The AddClient replay bug: the second record carried the first one's key,
+       `client_uuid` matched, and the database handed back the FIRST client as
+       the second one's "success". Same typed content is the hardest case — the
+       fingerprint-keyed reuse would match it — so it is the one pinned. */
+    saveRecord.mockResolvedValue({ id: 'new-1', code: 'CL-0002', revision: 'r', values: {}, rows: [] })
+    await mount('client')
+    await type('name', 'Same Films')
+    await type('phone', '9801234567')
+    await click(button('Create & add another'))
+    await flush()
+    await type('name', 'Same Films')
+    await type('phone', '9801234567')
+    await click(button('Create & add another'))
+    await flush()
+    expect(saveRecord).toHaveBeenCalledTimes(2)
+    expect(saveRecord.mock.calls[1]![0].clientUuid).not.toBe(saveRecord.mock.calls[0]![0].clientUuid)
+  })
+
+  it('keeps the entries and offers the same key again when Create & add another fails', async () => {
+    saveRecord.mockRejectedValueOnce(new Error('A client with this phone number already exists.'))
+    await mount('client')
+    await type('name', 'Fresh Films')
+    await type('phone', '9801234567')
+    await click(button('Create & add another'))
+    await flush()
+    expect(container.textContent).toContain('already exists')
+    expect((field('name') as HTMLInputElement).value).toBe('Fresh Films')
+    expect(where()).toBe('/clients?tab=new&q=rai')
+  })
+
+  it('offers Create & add another on new equipment, but never on a bundle or an edit', async () => {
+    await mount('equipment', undefined, '/inventory/new')
+    expect(button('Create & add another')).toBeDefined()
+    await act(async () => root.unmount())
+    container.remove()
+    await mount('bundle', undefined, '/inventory/bundles/new')
+    expect(button('Create & add another')).toBeUndefined()
+    await act(async () => root.unmount())
+    container.remove()
+    readRecordEditor.mockResolvedValue(clientSnapshot)
+    await mount('client', 'cl-1', '/clients/cl-1?action=edit')
+    expect(button('Create & add another')).toBeUndefined()
   })
 
   it('lets Warehouse create a client but not open the editor on an existing one', async () => {

@@ -642,6 +642,7 @@ export function RecordPaymentModal({
             >
               <option value="Bank Transfer">Bank Transfer</option>
               <option value="Cash">Cash</option>
+              {/* RULING 2026-10-08: Fonepay is a method label only, with no account default (RULINGS-2026-10-08, May briefs #1). */}
               <option value="Fonepay">Fonepay</option>
               <option value="eSewa">eSewa</option>
               <option value="Khalti">Khalti</option>

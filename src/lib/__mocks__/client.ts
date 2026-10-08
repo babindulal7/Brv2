@@ -1098,7 +1098,8 @@ export const mockSupabase = {
     if (name === 'read_record_editor' || name === 'save_record_editor') {
       try {
         const actor=readSession()?.user.id
-        const role=store['users']?.find(row=>row['id']===actor)?.['role']
+        // `users.primary_role` (0007:110) — `role` is not a column, so every record-editor save in mock mode was refused as 'Permission denied'.
+        const role=store['users']?.find(row=>row['id']===actor)?.['primary_role']
         const kind=String(args?.['p_kind']) as RecordKind
         const allowed=kind==='client'?['Owner','Admin','Manager','Coordinator']:['Owner','Admin','Manager']
         if(!actor || !allowed.includes(String(role))) throw new Error('Permission denied for this record.')

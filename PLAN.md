@@ -618,6 +618,58 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.62 ⬅ OPEN ×3 — three more gaps from the May page briefs, each blocked on a ruling
+
+Raised 8 Oct 2026, alongside §4.61, from the same check of `D:\proects\md` against
+`step1-foundation`. That session built the three items that needed no ruling: Fonepay as a
+payment method, the live return countdown, and **Create & add another** on Add Client / Add
+Equipment (PROGRESS.md, 8 Oct). It did not build these three, because each one is a product
+call.
+
+### (a) Reset: show which units are needed next (brief 14, "show next booking conflict if item is needed soon")
+
+§4.31(3) removed Reset's hand-set `demand` / `vip` / `rush` flags, because none of them had a
+column behind it. `data/reset.ts:148–169` records the honest way back if prioritisation is
+wanted: derive it from the next booking's pickup (`queue entry → product_units.id →
+inventory_reservations.asset_id → bookings.pickup_at`), with no new column and never a
+hand-set flag. Nothing builds it today, so a unit due out in an hour waits in Reset like any
+other.
+
+**Decide:** (1) Is this wanted back? (2) Should it be a label only ("Needed 14:00 for B-912"),
+or should it also change the queue order? (3) Does it count as "needed" only inside a window, or
+should it always show the next pickup? Today's "Due Soon" flag was left underived for exactly
+this reason (`data/today.ts`, `toMovementRow` note: no spec states how soon is soon). If a
+window, how long?
+
+### (b) Handover: a manager override for gates that have not passed (brief 10)
+
+Brief 10 says "do not allow handover if required checks are incomplete unless admin override".
+Today gates 3 and 4 (payment, deposit) are cleared by a money-sighted role pressing **Mark
+cleared**, and R-06's money override with a named reason is real and recorded. Gate 1
+(**Receiver Verified**: government ID and booking authorization) has no override at all.
+`HandoverWorkspace.tsx:89` and `OVERRIDE_UNAVAILABLE` (`:824`) refuse it on purpose: "no rule
+defines who may override a session gate, and no action records the approver".
+
+**Decide:** (1) May anyone hand gear to a receiver whose ID was not checked? If not, this
+stays closed and the brief is answered. (2) If yes, which roles may do it (P-laws:
+`docs/PERMISSIONS.md` §6 approval gates), is the approver a second person or the operator,
+and is a reason required? (3) Where is it recorded: a column on the handover session, or an
+`audit_log` row only?
+
+### (c) A document held as the deposit (brief 07: "Deposit type: cash / cheque / bank / document")
+
+Kathmandu rental houses often hold a citizenship card, passport or licence instead of, or as
+well as, a money deposit. The OS has no way to record that. Law 5 makes a deposit a money
+liability (never in Rental Total, never a payment), and a held passport is not money, so it
+cannot go in `deposit_required` or the deposit ledger.
+
+**Decide:** (1) Is it recorded at all? (2) If so, it should be its own record (type, number,
+photo, received by, held where), not a deposit row. Does it satisfy Handover gate 4 on its
+own, or only alongside money? (3) Its terminal action (Law 3): "Returned to client" with who
+and when, and is return of the document a Return/Close gate? (4) Who may see the ID photo and
+for how long. This is PII; §4.32(b) evidence retention is still unresolved, and Warehouse
+sees no money but would see this.
+
 ## 4.61 ⬅ OPEN ×5 — features the May page briefs ask for that nothing builds yet
 
 Raised 8 Oct 2026 by checking the 34 page briefs in `D:\proects\md` (May 2026, UI-only,

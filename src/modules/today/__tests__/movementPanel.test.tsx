@@ -117,3 +117,33 @@ describe('meaningful rows (ruled 8 Oct 2026)', () => {
     expect(host.textContent).toContain('Overdue · 79 days late')
   })
 })
+
+describe('return countdown (md brief 11)', () => {
+  const countdown = () => host.querySelector<HTMLElement>('[data-testid="return-countdown"]')
+  // Only Date is faked: the panel's own act/render path keeps real timers.
+  afterEach(() => { vi.useRealTimers() })
+
+  it('counts down to a return that is still out, under its Return time', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-21T23:00:00.000Z'))
+    // 22 Sep 10:00 in Kathmandu is 04:15Z — 5h 15m after the instant above.
+    await mount({ returnDueAtAd: '2026-09-22T04:15:00.000Z' })
+    expect(countdown()?.textContent).toBe('in 5h 15m')
+    expect(countdown()?.closest('.movement-card__schedule--return')).not.toBeNull()
+  })
+
+  it('says nothing more on an overdue row — its time column and badge already say how late', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-23T04:15:00.000Z'))
+    await mount({ flags: ['Overdue'], statusNote: '1 day late', returnDueAtAd: '2026-09-22T04:15:00.000Z' })
+    expect(countdown()).toBeNull()
+  })
+
+  it('never counts down on an outgoing row or one already back', async () => {
+    await mount({ status: 'Booked' }, 'outgoing')
+    expect(countdown()).toBeNull()
+    await act(async () => root.unmount()); host.remove()
+    await mount({ status: 'Returned' })
+    expect(countdown()).toBeNull()
+  })
+})

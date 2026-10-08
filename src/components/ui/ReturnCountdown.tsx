@@ -13,6 +13,7 @@ export interface ReturnCountdownProps {
   style?: CSSProperties
 }
 
+// RULING 2026-10-08: display span only. "Overdue" counts from return_at, not from the end of the late-fee grace (RULINGS-2026-10-08, May briefs #2).
 /**
  * The live distance to a rental's return time. Owns its own minute clock so a
  * large page (Booking Detail) is not re-rendered every minute to move one line.

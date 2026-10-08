@@ -60,11 +60,19 @@ describe('ReturnCountdown', () => {
   })
 
   it('says "Overdue" in words and swaps the icon past return_at — not colour alone', () => {
-    vi.setSystemTime(new Date('2026-10-08T14:30:00.000Z'))
+    const iconClass = () => line()?.querySelector('svg.ui-icon')?.getAttribute('class') ?? ''
+
+    vi.setSystemTime(new Date('2026-10-08T08:55:00.000Z'))
     act(() => root.render(<ReturnCountdown returnAtAd={DUE} />))
+    const onTimeIcon = iconClass()
+
+    vi.setSystemTime(new Date('2026-10-08T14:30:00.000Z'))
+    act(() => root.render(<ReturnCountdown key="overdue" returnAtAd={DUE} />))
     expect(line()?.textContent).toBe('Overdue by 2h 15m')
     expect(line()?.dataset['overdue']).toBe('true')
-    expect(line()?.querySelector('svg, [data-icon], i, span')).not.toBeNull()
+    expect(onTimeIcon).not.toBe('')
+    expect(iconClass()).not.toBe('')
+    expect(iconClass()).not.toBe(onTimeIcon)
 
     act(() => root.render(<ReturnCountdown returnAtAd={DUE} short />))
     expect(line()?.textContent).toBe('2h 15m late')

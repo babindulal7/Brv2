@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { ReturnCountdown } from '../../components/ui/ReturnCountdown'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { ROWS_PER_COLUMN, ROW_MENU, timeOf, statusKeyOf, has, type MovementRow } from '../../lib/queries/today'
@@ -755,13 +754,6 @@ export default function MovementList({
                   style={{ marginTop: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--booking-date-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                 >
                   {r.due}
-                  {/* The live distance to `return_at` for gear still out. A row
-                      already flagged Overdue says how late in `lateNote`, so it
-                      is not said twice; one that crosses its due time while the
-                      screen is open turns red here until the next refetch flags it. */}
-                  {r.returnDueAtAd && !has(r, 'Overdue') && (
-                    <ReturnCountdown returnAtAd={r.returnDueAtAd} short style={{ marginLeft: 8, verticalAlign: 'middle' }} />
-                  )}
                 </div>
               </div>
             )

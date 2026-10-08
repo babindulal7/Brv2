@@ -13,6 +13,7 @@ import { Button, Card, PageHeader } from '../ui/Page'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { RecordWorkspace, RecordSection, RecordActions, RecordErrorSummary, focusRecordField, useUnsavedRecord } from '../ui/RecordWorkspace'
 import { useToast } from '../ui/Toast'
+import { useViewport } from '../../lib/device'
 
 export interface RecordFormProps { kind:RecordKind; recordId?:string; onDone?:()=>void }
 const names={client:'Client',equipment:'Equipment',bundle:'Bundle'}
@@ -23,7 +24,7 @@ const optionalSections:Record<RecordKind,string[]>={client:['Addresses','Commerc
 function rolesFor(kind:RecordKind,editing:boolean){return kind==='client'?(editing?['Owner','Admin','Manager','Coordinator']:['Owner','Admin','Manager','Coordinator','Warehouse']):['Owner','Admin','Manager']}
 
 export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
-  const {user}=useAuth(); const online=useNetwork(); const navigate=useNavigate(); const location=useLocation(); const {showSuccessToast}=useToast()
+  const {user}=useAuth(); const online=useNetwork(); const navigate=useNavigate(); const location=useLocation(); const {showSuccessToast}=useToast(); const phone=useViewport()==='phone'
   const [snapshot,setSnapshot]=useState<RecordSnapshot|null>(null)
   const [values,setValues]=useState<RecordValues>({...recordDefaults[kind]})
   const [rows,setRows]=useState<RecordValues[]>([])
@@ -98,7 +99,17 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
   const fieldId=(key:string)=>`record-${key}`
   const errorList=Object.entries(errors).map(([key,message])=>({id:fieldId(key),message}))
   function sectionHasValue(section:string){return recordFields[kind].some(f=>f.section===section && (f.type==='checkbox'?false:String(values[f.key]??'').trim()!=='' && String(values[f.key])!==String(recordDefaults[kind][f.key]??'')))}
-  async function save(){
+  // RULING 2026-10-08: new client / equipment only; nothing carries over to the next record (RULINGS-2026-10-08, May briefs #3).
+  /** Create & add another (md briefs 17/20, R-39): create-only, client and equipment — a bundle is never entered in a run. */
+  const canAddAnother=!recordId && (kind==='client' || kind==='equipment')
+  /** The saved record is gone from the form; the next one starts blank, clean, and under a NEW Law 8 key — never the last one's (the AddClient replay bug). */
+  function resetForNext(){
+    const blank={...recordDefaults[kind]}
+    setValues(blank);setRows([]);setErrors({});setDuplicate(null)
+    saveKey.current=null;saved.current=false;initial.current=JSON.stringify({values:blank,rows:[]})
+    focusRecordField(fieldId('name'))
+  }
+  async function save(then:'open'|'another'='open'){
     if(submitting.current || !user || !permitted)return
     const invalid=validateRecord(kind,values)
     if(kind==='bundle' && !rows.length)invalid.components='Add at least one component.'
@@ -112,6 +123,7 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
       const ctx={userId:user.id,role:user.role,isOnline:online}
       const result=kind==='equipment' && snapshot?await updateEquipment({...input,id:snapshot.id,expectedRevision:snapshot.revision},ctx):await saveRecord(input,ctx)
       saved.current=true;initial.current=fingerprint
+      if(then==='another'){showSuccessToast(`${names[kind]} saved`,`${result.code} · the form is clear for the next one`);resetForNext();return}
       showSuccessToast(`${names[kind]} saved`,result.code)
       if(onDone && recordId){onDone();return}
       const params=new URLSearchParams(location.search);params.delete('action');if(params.get('tab')==='new')params.delete('tab')
@@ -164,7 +176,7 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
         onConfirm: () => { setConfirmDialog(null); navigate(`/clients/${duplicate.id}`) },
       })
     }}>Open existing client</Button></Card>}
-    <RecordWorkspace summary={<Card title={`${names[kind]} summary`}><strong>{String(values.name||`New ${kind}`)}</strong><p>{recordId?'Editing the existing record.':'A new record will be created.'}</p>{kind!=='client'&&<p>{rows.length} {kind==='bundle'?'components':'units'}</p>}</Card>} actions={<RecordActions busy={busy} dirty={dirty || !recordId} label={recordId?'Save changes':`Create ${kind}`} onSave={()=>void save()} onCancel={cancel}/> }>
+    <RecordWorkspace summary={<Card title={`${names[kind]} summary`}><strong>{String(values.name||`New ${kind}`)}</strong><p>{recordId?'Editing the existing record.':'A new record will be created.'}</p>{kind!=='client'&&<p>{rows.length} {kind==='bundle'?'components':'units'}</p>}</Card>} actions={<RecordActions busy={busy} dirty={dirty || !recordId} label={recordId?'Save changes':`Create ${kind}`} onSave={()=>void save()} onCancel={cancel} extra={canAddAnother?<Button type="button" variant="secondary" icon="plus" aria-label="Create & add another" title="Create & add another" disabled={busy} onClick={()=>void save('another')}>{phone?'':'Create & add another'}</Button>:undefined}/> }>
       {sections.map(section=><RecordSection key={section} title={section} id={`record-section-${section.toLowerCase().replace(/[^a-z]+/g,'-')}`} collapsible={optionalSections[kind].includes(section)} defaultOpen={!optionalSections[kind].includes(section)||sectionHasValue(section)||(section==='Notes'&&false)} collapsedHint="Empty"><div className="record-fields">{recordFields[kind].filter(f=>f.section===section).map(renderField)}</div>
         {kind==='client'&&section==='Contact'&&<><h3>Primary contact</h3>{rows.map((row,index)=><div className="record-fields" key={String(row.id??index)}>{rowField(row,index,'full_name','Contact name')}{rowField(row,index,'designation','Designation')}{rowField(row,index,'phone','Contact phone')}{rowField(row,index,'email','Contact email')}<Button disabled={busy} onClick={()=>setRows([])}>Remove primary contact</Button></div>)}{!rows.length&&<Button disabled={busy} onClick={()=>setRows([{full_name:'',designation:null,phone:null,email:null}])}>Add primary contact</Button>}</>}
         {kind==='client'&&section==='Commercial details'&&<p>Membership and credit terms are managed from the client’s dedicated actions.</p>}

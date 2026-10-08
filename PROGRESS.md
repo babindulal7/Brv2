@@ -1,5 +1,86 @@
 # Progress Log
 
+## 2026-10-08 — From the May page briefs: Fonepay, a live return countdown, Create & add another; three more decisions filed (PLAN §4.62)
+
+Branch `claude/md-brief-gaps`, off `step1-foundation` at `c21c1c4`, built in its own worktree
+because another agent had New Rental uncommitted in the trunk. The parallel "Markdown features
+brainstorm" session committed the first pass of this work (`82b04a5` countdown, `f8f5761`
+Fonepay) and filed §4.61. This entry covers all three features and the commit that finishes
+them.
+
+**Did**
+- **Fonepay** in Record Payment's method list (brief 07). It is a label only: `Method: Fonepay`
+  in `payments.notes`, no account implied. No migration (`payments` has no method column).
+- **Live return countdown** (brief 11). Booking Detail's Return cell, for a booking On Rent and
+  not back, reads "Due in 9h 14m" or "Overdue by 79d 1h". Today's Return rows that are not
+  overdue read "in 3h 20m" under the Return time. A minute clock moves it on a tablet left open.
+  `lib/returnCountdown.ts` (pure span) + `components/ui/ReturnCountdown.tsx`.
+- **Correction to `82b04a5`:** it put Today's countdown in `MovementList.tsx`, which no live
+  screen renders (Today draws `DashboardMovementPanel` since the 8 Oct "meaningful rows").
+  Reverted there and placed in `DashboardMovementPanel`'s Return column.
+- **Create & add another** on new client and new equipment (briefs 17/20, R-39). It saves,
+  stays on the form, clears every field and mints a fresh `client_uuid`, so the next record
+  can never replay the last one's key. It goes in `RecordActions`' `extra` slot (the slot
+  `docs/UI_UX_RULES.md` reserves, row updated). It is icon-only below 768px so the bar keeps
+  one row.
+- **Defect, mock mode:** every Add/Edit Client, Equipment and Bundle save was refused with
+  "Permission denied for this record". The mock `save_record_editor` read `users.role`, which
+  is not a column; it now reads `primary_role` (0007:110).
+- **PLAN §4.62 (a)–(c)** filed and mirrored in `docs/OPEN_DECISIONS.md` §12: a "needed next"
+  label on the Reset queue, a manager override for Handover gate 1, and a document held as the
+  deposit.
+
+**Ruled**
+- RULINGS-2026-10-08.md, "May page briefs: Claude's defaults", rows 1–3 (Fonepay has no
+  account default; the countdown is a display span counted from `return_at`; nothing carries
+  over to the next record), plus the mock defect. A `// RULING 2026-10-08` comment sits at each
+  code site.
+
+**Verified**
+- Browser, mock mode, this worktree's own server (port 3400). An earlier `preview_start` had
+  served the `main` checkout, so this was confirmed by fetching the changed modules.
+  - Booking Detail B-864 (On Rent, due 21 Jul): "Overdue by 79d 1h", alert icon, danger ink
+    rgb(168,47,47). With the page's `Date.now` shifted to 20 Jul 15:00Z, the line turned over
+    by itself at the next minute to "Due in 9h 14m" with a clock icon and muted ink. That is the
+    correct span to 21 Jul 00:15Z.
+  - Record Payment lists Bank Transfer · Cash · **Fonepay** · eSewa · Khalti · Card · Cheque. A
+    Rs 500 Fonepay payment on INV-10 saved, and the stored row reads `notes: "Method: Fonepay"`
+    with no account. It is listed on Payments.
+  - Add Client: Create & add another saved **C-1**, cleared the form and stayed on
+    `/clients?tab=new`. A second client saved as **C-2** (a new record, not C-1 returned again).
+    Both are in the directory. Add Equipment shows Cancel · Create & add another · Create
+    equipment. At 375px the bar is one row (70px), with a 48×44 "+" named "Create & add
+    another".
+  - **Not seen in the browser:** Today's "in 3h 20m". The mock corpus is anchored at 31 Jul,
+    so every Return row is already overdue on 8 Oct. Covered by `movementPanel.test.tsx`.
+- Tests: new `returnCountdown.test.ts` (7), `ReturnCountdown.test.tsx` (4), `RecordForm.test.tsx`
+  +4 and one updated (bar now lists the extra action), `movementPanel.test.tsx` +3,
+  `todayQuery.test.ts` +3, `RecordPaymentModal.test.tsx` +1.
+- `tsc` 0, eslint on every changed file 0 warnings, `lint:ui-copy` clean, `lint:shell` 621
+  files clean. Full suite: **4180/4180 passed, 323 files** (this worktree, started 07:41 NPT; no migration changed, so `check:pglite` / `check:lifecycle` were not re-run — the Lifecycle row is the parallel session's run of this tree).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- §4.61 (a)–(e) and §4.62 (a)–(c) wait on Babin.
+- The "All times are in Asia/Kathmandu (NPT)" note (brief 01) was not built.
+- Mock-mode quirks seen while verifying, not fixed: a new mock payment shows `1/1/1970 ·
+  05:30` and reuses `PAY-2026-0001`; the mock `extend_booking` RPC is not implemented; the
+  Extend Rental dialog's three inputs have no programmatic labels.
+- Not merged into `step1-foundation`. The trunk still holds another agent's uncommitted New
+  Rental work.
+
 ## 2026-10-08 — The May page briefs checked against the trunk; five decisions filed (PLAN §4.61)
 
 **Did**

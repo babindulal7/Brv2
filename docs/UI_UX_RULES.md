@@ -85,7 +85,7 @@ One composition for every record screen, so Add and Edit differ only by prefille
 | Workspace | `RecordWorkspace` | Body column plus summary rail. Rail is sticky at >=1280px (`src/lib/breakpoints.ts`) and flows below the sections under it |
 | Section | `RecordSection` | One Card per section in the fixed order below. Essential sections never collapse; optional sections collapse while empty (`collapsible`, `defaultOpen`, `collapsedHint`). Collapsed content stays mounted |
 | Error summary | `RecordErrorSummary` + `focusRecordField` | `role="alert"` list; each entry is a button that opens the owning section and focuses the control. Field errors also render inline (`aria-invalid`, `aria-describedby`) |
-| Action bar | `RecordActions` | One persistent bar: **Cancel / Create** or **Cancel / Save changes**. Booking creation adds Save draft / Confirm booking via `extra` |
+| Action bar | `RecordActions` | One persistent bar: **Cancel / Create** or **Cancel / Save changes**. Booking creation adds Save draft / Confirm booking via `extra`; creating a client or equipment adds **Create & add another** via `extra` (saves, clears the form, mints a fresh `client_uuid` — never on an edit or a bundle) |
 | Leave guard | `useUnsavedRecord` + `UnsavedLeaveDialog` | Active only while dirty. Cancel and link clicks ask; clean forms never prompt |
 
 Section order: Client = Identity > Contact > Addresses > Commercial details > Notes. Equipment = Identity > Units & location > Purchase > Pricing > Maintenance & notes. Bundle = Identity > Components > Rates > Summary. Booking = Client & schedule > Equipment, bundles & services > Crew & delivery > Pricing & terms.
