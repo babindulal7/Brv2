@@ -322,6 +322,8 @@ export function Modal({
               background: 'transparent',
               color: 'var(--muted)',
               cursor: 'pointer',
+              minWidth: 44,
+              minHeight: 44,
               padding: 6,
               borderRadius: 'var(--r-btn)',
               display: 'grid',
