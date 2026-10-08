@@ -24,6 +24,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "C:/Users/use/.codex-temp/babin-rentals-current", "run", "dev:mock", "--", "--port", "3300", "--strictPort"],
       "port": 3300
+    },
+    {
+      "name": "babin-md-brief-gaps-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/use/Desktop/babin-rentals-os/.claude/worktrees/md-brief-gaps", "run", "dev:mock", "--", "--port", "3400", "--strictPort"],
+      "port": 3400
     }
   ]
 }
