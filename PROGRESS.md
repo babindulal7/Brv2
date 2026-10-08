@@ -1,5 +1,59 @@
 # Progress Log
 
+## 2026-10-08 — Record Payment: the method is tap cards, not a dropdown (`ChoiceCards`)
+
+Taken from the Miraz Bakery POS payment step (every method on screen, one tap picks it, a
+one-line hint under each). Branch `claude/md-brief-gaps`.
+
+**Did**
+- New `components/ui/ChoiceCards.tsx` + `choice-cards.css`: a `fieldset` of native radios
+  drawn as cards. The browser owns the keyboard (Tab into the group, arrows move the choice),
+  and each radio has an explicit `for`/`id` label. The chosen card gets a corner check badge
+  and a 2px border, not colour alone (Law 11). Cards are at least `var(--tap)` tall (Law 15).
+  The grid is `auto-fit`, so there is no new `@media` (Law 13/14). It is not
+  `SegmentedControl`, which is a `tablist` for switching views.
+- Record Payment: the Payment Method `<select>` is now seven cards (Bank Transfer · Cash ·
+  Fonepay · eSewa · Khalti · Card · Cheque, same values, Bank Transfer still the default).
+  Amount now has its own row. The old two-column Amount/Method grid had no phone layout.
+- Icon registry: `bank`, `cash`, `qr`, `wallet` (Tabler).
+- R-39 budget #3 (record a payment, ≤ 4 taps): from the Finance header, a non-default method
+  is now **3 taps** (open, card, Record Payment), down from 4. The default path is still 2.
+
+**Verified**
+- Browser (mock, `localhost:3400`, this worktree): seven cards, Bank Transfer checked;
+  clicking Fonepay moves the check; ArrowRight moves the choice to eSewa with a 2px focus ring
+  on the card. Recorded a payment with Fonepay; the stored row (PAY-2026-0002) carries
+  `"notes": "Method: Fonepay"`, the amount and a `client_uuid`. 1024 wide: three across, all
+  seven cards 54px. 375×812: one column, no horizontal scroll. Dark theme: dark cards, label
+  and hint readable.
+- Found and fixed while driving: the inline check mark took ~26px and wrapped
+  "Bank Transfer" onto four lines when it was chosen. It is now a corner badge.
+- `tsc` clean; full suite **4186/4186** (324 files); `lint:shell`, `lint:ui-copy`,
+  `check:contrast` (54/54) and eslint on the changed files clean. Tests: `ChoiceCards.test.tsx`
+  (5), plus a new Record Payment case; the Fonepay and R-39 D3 cases now tap cards.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Other short dropdowns that could use `ChoiceCards`: pickup vs delivery and rental mode in
+  New Rental (another agent is editing New Rental in the trunk, so not touched here).
+- **Mock only, not from this change:** a payment recorded in mock mode shows its date as
+  1/1/1970. The mock overlay row has `created_at` but no `payment_date`; Postgres defaults it
+  to `now()` (`0006:187`), and the mock does not apply that default.
+- Two clicks on the sidebar theme control left the app in light mode. That may have been a
+  mis-click after a viewport resize; not investigated. Dark mode was checked by setting
+  `data-theme` directly.
+
 ## 2026-10-08 — From the May page briefs: Fonepay, a live return countdown, Create & add another; three more decisions filed (PLAN §4.62)
 
 Branch `claude/md-brief-gaps`, off `step1-foundation` at `c21c1c4`, built in its own worktree

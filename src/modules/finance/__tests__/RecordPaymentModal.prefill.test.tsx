@@ -138,12 +138,11 @@ describe('RecordPaymentModal — primary bank account default (R-39 D3)', () => 
   it('retracts the machine-applied default when the method moves off Bank Transfer, and re-applies on return', async () => {
     const c = await mount()
     await act(async () => {})
-    const methodSelect = Array.from(c.querySelectorAll('select')).find(
-      (s) => s.querySelector('option')?.textContent === 'Bank Transfer' && s !== accountSelect(c),
-    ) as HTMLSelectElement
-    await changeSelect(methodSelect, 'Cash')
+    // The method is a tap-card radio group (ChoiceCards), not a <select>.
+    const methodCard = (v: string) => c.querySelector(`input[name="rpm-method"][value="${v}"]`) as HTMLInputElement
+    await act(async () => { methodCard('Cash').click() })
     expect(accountSelect(c).value).toBe('')
-    await changeSelect(methodSelect, 'Bank Transfer')
+    await act(async () => { methodCard('Bank Transfer').click() })
     expect(accountSelect(c).value).toBe(PRIMARY_ID)
   })
 })
