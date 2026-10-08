@@ -1,5 +1,39 @@
 # Progress Log
 
+## 2026-10-08 — Add Equipment checked against its spec; assists built; sr-only fixed app-wide
+
+**Did**
+- Compared the live Add Equipment (`RecordForm kind="equipment"`) with `Add Equipment.md` v3.0 (D:\proects\Rental workspasce\COMPLETE Spec Pack (corrected 8 Aug)) and the ease-of-use analysis.
+- Built (equipment only; clients and bundles unchanged): duplicate-name warning linking to the existing item; intake condition per new unit; paste-many-serials; Manufacturer hidden until it differs from Brand; live summary with an advisory Ready-to-rent checklist; section links with completeness marks; summary note that the asset code and unit tags are issued on save.
+- Defined `.sr-only` globally — it had never existed in the app, so screen-reader text rendered visibly (stray "·" under the Today date, DataTable captions, intel extras, warehouse settings).
+- Wrote PLAN §4.61 (Save Draft / Ready-to-rent gate), §4.62 (codes and label printing), §4.63 (photos and documents).
+
+**Ruled**
+- RULINGS-2026-10-08.md "Add Equipment".
+
+**Verified**
+- Browser (mock) 1366×900: "Aputure LS 600d Pro" (exists in the mock catalogue) raises the duplicate card; pasting "SN-A1/SN-A2/sn-a2/SN-A3" adds 3 units and reports 1 skipped; condition picker offers the five values; Manufacturer appears only after the checkbox; section marks and the checklist update live; the Today date control shows two stacked lines with no stray separator.
+- Not verified end-to-end: the mock save is refused ("Permission denied for this record.") because every mock user has a null role — true before this change too. The saved rows (serials + chosen conditions) are proven by a RecordForm test instead.
+- Clean temporary worktree (HEAD fdbc41c + these files): tsc, ESLint, `lint:ui-copy`, `check:contrast` 54/54; full suite 4161/4162 — the 1 failure and the one `lint:shell` finding are the known ones recorded in fdbc41c. RecordForm 19/19 (4 new).
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T21:50:19.631Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Item 7 of the review (field labels) was a false finding — the inputs were already labelled; nothing changed.
+- Spec §16 still needs Babin: bundles hold serials or models; deposit per category or per item; label stock; depreciation lives; can Warehouse create equipment.
+- Mock users have no role, so no record can be saved in mock mode.
+- Warehouse visibility of Purchase/Pricing (spec §12) not checked.
+
 ## 2026-10-08 — Every page's filter toggle in the global header
 
 **Did**

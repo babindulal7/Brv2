@@ -10,6 +10,7 @@ const keys = vi.hoisted(() => ({ n: 0 }))
 const saveRecord = vi.hoisted(() => vi.fn())
 const updateEquipment = vi.hoisted(() => vi.fn())
 const readRecordEditor = vi.hoisted(() => vi.fn())
+const inventoryRows = vi.hoisted(() => ({ current: [] as Array<{ id: string; name: string; model: string | null }> }))
 
 vi.mock('../../../lib/auth', () => ({ useAuth: () => ({ user: { id: 'u-1', name: 'T', role: role.current }, loading: false, isLocked: false }) }))
 vi.mock('../../../lib/network', () => ({ useNetwork: () => true }))
@@ -20,7 +21,7 @@ vi.mock('../../../lib/queries/recordEditor', () => ({
   readRecordEditor,
   recordEditorOptions: async () => [{ id: 'c1', name: 'Cameras' }],
 }))
-vi.mock('../../../lib/queries/inventory', () => ({ listInventory: async () => ({ rows: [] }) }))
+vi.mock('../../../lib/queries/inventory', () => ({ listInventory: async () => ({ rows: inventoryRows.current }) }))
 vi.mock('../../../lib/queries/clients', () => ({ findClientsByPhoneTail: async () => [] }))
 
 window.matchMedia = ((q: string) => ({ matches: false, media: q, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false })) as unknown as typeof window.matchMedia
@@ -81,6 +82,7 @@ beforeEach(() => {
   saveRecord.mockReset()
   updateEquipment.mockReset()
   readRecordEditor.mockReset()
+  inventoryRows.current = []
 })
 afterEach(async () => {
   await act(async () => root.unmount())
@@ -271,5 +273,61 @@ describe('RecordForm - equipment edit', () => {
     expect(input.expectedRevision).toBe('rev-e1')
     expect(input.values).not.toHaveProperty('tracking_mode')
     expect(input.values).not.toHaveProperty('total_quantity')
+  })
+})
+
+describe('RecordForm - equipment add assists (Add Equipment v3.0, 8 Oct 2026)', () => {
+  async function fillIdentity(name = 'Aputure LS 600d') {
+    await type('name', name)
+    await type('brand', 'Aputure')
+    await type('category_id', 'c1')
+  }
+
+  it('pastes serials, skips repeats, lets each unit pick its intake condition, and saves those rows', async () => {
+    saveRecord.mockResolvedValue({ id: 'eq-9', code: 'EQ-0009' })
+    await mount('equipment', undefined, '/inventory?tab=new')
+    await fillIdentity()
+    await type('paste-serials', ['SN1', 'SN2', 'sn2'].join(String.fromCharCode(10)))
+    await click(button('Add 2 units'))
+    expect(container.textContent).toContain('2 units added; 1 repeated serial skipped.')
+    const condition = container.querySelector<HTMLSelectElement>('#record-unit-1-condition')!
+    expect([...condition.options].map((o) => o.value)).toEqual(['Excellent', 'Good', 'Fair', 'Damaged', 'Lost'])
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(condition, 'Good')
+      condition.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click(button('Create equipment'))
+    const rows = saveRecord.mock.calls[0]![0].rows
+    expect(rows.map((r: { serial_no: string; condition: string }) => [r.serial_no, r.condition])).toEqual([['SN1', 'Excellent'], ['SN2', 'Good']])
+  })
+
+  it('hides Manufacturer until the operator says it differs from the brand', async () => {
+    await mount('equipment', undefined, '/inventory?tab=new')
+    expect(field('manufacturer')).toBeNull()
+    await click(container.querySelector('#record-manufacturer-differs'))
+    expect(field('manufacturer')).not.toBeNull()
+  })
+
+  it('warns when equipment with the same name already exists, and links to it', async () => {
+    inventoryRows.current = [{ id: 'p-1', name: 'Sony FX3', model: null }]
+    await mount('equipment', undefined, '/inventory?tab=new')
+    await type('name', 'sony fx3')
+    await act(async () => { await new Promise((r) => setTimeout(r, 420)) })
+    expect(container.textContent).toContain('Equipment with this name already exists')
+    expect(button('Open existing equipment')).toBeDefined()
+  })
+
+  it('shows section links and a live Ready-to-rent list that never blocks saving', async () => {
+    saveRecord.mockResolvedValue({ id: 'eq-9', code: 'EQ-0009' })
+    await mount('equipment', undefined, '/inventory?tab=new')
+    const links = () => [...container.querySelectorAll('nav[aria-label="Form sections"] a')].map((a) => a.textContent)
+    expect(links()).toEqual(['Identity, needs attention', 'Units & location, needs attention', 'Purchase, optional', 'Pricing, needs attention', 'Maintenance & notes, optional'])
+    await fillIdentity()
+    expect(links()[0]).toBe('Identity, complete')
+    expect(container.textContent).toContain('Daily rate not set')
+    await type('paste-serials', 'SN1')
+    await click(button('Add 1 unit'))
+    await click(button('Create equipment'))
+    expect(saveRecord).toHaveBeenCalledTimes(1)
   })
 })

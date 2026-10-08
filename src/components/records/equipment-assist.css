@@ -1,0 +1,26 @@
+/* Add Equipment assists (8 Oct 2026, RULINGS-2026-10-08.md). Tokens only. */
+.record-section-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.record-section-link {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--card);
+  color: var(--text); font-size: var(--t-meta); font-weight: 600; text-decoration: none;
+}
+.record-section-link:hover { border-color: var(--primary); }
+.record-section-link:focus-visible { outline: 2px solid var(--input-focus); outline-offset: 2px; }
+.record-section-link.is-complete svg { color: var(--success-text); }
+.record-section-link.is-todo svg { color: var(--warn-text); }
+.record-section-link.is-optional svg { color: var(--muted); }
+.record-field--inline { flex-direction: row; align-items: center; gap: 10px; }
+.record-paste-serials { display: grid; gap: 8px; margin-top: var(--sp-md); max-width: 32rem; }
+.record-paste-serials__note { margin: 0; color: var(--text2); font-size: var(--t-meta); }
+.equipment-summary { display: grid; gap: 4px; }
+.equipment-summary__name { font-size: var(--t-ui); color: var(--text); }
+.equipment-summary__meta { color: var(--text2); font-size: var(--t-meta); }
+.equipment-summary__ready { display: grid; gap: 6px; margin-top: var(--sp-md); padding-top: var(--sp-md); border-top: 1px solid var(--border); }
+.equipment-summary__ready-title { font-weight: 700; font-size: var(--t-meta); color: var(--text); }
+.equipment-summary__ready ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.equipment-summary__ready li { display: flex; align-items: flex-start; gap: 8px; font-size: var(--t-meta); color: var(--text2); }
+.equipment-summary__ready li svg { flex-shrink: 0; margin-top: 2px; }
+.equipment-summary__ready li.is-ok svg { color: var(--success-text); }
+.equipment-summary__ready li.is-open svg { color: var(--warn-text); }
+.equipment-summary__note { color: var(--muted); font-size: var(--t-caption, 11px); }

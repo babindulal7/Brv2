@@ -618,6 +618,44 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.63 ⬅ OPEN — Add Equipment: photos and documents (Add Equipment v3.0 §3, §11)
+
+Raised 8 Oct 2026 by the Add Equipment review. The spec wants a thumbnail (5MB), an image
+gallery (50MB per file, Evidence v1.1) and documents (invoice, warranty, insurance, manual,
+certificates; 50MB; Owner/Manager/Billing only). The live form has none: the 6 Oct ruling keeps
+it on supported fields only, and `products` has no image or document column.
+
+**Decide:** (a) reuse the Evidence storage model (bucket + a `product_media` table, RLS by role,
+nothing deleted — retire with reason); or (b) defer media to after go-live and keep the catalogue
+text-only. Recommended: (a) for the thumbnail only first — it is what staff see in pickers —
+then the gallery and documents. Needs a migration (not written) and Babin's approval to apply.
+
+## 4.62 ⬅ OPEN — Add Equipment: showing and printing codes (Add Equipment v3.0 §4, §8.1)
+
+Raised 8 Oct 2026. **Already true in the database:** the record editor issues `asset_code`
+`EQ######` on save and an `asset_tag` `EQ######-01…` per new unit (0153), both unique. The form
+now says so in its summary. Missing: barcode/QR on the record, label printing, and a way to add
+units later with fresh tags.
+
+**Decide (spec §16):** do you print your own labels today, and on what stock? Which code goes on
+the label — the unit's asset tag, its manufacturer serial, or both? Options: (a) QR of the asset
+tag + human-readable tag and serial on a standard label size you name; (b) barcode only. No
+schema change is needed for (a) or (b); it is UI and a print layout.
+
+## 4.61 ⬅ OPEN — Add Equipment: Save Draft and the Ready-to-rent gate (Add Equipment v3.0 §9, §13)
+
+Raised 8 Oct 2026. `products.status` already has `Draft | Active | Archived` (0004:96), but the
+record editor always saves `Active` (0153:86) and units always get a status. The spec wants
+`Save Draft` that keeps an incomplete record out of booking search, availability and Inventory
+totals, with units carrying no status, and publication when Ready-to-rent clears. The form now
+shows the Ready-to-rent list as guidance only (it blocks nothing). Linked: the TODO(decision) at
+`src/lib/queries/inventory.ts:354` — which of `status` / `is_active` governs catalogue visibility.
+
+**Decide:** (a) Draft = `status='Draft'`; booking search, availability and KPIs read `Active`
+only; `Create Equipment` publishes; or (b) no drafts — create is always Active and the checklist
+stays advisory. Also spec §16: **can Warehouse create equipment at all, or only request it for a
+Manager to publish?** (a) needs an RPC change and query changes, not a new table.
+
 ## 4.60 ⬅ OPEN — should vocabulary be an editable setting? (scrape pattern C2)
 
 Raised 6 Oct 2026. Booqable lets a business rename seven labels (Order, Quote, Pickup,

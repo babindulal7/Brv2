@@ -38,6 +38,22 @@
 .filter-bar__option[aria-pressed='false']:hover { background: var(--hover-card) !important; }
 .filter-bar__option:focus-visible { outline: 2px solid var(--input-focus); outline-offset: 2px; }
 
+/* Screen-reader-only text (8 Oct 2026). Tailwind is loaded only by the marketing
+   pages, so its `sr-only` utility never existed inside the app and every
+   `className="sr-only"` (DataTable captions, intel extras, warehouse settings,
+   the dispatch date control, form section links) rendered as visible text. */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 /* Calibrated Focus-Visible Rings for Inputs, Selects, and Textareas */
 input:not([type='checkbox']):not([type='radio']):focus-visible,
 select:focus-visible,
