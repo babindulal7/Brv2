@@ -77,6 +77,10 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconFilter,
+  IconBuildingBank,
+  IconCash,
+  IconQrcode,
+  IconWallet,
   type Icon as TablerIconType,
 } from '@tabler/icons-react'
 import { captureError } from '../../lib/monitoring'
@@ -193,6 +197,12 @@ const REGISTRY = {
   barcode: IconBarcode,
   panel_left_close: IconLayoutSidebarLeftCollapse,
   panel_left_open: IconLayoutSidebarLeftExpand,
+
+  // Record Payment — the payment-method tap cards
+  bank: IconBuildingBank,
+  cash: IconCash,
+  qr: IconQrcode,
+  wallet: IconWallet,
 } satisfies Record<string, TablerIconType>
 
 export type IconName = keyof typeof REGISTRY

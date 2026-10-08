@@ -149,8 +149,8 @@ export type RecordPaymentResult = {
 
 /* ── METHOD · label in notes, account in bank_account_id ──────────────────
  *
- * `RecordPaymentModal` offers Bank Transfer / Cash / eSewa / Khalti / Card /
- * Cheque. `payments` has no method column. The structured home for "how was
+ * `RecordPaymentModal` offers Bank Transfer / Cash / Fonepay / eSewa / Khalti /
+ * Card / Cheque. `payments` has no method column. The structured home for "how was
  * this paid" is `bank_account_id` → `bank_accounts.channel_group`
  * ('Digital wallets' | 'Bank' | 'Cash' | 'Cards' | 'Other', 0001:1028), which
  * names a REAL ACCOUNT the money landed in — the live project has two

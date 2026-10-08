@@ -1126,6 +1126,13 @@ export interface MovementRow {
   itemCount: number
   /** "Due 2 Aug 2026 · 06:00 AM" — formatted `bookings.return_at`. */
   due: string
+  /**
+   * `bookings.return_at`, present only on a Return row whose gear is still out
+   * (`actual_return_at` null — the same clause `overdue` uses). The column
+   * renders the live distance to it ("in 3h 20m") from this, at render time,
+   * because a figure baked in at fetch time goes stale on a tablet left open.
+   */
+  returnDueAtAd?: string
   /** "31 Jul 2026 → 2 Aug 2026" — the two dates, with no day count. */
   duration: string
   /** `bookings.pickup_location`, nullable free text — never the branch name. */
@@ -1217,6 +1224,7 @@ export function toMovementRow(row: BookingListRow, side: 'outgoing' | 'incoming'
     project: row.project,
     itemCount: row.itemCount,
     due: `Due ${stampOf(row.returnAtAd)}`,
+    ...(side === 'incoming' && row.actualReturnAtAd === null ? { returnDueAtAd: row.returnAtAd } : {}),
     // Two dates and no day count on purpose. "3 days" is a rental-day figure and
     // Law 1 puts every figure in the engine that owns it; a page counting its
     // own billing days is the second opinion that law exists to prevent.

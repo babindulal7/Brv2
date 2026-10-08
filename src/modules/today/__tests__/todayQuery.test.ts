@@ -193,6 +193,21 @@ describe('toMovementRow · Overdue, and the flags that are not derived', () => {
   })
 })
 
+describe('toMovementRow · returnDueAtAd, the instant the Returns column counts down to', () => {
+  it('carries return_at on a Return row whose gear is still out', () => {
+    expect(toMovementRow(raw(), 'incoming', NOW_AD).returnDueAtAd).toBe('2026-08-02T00:15:00.000Z')
+  })
+
+  it('drops it once the gear is back — nothing left to count down to', () => {
+    const row = toMovementRow(raw({ actualReturnAtAd: '2026-08-02T01:00:00.000Z' }), 'incoming', NOW_AD)
+    expect(row.returnDueAtAd).toBeUndefined()
+  })
+
+  it('never puts it on an outgoing row — a pickup is not a return', () => {
+    expect(toMovementRow(raw(), 'outgoing', NOW_AD).returnDueAtAd).toBeUndefined()
+  })
+})
+
 describe('toMovementRow · the fields that survived, and the shapes of the ones that changed', () => {
   it('carries the booking through unaltered where a column exists', () => {
     const row = toMovementRow(raw(), 'outgoing', NOW_AD)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
+import { ChoiceCards, type ChoiceCardOption } from '../../../components/ui/ChoiceCards'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { recordPayment } from '../../../actions/finance/recordPayment'
@@ -104,7 +105,25 @@ export const DRAFT_NO_NUMBER = 'Draft (no number)'
  */
 const SUBTITLE = 'Register an incoming payment against an invoice — a Draft included.'
 
-type PaymentMethod = 'Bank Transfer' | 'Cash' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'
+type PaymentMethod = 'Bank Transfer' | 'Cash' | 'Fonepay' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'
+
+/*
+ * The method picker, as tap cards rather than a `<select>`: every method is on
+ * screen and one tap picks it (R-39). The `value` is the label `recordPayment`
+ * writes to the notes (its METHOD block), so it must not change. A hint says
+ * what the method is, never which account it lands in; that is the account
+ * picker's job below.
+ */
+const PAYMENT_METHODS: readonly ChoiceCardOption<PaymentMethod>[] = [
+  { value: 'Bank Transfer', label: 'Bank Transfer', hint: 'To an account', icon: 'bank' },
+  { value: 'Cash', label: 'Cash', hint: 'At the desk', icon: 'cash' },
+  // RULING 2026-10-08: Fonepay is a method label only, with no account default (RULINGS-2026-10-08, May briefs #1).
+  { value: 'Fonepay', label: 'Fonepay', hint: 'QR scan', icon: 'qr' },
+  { value: 'eSewa', label: 'eSewa', hint: 'Wallet app', icon: 'wallet' },
+  { value: 'Khalti', label: 'Khalti', hint: 'Wallet app', icon: 'wallet' },
+  { value: 'Card', label: 'Card', hint: 'Card machine', icon: 'card' },
+  { value: 'Cheque', label: 'Cheque', hint: 'Paper cheque', icon: 'file' },
+]
 
 export function RecordPaymentModal({
   isOpen,
@@ -573,82 +592,62 @@ export function RecordPaymentModal({
           </select>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="rpm-amount" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-              Amount (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            <input
-              id="rpm-amount"
-              type="number"
-              inputMode="numeric"
-              min={1}
-              /*
-               * 0 renders as an empty box, not a typed-looking "0": the state
-               * has to be a number for the guard and for `rupees()`, but the
-               * operator must see an empty field they are required to fill,
-               * not a figure the screen chose.
-               */
-              value={amount === 0 ? '' : amount}
-              onChange={(e) => {
-                // Clearing the field gives '' → 0, which the submit guard
-                // rejects. A non-numeric entry lands as 0 too, rather than as
-                // the NaN that `rupees()` would happily convert.
-                const next = Number(e.target.value)
-                setAmount(Number.isFinite(next) ? next : 0)
-                // The field is now the operator's, not the invoice's — a
-                // picker switch must not overwrite a figure they typed.
-                setAmountTouched(true)
-              }}
-              style={{
-                minHeight: 'var(--tap)',
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-              }}
-            />
-            {/*
-              The preview confirms the direction of the conversion to the
-              operator: they type rupees, `rupees()` makes paisa, and
-              `formatMoney()` renders paisa back as `Rs …`. With an empty
-              field it shows a dash rather than "Rs 0", which would read as a
-              figure the form is holding.
-            */}
-            <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              Formatted: {amount > 0 ? formatMoney(rupees(amount)) : '—'}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="rpm-method" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-              Payment Method <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            <select
-              id="rpm-method"
-              value={method}
-              onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-              style={{
-                minHeight: 'var(--tap)',
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-              }}
-            >
-              <option value="Bank Transfer">Bank Transfer</option>
-              <option value="Cash">Cash</option>
-              <option value="eSewa">eSewa</option>
-              <option value="Khalti">Khalti</option>
-              <option value="Card">Card</option>
-              <option value="Cheque">Cheque</option>
-            </select>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label htmlFor="rpm-amount" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            Amount (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
+          </label>
+          <input
+            id="rpm-amount"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            /*
+             * 0 renders as an empty box, not a typed-looking "0": the state
+             * has to be a number for the guard and for `rupees()`, but the
+             * operator must see an empty field they are required to fill,
+             * not a figure the screen chose.
+             */
+            value={amount === 0 ? '' : amount}
+            onChange={(e) => {
+              // Clearing the field gives '' → 0, which the submit guard
+              // rejects. A non-numeric entry lands as 0 too, rather than as
+              // the NaN that `rupees()` would happily convert.
+              const next = Number(e.target.value)
+              setAmount(Number.isFinite(next) ? next : 0)
+              // The field is now the operator's, not the invoice's — a
+              // picker switch must not overwrite a figure they typed.
+              setAmountTouched(true)
+            }}
+            style={{
+              minHeight: 'var(--tap)',
+              padding: '0 12px',
+              borderRadius: 'var(--r-btn)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+            }}
+          />
+          {/*
+            The preview confirms the direction of the conversion to the
+            operator: they type rupees, `rupees()` makes paisa, and
+            `formatMoney()` renders paisa back as `Rs …`. With an empty
+            field it shows a dash rather than "Rs 0", which would read as a
+            figure the form is holding.
+          */}
+          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+            Formatted: {amount > 0 ? formatMoney(rupees(amount)) : '—'}
+          </span>
         </div>
+
+        <ChoiceCards<PaymentMethod>
+          legend="Payment Method"
+          name="rpm-method"
+          options={PAYMENT_METHODS}
+          value={method}
+          onChange={setMethod}
+          required
+        />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label htmlFor="rpm-account" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>

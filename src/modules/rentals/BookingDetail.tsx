@@ -11,6 +11,7 @@ import './rentals.css'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { Badge } from '../../components/ui/Badge'
+import { ReturnCountdown } from '../../components/ui/ReturnCountdown'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
@@ -1803,6 +1804,12 @@ function BookingDetailView() {
 
   const isServiceOnly = lines.length > 0 && lines.every((l) => NON_PACKABLE_LINE_TYPES.has(l.lineType))
 
+  /* Gear still out — the overdue predicate below without its time clause. The
+     facts strip's Return cell counts down to `return_at` (or up past it) only
+     for a booking in this state; a Booked one has nothing out to bring back. */
+  const awaitingReturn =
+    booking.stage === 'On Rent' && !booking.isClosed && !booking.isCancelled && booking.actualReturnAtAd === null
+
   const primaryAction = getRentalPrimaryAction(stage, {
     isCancelled: booking.isCancelled,
     isClosed: booking.isClosed,
@@ -2266,6 +2273,9 @@ function BookingDetailView() {
             <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--booking-date-text)' }}>
               {formatAdDateTime(m.iso)}
             </span>
+            {m.label === 'Return' && awaitingReturn && (
+              <ReturnCountdown returnAtAd={m.iso} style={{ marginTop: 4 }} />
+            )}
           </Fact>
         ))}
 

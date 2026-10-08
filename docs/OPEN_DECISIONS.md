@@ -87,3 +87,13 @@ Provisional rulings are in `RULINGS-2026-10-07.md`; these three are the ones tha
 - **D-2 (the 4 seasonal rulesets: SUMMER25, New year, Christmas ×2)** — **open.** Proposal: import, then let them expire on their end dates. `pricing_rulesets.valid_until` (0160) carries the date. Nothing is imported yet (the Booqable bridge code is not in this repository).
 - **D-3 (who publishes a team saved view)** — proposal adopted ⭐: Manager and above (0159). Flip = `save_view()` and `canPublishTeamViews`, together.
 - **G3 persistence (engineering, not a product call, but it blocks Stage 5 cutover)** — pricing structures price a **quote** today; an invoice cannot yet reproduce them. Needs `create_booking` to accept a line total plus a `price_breakdown` snapshot (a new migration, 0161+, with the R-35 gates). Until then a structure-priced product must be keyed with a flat rate on the booking.
+
+---
+
+## 12. The May page briefs (8 October 2026) — eight product calls, full text in PLAN.md
+
+From checking `D:\proects\md` against `step1-foundation`. Fonepay, the live return countdown and Create & add another were built (PROGRESS.md, 8 Oct). These were not, because each one needs a person to decide.
+- **§4.64 (a)–(e)** (filed as §4.61) — duplicate / re-book a rental · VAT-inclusive rates · rescheduling a delivery (the Delivery workspace also runs on `localStorage` seed rows) · a late/night charge at booking time · per-category useful lives for the Depreciation Reserve.
+- **§4.65 (a)** (filed as §4.62) — show which units Reset needs next, worked out from the next booking's pickup time (`data/reset.ts:163`). Is it wanted, as a label or a sort, and inside what window?
+- **§4.65 (b)** — a manager override for Handover gate 1 (receiver ID not verified): allowed at all, by whom, and where it is recorded (`HandoverWorkspace.tsx:89`, `OVERRIDE_UNAVAILABLE`).
+- **§4.65 (c)** — holding a citizenship card, passport or licence as the deposit: whether to record it, as a non-money record kept apart from deposits (Law 5); whether it satisfies gate 4; its "returned to client" terminal action; and who may see the ID photo (PII).

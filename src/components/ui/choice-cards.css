@@ -1,0 +1,122 @@
+/* ChoiceCards — see ChoiceCards.tsx. No layout @media here: the grid is
+   auto-fit, so it reflows by the width it is given (responsive.css rule). */
+
+.choice-cards {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.choice-cards__legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: var(--t-meta);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.choice-cards__grid {
+  display: grid;
+  gap: 8px;
+}
+
+.choice-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-btn);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color var(--dur-fast, 120ms) var(--ease, ease), background var(--dur-fast, 120ms) var(--ease, ease);
+}
+
+/* The native radio stays in the tree for keyboard and assistive tech; the card
+   is what is seen. */
+.choice-card__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The radio is invisible, so its focus ring is drawn on the card. */
+.choice-card:has(.choice-card__input:focus-visible) {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
+.choice-card__icon {
+  flex-shrink: 0;
+  color: var(--text2);
+}
+
+.choice-card__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.choice-card__label {
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.choice-card__hint {
+  font-size: var(--t-meta);
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+/* Sits on the card's top-right corner, outside the text flow. */
+.choice-card__check {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+/* Chosen: a 2px border drawn as border + inset ring, so the card does not
+   shift by a pixel when it is picked, plus the check icon (Law 11). */
+.choice-card[data-checked] {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+  background: var(--hover-card);
+}
+
+.choice-card[data-checked] .choice-card__icon {
+  color: var(--primary-text);
+}
+
+.choice-card[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .choice-card:not([data-checked]):not([data-disabled]):hover {
+    background: var(--hover-card);
+  }
+}

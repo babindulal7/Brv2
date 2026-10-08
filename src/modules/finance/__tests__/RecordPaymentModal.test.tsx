@@ -224,4 +224,39 @@ describe('RecordPaymentModal — the amount default', () => {
     })
     expect(recordPaymentSpy).toHaveBeenCalled()
   })
+
+  /*
+   * Fonepay is the merchant QR most Kathmandu clients pay by, and the method
+   * list did not offer it — a Fonepay receipt had to be logged as eSewa or
+   * "Bank Transfer", both false. The label is what reaches `payments.notes`
+   * as `Method: Fonepay` (see recordPayment.ts METHOD); no account is implied.
+   */
+  it('offers Fonepay and sends it as the method label, with no account attached', async () => {
+    recordPaymentSpy.mockClear()
+    const c = await mount(() => {})
+    const fonepay = c.querySelector('input[name="rpm-method"][value="Fonepay"]') as HTMLInputElement
+    expect(fonepay).not.toBeNull()
+    await act(async () => { fonepay.click() })
+    expect(fonepay.checked).toBe(true)
+    await typeAmount(amountInput(c), '2000')
+    await act(async () => { submitButton(c).click() })
+    expect(recordPaymentSpy).toHaveBeenCalledTimes(1)
+    const [input] = recordPaymentSpy.mock.calls[0] as [Record<string, unknown>, unknown]
+    expect(input.paymentMethod).toBe('Fonepay')
+    expect(input.bankAccountId).toBeUndefined()
+  })
+
+  /*
+   * The method picker is tap cards, not a dropdown: all seven methods are on
+   * screen at once as one radio group, the default is still Bank Transfer, and
+   * the labels are exactly the values `recordPayment` writes to the notes.
+   */
+  it('shows every method as a tap card, Bank Transfer chosen by default', async () => {
+    const c = await mount(() => {})
+    expect(c.querySelector('select#rpm-method')).toBeNull()
+    const radios = Array.from(c.querySelectorAll<HTMLInputElement>('input[type="radio"][name="rpm-method"]'))
+    expect(radios.map((r) => r.value)).toEqual(['Bank Transfer', 'Cash', 'Fonepay', 'eSewa', 'Khalti', 'Card', 'Cheque'])
+    expect(radios.filter((r) => r.checked).map((r) => r.value)).toEqual(['Bank Transfer'])
+    expect(c.querySelector('fieldset legend')?.textContent).toContain('Payment Method')
+  })
 })

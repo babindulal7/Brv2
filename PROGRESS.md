@@ -1,5 +1,262 @@
 # Progress Log
 
+## 2026-10-08 — Mock mode: inserts get the `now()` / `CURRENT_DATE` defaults Postgres fills (payments no longer dated 1/1/1970)
+
+Branch `claude/md-brief-gaps`. Closes the "Mock only" bullet under Remaining in the entry below.
+
+**Did**
+- **Cause.** `recordPayment` leaves `payments.payment_date` out on purpose, because the column
+  is `timestamptz not null default now()` (0006:187). The mock insert filled only `id` and
+  `created_at`, so the stored row had no date and Finance → Payments rendered it as
+  1/1/1970 · 05:30. The fix is in the mock layer; the action and migrations are unchanged.
+- **The same gap elsewhere.** The schema has 218 such columns across 139 tables. Two others
+  are read by the UI: `stock_transfers.requested_at` (`createStockTransfer` omits it, and
+  `queries/warehouses.ts:199` calls `.slice()` on it) and `clients.client_since`
+  (`createClient` omits it; the client drawer showed "Not recorded on this client."). Most of
+  the rest are `updated_at`.
+- New `src/lib/__mocks__/columnDefaults.ts`, generated from the migrations by the new
+  `scripts/dump-column-defaults.mjs`. That script builds the chain in PGlite and reads
+  `information_schema.columns`. Run it with no flag to check the file, which exits 1 when it is
+  stale; run it with `--write` to regenerate. The one time default it does not map is
+  `number_sequences.current_year` (a year integer, which the mock never inserts).
+- `__mocks__/client.ts`: `withColumnDefaults` fills a column only when the row does not carry
+  it, so an explicit value or `null` is kept. Every `now()` column on one insert gets the same
+  instant. `CURRENT_DATE` is that instant's UTC date, because no migration sets a time zone.
+  It applies to `from().insert/upsert`, to the `create_booking` and `create_invoice` RPC
+  emulations (through a new `commitInsert`), and to new rows from `save_record_editor`.
+- Rows already in a browser's mock storage get their defaults from their own `created_at` on
+  the next load, so existing payments show their real time without wiping mock data.
+
+**Verified**
+- Browser, mock, this worktree's server on `localhost:3400` (`curl` of the served
+  `client.ts` contains `withColumnDefaults`). Before any new write, Finance → Payments showed
+  the two payments the earlier session had stored without a date: PAY-2026-0001
+  "8/10/2026 · 07:32" (stored 01:47:49Z) and PAY-2026-0002 "8/10/2026 · 14:34" (08:49:40Z).
+  Recorded a Rs 750 Bank Transfer payment on INV-10 through Record Payment. The stored row
+  PAY-2026-0003 has `payment_date` = `created_at` = 09:25:11Z and a `client_uuid`. After a
+  reload, Payments lists it first as "Rs 750 · Received · 8/10/2026 · 15:10". "1970" appears
+  nowhere on the page, and the console has no errors. Read from the DOM: screenshots timed
+  out because the app window was behind another window.
+- **Not driven in the browser:** Stock transfers and client "since". They are covered by
+  the unit test only.
+- New `src/lib/__mocks__/__tests__/columnDefaults.test.ts` (4 tests) inserts through the mock
+  client. It checks that a payment without `payment_date` gets the insert instant (equal to
+  `created_at`, and read back by select), that an explicit date and an explicit `null` are
+  kept, and that `client_since` is the UTC date at 20:00Z (01:45 next day in Kathmandu) and
+  `requested_at` is filled. It also checks that a payment stored without a date replays with
+  its `created_at`. Against the pre-fix `client.ts`, 3 of the 4 fail; the explicit-value case
+  passes either way.
+- `tsc` 0; eslint on the three changed TS files 0 warnings. `scripts/` is eslint-ignored.
+  `dump-column-defaults.mjs` reports the file matches the schema (218 columns, 139 tables, all
+  160 migrations applied). Full suite: **4190/4190 passed, 325 files**. No migration changed,
+  so `check:pglite` / `check:lifecycle` were not re-run.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- `dump-column-defaults.mjs` is not wired into any gate. A migration that adds a `now()`
+  default leaves the mock behind until someone reruns it. It could run inside
+  `check:pglite`, which already builds the same database.
+- Only time defaults are mirrored. Literal defaults (`status default 'Active'`, booleans,
+  zeros) are still missing on mock inserts unless the writer sends them.
+- The mock RPC error hint still points at `src/lib/mock/client.ts`; the file is
+  `src/lib/__mocks__/client.ts`.
+
+## 2026-10-08 — Record Payment: the method is tap cards, not a dropdown (`ChoiceCards`)
+
+Taken from the Miraz Bakery POS payment step (every method on screen, one tap picks it, a
+one-line hint under each). Branch `claude/md-brief-gaps`.
+
+**Did**
+- New `components/ui/ChoiceCards.tsx` + `choice-cards.css`: a `fieldset` of native radios
+  drawn as cards. The browser owns the keyboard (Tab into the group, arrows move the choice),
+  and each radio has an explicit `for`/`id` label. The chosen card gets a corner check badge
+  and a 2px border, not colour alone (Law 11). Cards are at least `var(--tap)` tall (Law 15).
+  The grid is `auto-fit`, so there is no new `@media` (Law 13/14). It is not
+  `SegmentedControl`, which is a `tablist` for switching views.
+- Record Payment: the Payment Method `<select>` is now seven cards (Bank Transfer · Cash ·
+  Fonepay · eSewa · Khalti · Card · Cheque, same values, Bank Transfer still the default).
+  Amount now has its own row. The old two-column Amount/Method grid had no phone layout.
+- Icon registry: `bank`, `cash`, `qr`, `wallet` (Tabler).
+- R-39 budget #3 (record a payment, ≤ 4 taps): from the Finance header, a non-default method
+  is now **3 taps** (open, card, Record Payment), down from 4. The default path is still 2.
+
+**Verified**
+- Browser (mock, `localhost:3400`, this worktree): seven cards, Bank Transfer checked;
+  clicking Fonepay moves the check; ArrowRight moves the choice to eSewa with a 2px focus ring
+  on the card. Recorded a payment with Fonepay; the stored row (PAY-2026-0002) carries
+  `"notes": "Method: Fonepay"`, the amount and a `client_uuid`. 1024 wide: three across, all
+  seven cards 54px. 375×812: one column, no horizontal scroll. Dark theme: dark cards, label
+  and hint readable.
+- Found and fixed while driving: the inline check mark took ~26px and wrapped
+  "Bank Transfer" onto four lines when it was chosen. It is now a corner badge.
+- `tsc` clean; full suite **4186/4186** (324 files); `lint:shell`, `lint:ui-copy`,
+  `check:contrast` (54/54) and eslint on the changed files clean. Tests: `ChoiceCards.test.tsx`
+  (5), plus a new Record Payment case; the Fonepay and R-39 D3 cases now tap cards.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Other short dropdowns that could use `ChoiceCards`: pickup vs delivery and rental mode in
+  New Rental (another agent is editing New Rental in the trunk, so not touched here).
+- **Mock only, not from this change:** a payment recorded in mock mode shows its date as
+  1/1/1970. The mock overlay row has `created_at` but no `payment_date`; Postgres defaults it
+  to `now()` (`0006:187`), and the mock does not apply that default.
+- Two clicks on the sidebar theme control left the app in light mode. That may have been a
+  mis-click after a viewport resize; not investigated. Dark mode was checked by setting
+  `data-theme` directly.
+
+## 2026-10-08 — From the May page briefs: Fonepay, a live return countdown, Create & add another; three more decisions filed (PLAN §4.62)
+
+Branch `claude/md-brief-gaps`, off `step1-foundation` at `c21c1c4`, built in its own worktree
+because another agent had New Rental uncommitted in the trunk. The parallel "Markdown features
+brainstorm" session committed the first pass of this work (`82b04a5` countdown, `f8f5761`
+Fonepay) and filed §4.61. This entry covers all three features and the commit that finishes
+them.
+
+**Did**
+- **Fonepay** in Record Payment's method list (brief 07). It is a label only: `Method: Fonepay`
+  in `payments.notes`, no account implied. No migration (`payments` has no method column).
+- **Live return countdown** (brief 11). Booking Detail's Return cell, for a booking On Rent and
+  not back, reads "Due in 9h 14m" or "Overdue by 79d 1h". Today's Return rows that are not
+  overdue read "in 3h 20m" under the Return time. A minute clock moves it on a tablet left open.
+  `lib/returnCountdown.ts` (pure span) + `components/ui/ReturnCountdown.tsx`.
+- **Correction to `82b04a5`:** it put Today's countdown in `MovementList.tsx`, which no live
+  screen renders (Today draws `DashboardMovementPanel` since the 8 Oct "meaningful rows").
+  Reverted there and placed in `DashboardMovementPanel`'s Return column.
+- **Create & add another** on new client and new equipment (briefs 17/20, R-39). It saves,
+  stays on the form, clears every field and mints a fresh `client_uuid`, so the next record
+  can never replay the last one's key. It goes in `RecordActions`' `extra` slot (the slot
+  `docs/UI_UX_RULES.md` reserves, row updated). It is icon-only below 768px so the bar keeps
+  one row.
+- **Defect, mock mode:** every Add/Edit Client, Equipment and Bundle save was refused with
+  "Permission denied for this record". The mock `save_record_editor` read `users.role`, which
+  is not a column; it now reads `primary_role` (0007:110).
+- **PLAN §4.62 (a)–(c)** filed and mirrored in `docs/OPEN_DECISIONS.md` §12: a "needed next"
+  label on the Reset queue, a manager override for Handover gate 1, and a document held as the
+  deposit.
+
+**Ruled**
+- RULINGS-2026-10-08.md, "May page briefs: Claude's defaults", rows 1–3 (Fonepay has no
+  account default; the countdown is a display span counted from `return_at`; nothing carries
+  over to the next record), plus the mock defect. A `// RULING 2026-10-08` comment sits at each
+  code site.
+
+**Verified**
+- Browser, mock mode, this worktree's own server (port 3400). An earlier `preview_start` had
+  served the `main` checkout, so this was confirmed by fetching the changed modules.
+  - Booking Detail B-864 (On Rent, due 21 Jul): "Overdue by 79d 1h", alert icon, danger ink
+    rgb(168,47,47). With the page's `Date.now` shifted to 20 Jul 15:00Z, the line turned over
+    by itself at the next minute to "Due in 9h 14m" with a clock icon and muted ink. That is the
+    correct span to 21 Jul 00:15Z.
+  - Record Payment lists Bank Transfer · Cash · **Fonepay** · eSewa · Khalti · Card · Cheque. A
+    Rs 500 Fonepay payment on INV-10 saved, and the stored row reads `notes: "Method: Fonepay"`
+    with no account. It is listed on Payments.
+  - Add Client: Create & add another saved **C-1**, cleared the form and stayed on
+    `/clients?tab=new`. A second client saved as **C-2** (a new record, not C-1 returned again).
+    Both are in the directory. Add Equipment shows Cancel · Create & add another · Create
+    equipment. At 375px the bar is one row (70px), with a 48×44 "+" named "Create & add
+    another".
+  - **Not seen in the browser:** Today's "in 3h 20m". The mock corpus is anchored at 31 Jul,
+    so every Return row is already overdue on 8 Oct. Covered by `movementPanel.test.tsx`.
+- Tests: new `returnCountdown.test.ts` (7), `ReturnCountdown.test.tsx` (4), `RecordForm.test.tsx`
+  +4 and one updated (bar now lists the extra action), `movementPanel.test.tsx` +3,
+  `todayQuery.test.ts` +3, `RecordPaymentModal.test.tsx` +1.
+- `tsc` 0, eslint on every changed file 0 warnings, `lint:ui-copy` clean, `lint:shell` 621
+  files clean. Full suite: **4180/4180 passed, 323 files** (this worktree, started 07:41 NPT; no migration changed, so `check:pglite` / `check:lifecycle` were not re-run — the Lifecycle row is the parallel session's run of this tree).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- §4.61 (a)–(e) and §4.62 (a)–(c) wait on Babin.
+- The "All times are in Asia/Kathmandu (NPT)" note (brief 01) was not built.
+- Mock-mode quirks seen while verifying, not fixed: a new mock payment shows `1/1/1970 ·
+  05:30` and reuses `PAY-2026-0001`; the mock `extend_booking` RPC is not implemented; the
+  Extend Rental dialog's three inputs have no programmatic labels.
+- Not merged into `step1-foundation`. The trunk still holds another agent's uncommitted New
+  Rental work.
+
+## 2026-10-08 — The May page briefs checked against the trunk; five decisions filed (PLAN §4.61)
+
+**Did**
+- Checked the 34 page briefs in `D:\proects\md` (May 2026, UI only) against `step1-foundation`
+  at `c21c1c4`. Almost all of it is built. Filed the five gaps that need a ruling as
+  **PLAN §4.61 (a)–(e)**: duplicate / re-book a rental, VAT-inclusive pricing, delivery
+  reschedule, a late/night charge at booking time, and a Depreciation Reserve card.
+- Recorded, without filing, the brief items that break a law: Edit Payment (Law 4), Delete
+  expense (Law 3), "Customer" (Law 17), deposit inside Grand Total (Law 5), and discount
+  reason (Law 10).
+- Docs only. No code changed in this entry. The return countdown and the Fonepay option in
+  the same worktree belong to the parallel "MD project features" session.
+
+**Found**
+- **The Delivery workspace is not on the database.** `/operations/delivery` reads and writes
+  `localStorage` (`babin_rentals_deliveries_v1`, `lib/queries/delivery.ts:139`). It is seeded
+  from the hard-coded `INITIAL_DELIVERIES` (`DEL-2601`, "Himalayan Films Pvt. Ltd.", "Suman
+  Rai"…), so Assign Rider, Start Delivery and Mark Delivered never reach Supabase. Filed
+  under §4.61(c), because where a delivery lives is the first question there.
+
+**Verified**
+- Every file and line cited in §4.61 was read at the cited place in this tree, not recalled:
+  `data/calendar.ts:1163-1164` (Duplicate and Move/Drag disabled), `src/archive/RentalMoreActionsMenu.tsx`
+  (clone item; no live importer), `money.ts:price()` (VAT added on top),
+  `booking/RentalFinancialRail.tsx:401` (on/off toggle), `lib/queries/delivery.ts:139-188`
+  (localStorage read/write and seed), `DeliveryWorkspace.tsx:18-127` (uses only those),
+  `data/addEquipment.ts:247` (asset-lives TODO).
+- `npm run check:lifecycle` 30/30 green (PGlite). No app behaviour changed, so nothing was
+  driven in the browser.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- §4.61 (a)–(e) wait on Babin's answers. Nothing in them is half-built.
+- The **Real data** row cannot see the Delivery problem. `scripts/completion.mjs` treats any
+  import from `src/lib/queries/` as the database, and `lib/queries/delivery.ts` lives there
+  while reading `localStorage`. That row overstates by at least one screen until the counter
+  checks what a query module actually calls.
+
 ## 2026-10-08 — Add Equipment checked against its spec; assists built; sr-only fixed app-wide
 
 **Did**

@@ -2,6 +2,7 @@ import { formatAd } from '../../lib/bs'
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon, { type IconName } from '../../components/ui/Icon'
+import { ReturnCountdown } from '../../components/ui/ReturnCountdown'
 import { PageBody } from '../../components/ui/PageBody'
 import { businessDayAd, has, timeOf, type MovementRow } from '../../lib/queries/today'
 import type { ListResult } from '../../lib/queries/useList'
@@ -291,6 +292,14 @@ export default function DashboardMovementPanel({
                     <div className="movement-card__schedule movement-card__schedule--return">
                       <span>Return</span>
                       <strong className="figure" style={{ color: 'var(--booking-date-text)' }}>{returnMoment}</strong>
+                      {/* The live distance to `return_at` for gear still out
+                          (md brief 11). An overdue row already says how late in
+                          its time column and badge, so it is not said twice; a
+                          row that crosses its due time while the screen is open
+                          turns red here until the next refetch flags it. */}
+                      {side === 'incoming' && !isOverdue && !isPartial && row.returnDueAtAd && (
+                        <ReturnCountdown returnAtAd={row.returnDueAtAd} short />
+                      )}
                     </div>
 
                     <div className="movement-card__status-action">
