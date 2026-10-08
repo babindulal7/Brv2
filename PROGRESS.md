@@ -1,5 +1,78 @@
 # Progress Log
 
+## 2026-10-08 — Mock mode: inserts get the `now()` / `CURRENT_DATE` defaults Postgres fills (payments no longer dated 1/1/1970)
+
+Branch `claude/md-brief-gaps`. Closes the "Mock only" bullet under Remaining in the entry below.
+
+**Did**
+- **Cause.** `recordPayment` leaves `payments.payment_date` out on purpose, because the column
+  is `timestamptz not null default now()` (0006:187). The mock insert filled only `id` and
+  `created_at`, so the stored row had no date and Finance → Payments rendered it as
+  1/1/1970 · 05:30. The fix is in the mock layer; the action and migrations are unchanged.
+- **The same gap elsewhere.** The schema has 218 such columns across 139 tables. Two others
+  are read by the UI: `stock_transfers.requested_at` (`createStockTransfer` omits it, and
+  `queries/warehouses.ts:199` calls `.slice()` on it) and `clients.client_since`
+  (`createClient` omits it; the client drawer showed "Not recorded on this client."). Most of
+  the rest are `updated_at`.
+- New `src/lib/__mocks__/columnDefaults.ts`, generated from the migrations by the new
+  `scripts/dump-column-defaults.mjs`. That script builds the chain in PGlite and reads
+  `information_schema.columns`. Run it with no flag to check the file, which exits 1 when it is
+  stale; run it with `--write` to regenerate. The one time default it does not map is
+  `number_sequences.current_year` (a year integer, which the mock never inserts).
+- `__mocks__/client.ts`: `withColumnDefaults` fills a column only when the row does not carry
+  it, so an explicit value or `null` is kept. Every `now()` column on one insert gets the same
+  instant. `CURRENT_DATE` is that instant's UTC date, because no migration sets a time zone.
+  It applies to `from().insert/upsert`, to the `create_booking` and `create_invoice` RPC
+  emulations (through a new `commitInsert`), and to new rows from `save_record_editor`.
+- Rows already in a browser's mock storage get their defaults from their own `created_at` on
+  the next load, so existing payments show their real time without wiping mock data.
+
+**Verified**
+- Browser, mock, this worktree's server on `localhost:3400` (`curl` of the served
+  `client.ts` contains `withColumnDefaults`). Before any new write, Finance → Payments showed
+  the two payments the earlier session had stored without a date: PAY-2026-0001
+  "8/10/2026 · 07:32" (stored 01:47:49Z) and PAY-2026-0002 "8/10/2026 · 14:34" (08:49:40Z).
+  Recorded a Rs 750 Bank Transfer payment on INV-10 through Record Payment. The stored row
+  PAY-2026-0003 has `payment_date` = `created_at` = 09:25:11Z and a `client_uuid`. After a
+  reload, Payments lists it first as "Rs 750 · Received · 8/10/2026 · 15:10". "1970" appears
+  nowhere on the page, and the console has no errors. Read from the DOM: screenshots timed
+  out because the app window was behind another window.
+- **Not driven in the browser:** Stock transfers and client "since". They are covered by
+  the unit test only.
+- New `src/lib/__mocks__/__tests__/columnDefaults.test.ts` (4 tests) inserts through the mock
+  client. It checks that a payment without `payment_date` gets the insert instant (equal to
+  `created_at`, and read back by select), that an explicit date and an explicit `null` are
+  kept, and that `client_since` is the UTC date at 20:00Z (01:45 next day in Kathmandu) and
+  `requested_at` is filled. It also checks that a payment stored without a date replays with
+  its `created_at`. Against the pre-fix `client.ts`, 3 of the 4 fail; the explicit-value case
+  passes either way.
+- `tsc` 0; eslint on the three changed TS files 0 warnings. `scripts/` is eslint-ignored.
+  `dump-column-defaults.mjs` reports the file matches the schema (218 columns, 139 tables, all
+  160 migrations applied). Full suite: **4190/4190 passed, 325 files**. No migration changed,
+  so `check:pglite` / `check:lifecycle` were not re-run.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- `dump-column-defaults.mjs` is not wired into any gate. A migration that adds a `now()`
+  default leaves the mock behind until someone reruns it. It could run inside
+  `check:pglite`, which already builds the same database.
+- Only time defaults are mirrored. Literal defaults (`status default 'Active'`, booleans,
+  zeros) are still missing on mock inserts unless the writer sends them.
+- The mock RPC error hint still points at `src/lib/mock/client.ts`; the file is
+  `src/lib/__mocks__/client.ts`.
+
 ## 2026-10-08 — Record Payment: the method is tap cards, not a dropdown (`ChoiceCards`)
 
 Taken from the Miraz Bakery POS payment step (every method on screen, one tap picks it, a

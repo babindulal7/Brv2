@@ -23,6 +23,7 @@ import type { RecordKind } from '../recordEditor'
 
 import { createBuilder, type EngineHooks, type PgError, type Row, type Store } from './engine'
 import { buildStore, clientDirectory, VIEW_OF } from './corpus'
+import { TIME_DEFAULTS } from './columnDefaults'
 import { PROJECT_TYPES } from '../projectTypes'
 import { MOCK_LOGINS } from '../devQuickLogins'
 
@@ -93,11 +94,37 @@ export function resetMockData(): void {
 
 /* ── Store + overlay ───────────────────────────────────────────────────── */
 
+/**
+ * The `now()` and `CURRENT_DATE` column defaults Postgres fills on INSERT
+ * (`columnDefaults.ts`, generated from the migrations). Writers rely on them:
+ * `recordPayment` leaves `payments.payment_date` out on purpose (0006:187), and
+ * before this the mock stored no date, so Finance → Payments showed 1/1/1970.
+ *
+ * Only a column the row does not carry is filled; an explicit value, `null`
+ * included, is kept. `now()` is the transaction's start, so every such column
+ * on one insert gets the same instant `at`. `CURRENT_DATE` is that instant's
+ * UTC date: no migration sets a time zone, so the project runs in UTC.
+ */
+function withColumnDefaults(table: string, row: Row, at: string): Row {
+  const defaults = TIME_DEFAULTS[table]
+  const instant = new Date(at)
+  if (!defaults || Number.isNaN(instant.getTime())) return row
+  for (const [column, kind] of Object.entries(defaults)) {
+    if (row[column] === undefined) row[column] = kind === 'now' ? at : instant.toISOString().slice(0, 10)
+  }
+  return row
+}
+
 const isWiped = typeof localStorage !== 'undefined' && localStorage.getItem('babin_data_wiped') === 'true'
 const store: Store = buildStore({ seeded: !isWiped && import.meta.env?.['VITE_MOCK_SEEDED'] === 'true' })
 const overlay = loadOverlay()
 
-for (const { table, row } of overlay.inserts) (store[table] ??= []).push(row)
+for (const { table, row } of overlay.inserts) {
+  // A row stored before the defaults were filled gets them from its own
+  // `created_at`, which is the instant Postgres's `now()` would have been.
+  if (typeof row['created_at'] === 'string') withColumnDefaults(table, row, row['created_at'])
+  ;(store[table] ??= []).push(row)
+}
 for (const { table, id, patch } of overlay.updates) {
   const t = store[table]
   const hit = t?.find((r) => r['id'] === id)
@@ -126,6 +153,13 @@ function read(table: string): Row[] {
 
 function writableTable(table: string): string {
   return VIEW_OF[table] ?? table
+}
+
+/** Store one new row, with its column defaults, and log it for the next boot. */
+function commitInsert(table: string, row: Row, at: string): void {
+  withColumnDefaults(table, row, at)
+  ;(store[table] ??= []).push(row)
+  overlay.inserts.push({ table, row })
 }
 
 /**
@@ -182,6 +216,7 @@ const hooks: EngineHooks = {
     const target = writableTable(table)
     const existing = (store[target] ??= [])
     const out: Row[] = []
+    const now = new Date().toISOString()
     for (const incoming of rows) {
       const clientUuid = incoming['client_uuid']
       if (clientUuid != null && existing.some((r) => r['client_uuid'] === clientUuid)) {
@@ -197,11 +232,10 @@ const hooks: EngineHooks = {
       }
       const row: Row = {
         id: incoming['id'] ?? crypto.randomUUID(),
-        created_at: incoming['created_at'] ?? new Date().toISOString(),
+        created_at: incoming['created_at'] ?? now,
         ...incoming,
       }
-      existing.push(row)
-      overlay.inserts.push({ table: target, row })
+      commitInsert(target, row, now)
       out.push(row)
       applyTriggers(target, row)
     }
@@ -714,28 +748,12 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     }
   }
 
-  ;(store['bookings'] ??= []).push(header)
-  overlay.inserts.push({ table: 'bookings', row: header })
-  for (const d of builtDiscounts) {
-    ;(store['booking_discounts'] ??= []).push(d)
-    overlay.inserts.push({ table: 'booking_discounts', row: d })
-  }
-  for (const row of built) {
-    ;(store['booking_lines'] ??= []).push(row)
-    overlay.inserts.push({ table: 'booking_lines', row })
-  }
-  for (const row of builtUnits) {
-    ;(store['booking_line_units'] ??= []).push(row)
-    overlay.inserts.push({ table: 'booking_line_units', row })
-  }
-  for (const row of builtCrew) {
-    ;(store['booking_crew_lines'] ??= []).push(row)
-    overlay.inserts.push({ table: 'booking_crew_lines', row })
-  }
-  if (builtTransport !== null) {
-    ;(store['booking_transport'] ??= []).push(builtTransport)
-    overlay.inserts.push({ table: 'booking_transport', row: builtTransport })
-  }
+  commitInsert('bookings', header, now)
+  for (const d of builtDiscounts) commitInsert('booking_discounts', d, now)
+  for (const row of built) commitInsert('booking_lines', row, now)
+  for (const row of builtUnits) commitInsert('booking_line_units', row, now)
+  for (const row of builtCrew) commitInsert('booking_crew_lines', row, now)
+  if (builtTransport !== null) commitInsert('booking_transport', builtTransport, now)
   saveOverlay(overlay)
 
   return {
@@ -1077,12 +1095,8 @@ function createInvoiceRpc(payload: Record<string, unknown>): { data: Row | null;
   header['outstanding_amount'] = total
 
   // One "transaction": the header and every line land together or not at all.
-  ;(store['invoices'] ??= []).push(header)
-  overlay.inserts.push({ table: 'invoices', row: header })
-  for (const row of built) {
-    ;(store['invoice_lines'] ??= []).push(row)
-    overlay.inserts.push({ table: 'invoice_lines', row })
-  }
+  commitInsert('invoices', header, now)
+  for (const row of built) commitInsert('invoice_lines', row, now)
   saveOverlay(overlay)
 
   return { data: answer(header, resolvedNo, false), error: null }
@@ -1106,10 +1120,11 @@ export const mockSupabase = {
         if(name==='read_record_editor')return Promise.resolve({data:readEditor(store,kind,String(args?.['p_id'])),error:null})
         const staged=structuredClone(store)
         const response=saveEditor(staged,args??{},actor,nextDocumentNumber)
+        const now=new Date().toISOString()
         for(const [table,rows] of Object.entries(staged)) {
           for(const row of rows) {
             const old=store[table]?.find(r=>r['id']===row['id'])
-            if(!old)overlay.inserts.push({table,row})
+            if(!old)overlay.inserts.push({table,row:withColumnDefaults(table,row,now)})
             else if(JSON.stringify(old)!==JSON.stringify(row))overlay.updates.push({table,id:row['id'],patch:row})
           }
           store[table]=rows
