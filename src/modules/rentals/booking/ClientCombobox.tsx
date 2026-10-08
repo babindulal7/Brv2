@@ -32,7 +32,7 @@
  * — "never colour alone" applies to the screen reader too, not just the screen.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type {
   CSSProperties,
@@ -47,6 +47,7 @@ import type { ClientRecord } from '../../../lib/queries/clients'
 import { clientHealth, healthAccessibleName } from './clientHealth'
 import type { ClientHealthVerdict } from './clientHealth'
 import { ClientHealthChip, TOUCH } from './ClientHealthChip'
+import { floatingLayer } from '../../../components/ui/floatingLayer'
 
 /* ── Search ────────────────────────────────────────────────────────────── */
 
@@ -288,7 +289,12 @@ export function ClientCombobox({
   useEffect(() => {
     if (!open || !activeId) return
     const el = document.getElementById(activeId)
-    el?.scrollIntoView({ block: 'nearest' })
+    const list = listRef.current
+    if (!el || !list) return
+    const rowBounds = el.getBoundingClientRect()
+    const listBounds = list.getBoundingClientRect()
+    if (rowBounds.top < listBounds.top) list.scrollTop -= listBounds.top - rowBounds.top
+    else if (rowBounds.bottom > listBounds.bottom) list.scrollTop += rowBounds.bottom - listBounds.bottom
   }, [open, activeId])
 
   function openList() {
@@ -540,47 +546,92 @@ function ClientListbox({
 }) {
   const noMatches = searching && !options.some((o) => o.kind === 'client')
 
-  // Calculate dropdown position from the input element
-  const getDropdownStyle = () => {
-    const input = inputRef?.current
-    if (!input) return { position: 'fixed', zIndex: 50, top: 0, left: 0, opacity: 0 } as CSSProperties
+  const [placement, setPlacement] = useState<CSSProperties>({ visibility: 'hidden' })
 
-    const rect = input.getBoundingClientRect()
-    const dropdownWidth = Math.max(320, rect.width)
-    const viewportHeight = window.innerHeight
-    const spaceBelow = viewportHeight - rect.bottom
-    const spaceAbove = rect.top
-    const dropdownHeight = 380 // approximate max height
-    const openUpward = spaceBelow < dropdownHeight && spaceAbove > spaceBelow
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    const workspace = input.closest<HTMLElement>('#main-content')
+    const footer = workspace?.querySelector<HTMLElement>('[aria-label="Record actions"]')
+    const shortcuts = workspace?.querySelector<HTMLElement>('[aria-label="Rental sections"]')
 
-    return {
-      position: 'fixed',
-      zIndex: 50,
-      top: openUpward ? rect.top - dropdownHeight - 4 : rect.bottom + 4,
-      left: rect.left,
-      width: dropdownWidth,
-      minWidth: 320,
-      maxWidth: Math.min(dropdownWidth, viewportWidth - 32),
-      background: 'var(--dropdown)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--r-card)',
-      boxShadow: 'var(--shadow-modal)',
-      overflow: 'hidden',
-    } as CSSProperties
-  }
-
-  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024
-  const dropdownStyle = getDropdownStyle()
+    // Follow the field during the section shortcuts' smooth scroll. The shell,
+    // sticky shortcuts, and action footer all reduce the usable popup space.
+    const measure = () => {
+      const viewport = window.visualViewport
+      const viewportTop = viewport?.offsetTop ?? 0
+      const viewportLeft = viewport?.offsetLeft ?? 0
+      let top = viewportTop + 8
+      let bottom = viewportTop + (viewport?.height ?? window.innerHeight) - 8
+      let left = viewportLeft + 8
+      let right = viewportLeft + (viewport?.width ?? window.innerWidth) - 8
+      const workspaceRect = workspace?.getBoundingClientRect()
+      if (workspaceRect && workspaceRect.width > 0 && workspaceRect.height > 0) {
+        top = Math.max(top, workspaceRect.top + 8)
+        bottom = Math.min(bottom, workspaceRect.bottom - 8)
+        left = Math.max(left, workspaceRect.left + 8)
+        right = Math.min(right, workspaceRect.right - 8)
+      }
+      const shortcutRect = shortcuts?.getBoundingClientRect()
+      if (shortcutRect && shortcutRect.height > 0 && shortcutRect.bottom > top && shortcutRect.top < bottom) {
+        top = Math.max(top, shortcutRect.bottom + 8)
+      }
+      const footerRect = footer?.getBoundingClientRect()
+      if (footerRect && footerRect.height > 0 && footerRect.top > top && footerRect.top < bottom) {
+        bottom = footerRect.top - 8
+      }
+      const rect = input.getBoundingClientRect()
+      const spaceBelow = Math.max(0, bottom - rect.bottom - 4)
+      const spaceAbove = Math.max(0, rect.top - top - 4)
+      const openUpward = spaceBelow < 240 && spaceAbove > spaceBelow
+      const width = Math.min(Math.max(320, rect.width), Math.max(0, right - left))
+      setPlacement({
+        visibility: rect.bottom < top || rect.top > bottom ? 'hidden' : 'visible',
+        left: Math.max(left, Math.min(rect.left, right - width)),
+        width,
+        maxHeight: Math.min(380, openUpward ? spaceAbove : spaceBelow),
+        ...(openUpward
+          ? { bottom: window.innerHeight - Math.min(bottom, rect.top - 4) }
+          : { top: Math.max(top, rect.bottom + 4) }),
+      })
+    }
+    measure()
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    window.visualViewport?.addEventListener('resize', measure)
+    window.visualViewport?.addEventListener('scroll', measure)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    for (const element of [input, workspace, footer, shortcuts]) if (element) observer?.observe(element)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+      window.visualViewport?.removeEventListener('resize', measure)
+      window.visualViewport?.removeEventListener('scroll', measure)
+      observer?.disconnect()
+    }
+  }, [inputRef])
 
   // Portal to document.body to avoid any ancestor overflow clipping
   return createPortal(
     <div
-      style={dropdownStyle}
+      style={{
+        ...placement,
+        position: 'fixed',
+        zIndex: floatingLayer(inputRef.current),
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--dropdown)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-card)',
+        boxShadow: 'var(--shadow-modal)',
+        overflow: 'hidden',
+      }}
       onMouseDown={(e) => e.preventDefault()}
     >
       <div
         style={{
           padding: '7px 12px',
+          flexShrink: 0,
           fontSize: 'var(--t-meta)',
           fontWeight: 700,
           letterSpacing: '0.05em',
@@ -617,7 +668,7 @@ function ClientListbox({
         id={id}
         role="listbox"
         aria-label="Clients"
-        style={{ listStyle: 'none', margin: 0, padding: 'var(--sp-xs)', maxHeight: 340, overflowY: 'auto' }}
+        style={{ listStyle: 'none', margin: 0, padding: 'var(--sp-xs)', minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}
       >
         {options.map((option, i) => {
           const optionId = `${id}-opt-${i}`
@@ -659,6 +710,7 @@ function ClientListbox({
         <div
           style={{
             padding: '7px 12px',
+            flexShrink: 0,
             fontSize: 'var(--t-meta)',
             color: 'var(--text2)',
             borderTop: '1px solid var(--border)',

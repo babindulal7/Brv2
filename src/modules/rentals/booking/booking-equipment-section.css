@@ -88,6 +88,7 @@
 }
 
 .new-rental-equipment-line-form {
+  scroll-margin-top: var(--new-rental-scroll-clearance, 16px);
   margin-top: 12px;
   padding: 16px;
   border: 1px solid var(--border);

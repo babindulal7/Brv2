@@ -117,8 +117,19 @@
 }
 
 .new-rental-pricing-checkbox input {
+  /* The associated 44px label is the target; the native tick stays compact. */
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: inherit;
   flex-shrink: 0;
   accent-color: var(--st-primary-bg);
+}
+
+.new-rental-pricing-checkbox:focus-within {
+  outline: 2px solid var(--primary-text);
+  outline-offset: 2px;
+  border-radius: var(--r-btn);
 }
 
 .new-rental-pricing-promo {

@@ -122,7 +122,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const canBookingMoney = canViewMoneyField(gctx, 'booking')
   const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
   const canClientBalance = canViewMoneyField(gctx, 'client-balance')
-  // Sections remain mounted and independently collapsible at every width.
+  // Essential sections stay open; optional logistics can collapse without remounting fields.
   // RULINGS-2026-10-07: essentials and pricing open, optional logistics collapsed.
   const [open, setOpen] = useState<boolean[]>([true, true, true, false, false, true])
   const toggle = (i: number) =>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '../../../components/ui/Button'
 import { Input, Select } from '../../../components/ui'
 import Icon, { type IconName } from '../../../components/ui/Icon'
@@ -103,6 +103,14 @@ export function BookingEquipmentSection({
   const [customLineRate, setCustomLineRate] = useState('')
   const [customLineQty, setCustomLineQty] = useState(1)
   const [customLineError, setCustomLineError] = useState<string | null>(null)
+  const customLineFormRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!customLineOpen) return
+    const form = customLineFormRef.current
+    form?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+    form?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
+  }, [customLineOpen])
 
   const addDrafts = useCallback(
     (drafts: readonly BookingLineDraft[], source: AddItemSource) => {
@@ -397,12 +405,11 @@ export function BookingEquipmentSection({
           </div>
 
           {customLineOpen && (
-            <div id="new-rental-custom-line" className="new-rental-equipment-line-form">
+            <div ref={customLineFormRef} id="new-rental-custom-line" className="new-rental-equipment-line-form">
               <div className="new-rental-equipment-line-fields">
                 <div className="new-rental-equipment-line-description">
                   <Field label={customLineType === 'Sub-rental' ? 'Equipment name' : 'Description'}>
                     <Input
-                      autoFocus
                       value={customLineName}
                       onChange={(e) => setCustomLineName(e.target.value)}
                       placeholder={customLineType === 'Sub-rental' ? 'e.g. Master Prime 50mm' : 'e.g. Operator overtime'}
