@@ -374,6 +374,29 @@ Counted by `npm run completion`, not typed.
 - Further tap cuts not taken: Client search is not autofocused on open (1 tap); single items list below bundles in the catalogue, and it shows ~2½ rows above the sticky action bar at 1366×900.
 - Not checked on phone width or in dark theme. Not committed.
 
+## 2026-10-07 — Law 6 closed at the database: migration 0062 applied and verified live
+
+**Phase:** 1 (Schema) → Phase 2 unblocked · **Status:** `tsc --noEmit` exit 0 · `0062` applied with approval and verified live
+
+### 1. `0062_law6_column_grants_arm_the_mask.sql` APPLIED to live Supabase
+
+With explicit user approval, applied `0062_law6_column_grants_arm_the_mask.sql`:
+- Blanket table-level SELECT on `bookings`, `booking_lines`, `products`, and `product_units` revoked from `authenticated`.
+- Column-level SELECT granted for only non-money columns (27 on `bookings`, 19 on `booking_lines`, 35 on `products`, 29 on `product_units`).
+- All money reads must now route through the respective security-invoker views (`bookings_deposit_v`, `booking_lines_v`, `products_v`, `product_units_v`).
+
+### 2. Live verification as Warehouse (`authenticated`, user id `00000000-0000-0000-0000-000000000103`)
+
+- `SELECT id, stage FROM bookings LIMIT 1;` → **1 row returned (success)**
+- `SELECT deposit_required FROM bookings LIMIT 1;` → **Error 42501 (permission denied)** ✅
+- `SELECT rate FROM booking_lines LIMIT 1;` → **Error 42501 (permission denied)** ✅
+- `SELECT daily_rate FROM products LIMIT 1;` → **Error 42501 (permission denied)** ✅
+- `SELECT deposit_required FROM bookings_deposit_v LIMIT 1;` → **null** ✅
+- `SELECT rate FROM booking_lines_v LIMIT 1;` → **null** ✅
+
+Law 6 is now strictly enforced by PostgreSQL privileges and views at the database layer.
+
+
 ## 2026-10-07 — Booqable adoption spec: promo leak, shared settings, shared views, kit capacity, export + auth audit, pricing structures (migrations 0158–0160)
 
 **Did**
