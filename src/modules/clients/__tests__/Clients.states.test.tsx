@@ -176,7 +176,7 @@ describe('Clients — 5-State PageBody Hardening', () => {
       expect(container.textContent).toContain('No client matches "NonexistentClientXYZ"')
 
       const clearBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
-        b.textContent?.includes('Clear all filters'),
+        b.textContent?.includes('Clear filters'),
       )
       expect(clearBtn).toBeDefined()
 
@@ -196,6 +196,6 @@ describe('Clients — 5-State PageBody Hardening', () => {
 
     expect(container.textContent).toContain('Clients')
     expect(container.textContent).toContain(CLIENTS_DATA[0]!.name)
-    expect(container.textContent).toContain(CLIENTS_DATA[0]!.id)
+    expect(container.textContent).toContain(CLIENTS_DATA[0]!.email)
   })
 })

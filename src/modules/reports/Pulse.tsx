@@ -13,8 +13,10 @@ import { formatMoney, grouped, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
+import { isStaff } from '../../lib/rbac'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
+import { PageBody } from '../../components/ui/PageBody'
 import {
   PERIODS,
   DEFAULT_PERIOD,
@@ -318,9 +320,20 @@ function KpiCard({ c }: { c: CardModel }) {
 
 /* ── page ──────────────────────────────────────────────────────────────── */
 
-export default function Pulse() {
+export interface PulseProps {
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+}
+
+export default function Pulse({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: PulseProps = {}) {
   const money = useCanViewMoney()
   const { user } = useAuth()
+  const staff = isStaff(user?.role ?? 'Client')
   const periodRef = useRef<HTMLSelectElement>(null)
   const viewport = useViewport()
 
@@ -742,9 +755,19 @@ export default function Pulse() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {header}
-      {assertions}
-      {disclosure}
-      {periodBar}
+      <PageBody
+        noun="business pulse"
+        loading={propLoading}
+        error={propError}
+        onRetry={propOnRetry}
+        skeleton="table"
+        restricted={!staff}
+        restrictedRequiredRole="Staff"
+        restrictedReason="Executive pulse is for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal."
+      >
+        {assertions}
+        {disclosure}
+        {periodBar}
 
       {/* §4.2's preset list stays complete: the ones the engines cannot answer
           are still offered, disabled, and their reason is one click away rather
@@ -1201,6 +1224,7 @@ export default function Pulse() {
           </Card>
         </Rail>
       </div>
+      </PageBody>
 
       <FooterNote
         extra={[

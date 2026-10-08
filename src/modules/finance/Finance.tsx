@@ -360,7 +360,19 @@ function toIntelRow(row: InvoiceListRow): InvoiceRow {
   }
 }
 
-export default function Finance() {
+export interface FinanceProps {
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+  initialTab?: FinanceTab
+}
+
+export default function Finance({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+  initialTab = 'Dashboard',
+}: FinanceProps = {}) {
   const { user } = useAuth()
   /**
    * `gateContext` returns a fresh object literal on every call, so it is
@@ -458,7 +470,7 @@ export default function Finance() {
    */
   const canIssueInvoice = user ? canVoidInvoice(user.role) : false
 
-  const [tab, setTab] = useState<FinanceTab>('Dashboard')
+  const [tab, setTab] = useState<FinanceTab>(initialTab)
   /** §9.2 — the seven chips. Law 3 keeps `Void` among them, never a Delete. */
   const [chip, setChip] = useState<InvoiceChip>('All')
 
@@ -1055,7 +1067,14 @@ export default function Finance() {
         stack two restricted states on one screen.
       */}
       {(tab === 'Dashboard' || tab === 'Invoices') && (
-      <PageBody noun="finance records" {...restriction}>
+      <PageBody
+        noun="finance records"
+        loading={propLoading}
+        error={propError}
+        onRetry={propOnRetry ?? refreshAll}
+        skeleton="table"
+        {...restriction}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           <KpiStrip items={kpis} columns={kpis.length} />
 

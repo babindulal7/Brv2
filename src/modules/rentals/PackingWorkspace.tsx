@@ -4,12 +4,20 @@ import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import { isStaff } from '../../lib/rbac'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { JobState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+
+export interface PackingWorkspaceProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { BOOKING } from '../../data/booking'
 import { UNITS, PACKAGE, GROUPS, CASES, TOTAL_ITEMS, EVIDENCE, NOTES, FILTERS } from '../../data/packing'
@@ -72,12 +80,17 @@ interface LineStateRec {
  * this page any more. `/rentals/:bookingNo/packing` is the only mount, and
  * `bookingNo` comes off the route for ANY booking, not one seeded id.
  */
-export default function PackingWorkspace() {
+export default function PackingWorkspace({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: PackingWorkspaceProps = {}) {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. §3.2 draws
      three layouts and the tablet one is the real device here: list | progress
      side by side, which means the progress column must NOT be a collapsing
@@ -204,6 +217,44 @@ export default function PackingWorkspace() {
 
   const bs = toBs(new Date('2026-07-16'))
   const retBs = toBs(new Date('2026-07-19'))
+
+  /* ── 5-State handling ─────────────────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="Floor packing workspace is for Babin Rentals staff only."
+        restrictedRequiredRole="Staff"
+        noun="packing"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propError) {
+    return (
+      <PageBody
+        error={propError}
+        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
+        noun="packing checklist"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propLoading) {
+    return (
+      <PageBody
+        loading={true}
+        skeleton="card"
+        noun="packing checklist"
+      >
+        <div />
+      </PageBody>
+    )
+  }
 
   /*
    * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,

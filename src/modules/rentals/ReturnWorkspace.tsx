@@ -4,8 +4,16 @@ import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside } from '../operations/FloorAside'
 import { ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import { isStaff } from '../../lib/rbac'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+
+export interface ReturnWorkspaceProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
 import { thStyle as th } from '../../components/ui/TableHeaderCell'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
@@ -144,7 +152,11 @@ interface GateRow {
   resolve?: () => void
 }
 
-export default function ReturnWorkspace() {
+export default function ReturnWorkspace({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: ReturnWorkspaceProps = {}) {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
@@ -155,6 +167,7 @@ export default function ReturnWorkspace() {
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
   const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   /** Law 12 — the dispatch failure is shown inline and stays there. Never a toast. */
   const [dispatchError, setDispatchError] = useState<string | null>(null)
 
@@ -401,6 +414,44 @@ export default function ReturnWorkspace() {
     if (query && !`${u.name} ${u.serial}`.toLowerCase().includes(query.toLowerCase())) return false
     return true
   })
+
+  /* ── 5-State handling ─────────────────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="Return & inspection workspace is for Babin Rentals staff only."
+        restrictedRequiredRole="Staff"
+        noun="return inspection"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propError) {
+    return (
+      <PageBody
+        error={propError}
+        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
+        noun="return inspection"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propLoading) {
+    return (
+      <PageBody
+        loading={true}
+        skeleton="card"
+        noun="return inspection"
+      >
+        <div />
+      </PageBody>
+    )
+  }
 
   /*
    * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,

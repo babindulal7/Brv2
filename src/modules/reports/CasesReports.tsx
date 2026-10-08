@@ -5,6 +5,9 @@ import { useViewport } from '../../lib/device'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { isStaff } from '../../lib/rbac'
+import { PageBody } from '../../components/ui/PageBody'
 import { CASES, CASE_TYPES, isOpenStatus, outstandingOf } from '../../data/cases'
 import type { Case, CaseType } from '../../data/cases'
 
@@ -43,8 +46,20 @@ function Bar({ label, value, max, tone = 'var(--cat-1)' }: { label: string; valu
   </div>
 }
 
-export default function CasesReports() {
+export interface CasesReportsProps {
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+}
+
+export default function CasesReports({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: CasesReportsProps = {}) {
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  const staff = isStaff(user?.role ?? 'Client')
   /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
      six cards side by side is unreadable below 1180. */
   const bandCols = useBandColumns()
@@ -71,19 +86,29 @@ export default function CasesReports() {
     }
   }, [])
 
+  /* Page-type rule: <= 4 KPI cards per screen */
   const kpis: Array<[string, string, string, string]> = [
     ['Total Cases', String(figures.total), 'In the case register', 'var(--cat-1)'],
     ['Resolved / Closed', String(figures.settled), 'Settled, allocation complete', 'var(--success-text)'],
     ['Open', String(figures.open), 'Open, under review, awaiting decision or in progress', 'var(--warning-text)'],
-    // Rulings §8 — no target resolution date exists on `Case`, so "overdue"
-    // cannot be selected for. Saying so beats a plausible 6.
-    ['Overdue', NOT_TRACKED, 'No target resolution date is recorded on a case', 'var(--muted)'],
-    ...(money ? [['Total Assessed', formatMoney(figures.assessed), 'Sum of assessed value across all cases', 'var(--danger-text)'] as [string, string, string, string]] : []),
-    ['Avg Resolution Time', NOT_TRACKED, 'Needs a case history spanning the selected period', 'var(--muted)'],
+    ...(money
+      ? [['Total Assessed', formatMoney(figures.assessed), 'Sum of assessed value across all cases', 'var(--danger-text)'] as [string, string, string, string]]
+      : [['Overdue', NOT_TRACKED, 'No target resolution date is recorded on a case', 'var(--muted)'] as [string, string, string, string]]),
   ]
 
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-    <PageHeader title="Cases Reports" description="Analyze incidents, resolution performance, exposure, and operational risk." actions={<><Button icon="refresh">Compare</Button><Button icon="download">Export</Button><Button icon="eye">Saved Views</Button><Button icon="calendar_stats" variant="primary">Schedule Report</Button></>} />
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      <PageHeader title="Cases Reports" description="Analyze incidents, resolution performance, exposure, and operational risk." actions={<><Button icon="refresh">Compare</Button><Button icon="download">Export</Button><Button icon="eye">Saved Views</Button><Button icon="calendar_stats" variant="primary">Schedule Report</Button></>} />
+      <PageBody
+        noun="cases reports"
+        loading={propLoading}
+        error={propError}
+        onRetry={propOnRetry}
+        skeleton="table"
+        restricted={!staff}
+        restrictedRequiredRole="Staff"
+        restrictedReason="Case and incident reports are for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal."
+      >
     {/* Law 15 — these were 30px tall; they are real `aria-pressed` toggles. */}
     <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{['This Month', 'Last Month', 'This Quarter', 'This Year', 'Custom Range'].map((x) => <button key={x} onClick={() => setPeriod(x)} aria-pressed={period === x} style={{ minHeight: 44, padding: '0 11px', borderRadius: 'var(--r-sm)', border: `1px solid ${period === x ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: period === x ? 'var(--nav-active-bg)' : 'var(--card)', color: period === x ? 'var(--nav-active-accent)' : 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>{x}</button>)}</div>
     <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>{['Case Type', 'Severity', 'Status', 'Owner', 'Client Type', 'Date Range'].map((x) => <Button key={x} icon="chevron_down">{x}</Button>)}<Button icon="queues">Clear Filters</Button></div>
@@ -206,5 +231,7 @@ export default function CasesReports() {
         <div style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)' }}><Icon name="info" size={13} /> Period: {period}</div>
       </ReflowRail>
     </div>
-  </div>
+  </PageBody>
+    </div>
+  )
 }

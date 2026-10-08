@@ -614,7 +614,7 @@ export default function MovementList({
                 >
                   <Icon name="more_vert" size={15} />
                 </button>
-                {menu?.id === r.id && <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} />}
+                {Boolean(menu && menu.id === r.id) && <RowMenu m={r} onClose={() => setMenu(null)} up={menu!.up} />}
               </span>
             )
 
@@ -805,9 +805,9 @@ export default function MovementList({
                         width: 34,
                         height: 34,
                         borderRadius: 'var(--r-badge)',
-                        background: STATUS[r.avatarTone].bg,
-                        color: STATUS[r.avatarTone].fg,
-                        border: STATUS[r.avatarTone].border ? `1px solid ${STATUS[r.avatarTone].border}` : undefined,
+                        background: (STATUS[r.avatarTone] ?? STATUS.neutral).bg,
+                        color: (STATUS[r.avatarTone] ?? STATUS.neutral).fg,
+                        border: (STATUS[r.avatarTone] ?? STATUS.neutral).border ? `1px solid ${(STATUS[r.avatarTone] ?? STATUS.neutral).border}` : undefined,
                         placeItems: 'center',
                         textAlign: 'center',
                         lineHeight: 1.05,

@@ -24,6 +24,14 @@ import {
 } from '../../data/operations'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, TODAY } from '../../lib/bs'
+import { useAuth } from '../../lib/auth'
+import { isStaff } from '../../lib/rbac'
+
+export interface OperationsQueuesProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
 
 const th = {
   textAlign: 'left' as const,
@@ -300,7 +308,13 @@ function StageBadge({ stage }: { stage: JobRow['stage'] }) {
   )
 }
 
-export default function OperationsQueues() {
+export default function OperationsQueues({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: OperationsQueuesProps = {}) {
+  const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
@@ -377,6 +391,10 @@ export default function OperationsQueues() {
     resetCount.refetch()
   }
 
+  const isLoading = propLoading !== undefined ? propLoading : list.loading
+  const isError = propError !== undefined ? propError : list.error
+  const handleRetry = propOnRetry ?? refreshAll
+
   /* Resolved once per render, and passed in, so the row mapping stays pure. */
   const now = Date.now()
   const jobs: JobRow[] = list.rows.flatMap((row) => {
@@ -400,6 +418,20 @@ export default function OperationsQueues() {
     : group
       ? 'Both queues on this side are clear for the selected days.'
       : 'No booking is sitting at a stage that has floor work in this range.'
+
+  /* ── restricted state for non-staff ────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="Floor operations and queues are for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal."
+        restrictedRequiredRole="Staff"
+        noun="operations"
+      >
+        <div />
+      </PageBody>
+    )
+  }
 
   const railContent = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
@@ -461,7 +493,7 @@ export default function OperationsQueues() {
                 </button>
               ))}
             </div>
-            <Button icon="refresh" onClick={refreshAll}>
+            <Button icon="refresh" onClick={handleRetry}>
               Refresh
             </Button>
           </>
@@ -555,12 +587,12 @@ export default function OperationsQueues() {
             them instead of replacing them.
           */}
           <PageBody
-            loading={list.loading}
-            error={list.error}
-            onRetry={refreshAll}
+            loading={isLoading}
+            error={isError}
+            onRetry={handleRetry}
             hasRows={jobs.length > 0}
-            empty={list.isEmpty}
-            emptyIsFiltered={list.isFiltered}
+            empty={list.isEmpty || (!isLoading && !isError && jobs.length === 0)}
+            emptyIsFiltered={isFiltered || list.isFiltered}
             onClearFilters={clearAllFilters}
             noun="jobs"
             skeleton="table"

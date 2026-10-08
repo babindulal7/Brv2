@@ -3,11 +3,19 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
-import { EmptyState } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { isStaff } from '../../lib/rbac'
 import { toBs, formatBs } from '../../lib/bs'
+
+export interface CasesWorkspaceProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
 import { findClientIdByBooking } from '../../data/clients'
 import {
   CASES,
@@ -41,7 +49,13 @@ function createdBsOf(c: Case): string {
 
 type FilterKey = CaseStatus | 'All'
 
-export function CasesWorkspace() {
+export function CasesWorkspace({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: CasesWorkspaceProps = {}) {
+  const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   const { showSuccessToast } = useToast()
   const navigate = useNavigate()
   const money = useCanViewMoney()
@@ -107,6 +121,20 @@ export function CasesWorkspace() {
       default:
         return 'var(--text)'
     }
+  }
+
+  /* ── restricted state for non-staff ────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="Incident and damage cases are for Babin Rentals staff only."
+        restrictedRequiredRole="Staff"
+        noun="cases"
+      >
+        <div />
+      </PageBody>
+    )
   }
 
   return (
@@ -223,17 +251,23 @@ export function CasesWorkspace() {
 
       {/* Main Table */}
       <Card padding="none" style={{ overflow: 'hidden' }}>
-        {filteredCases.length === 0 ? (
-          <EmptyState
-            title="No cases found"
-            description="Adjust your filters or search query to find incident cases."
-            actionLabel="Clear Filters"
-            onAction={() => {
-              setActiveFilter('All')
-              setSearchQuery('')
-            }}
-          />
-        ) : (
+        <PageBody
+          {...(propLoading !== undefined ? { loading: propLoading } : {})}
+          {...(propError !== undefined && propError !== null ? { error: propError } : {})}
+          {...(propOnRetry ? { onRetry: propOnRetry } : {})}
+          hasRows={filteredCases.length > 0}
+          empty={filteredCases.length === 0}
+          emptyIsFiltered={searchQuery.trim() !== '' || activeFilter !== 'All'}
+          onClearFilters={() => {
+            setActiveFilter('All')
+            setSearchQuery('')
+          }}
+          noun="cases"
+          skeleton="table"
+          skeletonRows={5}
+          emptyTitle="No cases found"
+          emptyMessage="Adjust your filters or search query to find incident cases."
+        >
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
@@ -346,7 +380,7 @@ export function CasesWorkspace() {
               </tbody>
             </table>
           </div>
-        )}
+        </PageBody>
       </Card>
     </div>
   )

@@ -2,14 +2,16 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
-import { Donut, Legend, HBars, GroupedBars, catColor } from '../../components/ui/Charts'
+import { Donut, Legend, catColor } from '../../components/ui/Charts'
+import { PageBody } from '../../components/ui/PageBody'
+import { useAuth } from '../../lib/auth'
+import { isStaff } from '../../lib/rbac'
 import { BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { PERIOD_CHIPS } from '../../data/expenseReports'
 import {
   KPIS,
   FILTERS,
-  SALES_TREND,
   BY_CATEGORY,
   CATEGORY_TOTAL,
   TOP_REVENUE,
@@ -19,7 +21,6 @@ import {
   SLOW_MOVING,
   DEAD_STOCK,
   RETURNS,
-  RETURNS_TOTAL,
   PRODUCTS,
   SUMMARY,
   TOP_SELLING,
@@ -64,71 +65,58 @@ function PeriodPill() {
   )
 }
 
-function TrendChart() {
-  const w = 100
-  const h = 100
-  const max = Math.max(...SALES_TREND.series.flatMap((s) => s.points))
-  const n = SALES_TREND.series[0]?.points.length ?? 0
+function SalesTrendSummary() {
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 7 }}>
-        <div
-          aria-hidden
-          style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 150, fontSize: 'var(--t-meta)', color: 'var(--muted)', textAlign: 'right', flexShrink: 0 }}
-        >
-          {SALES_TREND.yTicks.map((t) => (
-            <span key={t} className="figure">
-              {t}
-            </span>
-          ))}
-        </div>
-        <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Product sales trend" style={{ width: '100%', height: 150 }}>
-          {SALES_TREND.yTicks.map((_, i) => (
-            <line
-              key={i}
-              x1={0}
-              x2={w}
-              y1={(i / (SALES_TREND.yTicks.length - 1)) * h}
-              y2={(i / (SALES_TREND.yTicks.length - 1)) * h}
-              stroke="var(--chart-grid)"
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-          {SALES_TREND.series.map((s, si) => (
-            <g key={s.name}>
-              <polyline
-                points={s.points.map((p, i) => `${(i / (n - 1)) * w},${h - (p / max) * h}`).join(' ')}
-                fill="none"
-                stroke={catColor(si === 0 ? 2 : 3)}
-                strokeWidth={2}
-                vectorEffect="non-scaling-stroke"
-                strokeLinejoin="round"
-              />
-              {s.points.map((p, i) => (
-                <circle key={i} cx={(i / (n - 1)) * w} cy={h - (p / max) * h} r={1.8} fill={catColor(si === 0 ? 2 : 3)} vectorEffect="non-scaling-stroke" />
-              ))}
-            </g>
-          ))}
-        </svg>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 6, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>
+        <span>Metric</span>
+        <span>Month Total</span>
       </div>
-      <div aria-hidden style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: 30, marginTop: 5, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-        {SALES_TREND.labels.map((l) => (
-          <span key={l} className="figure">
-            {l}
-          </span>
-        ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--t-meta)', padding: '4px 0' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(2) }} />
+          Revenue
+        </span>
+        <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>Rs 8,46,500</span>
       </div>
-      <div style={{ display: 'flex', gap: 'var(--sp-md)', justifyContent: 'center', marginTop: 8 }}>
-        {SALES_TREND.series.map((s, i) => (
-          <span key={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(i === 0 ? 2 : 3) }} />
-            {s.name}
-          </span>
-        ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--t-meta)', padding: '4px 0' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(3) }} />
+          Gross Profit
+        </span>
+        <span className="figure" style={{ fontWeight: 700, color: 'var(--success-text)' }}>Rs 3,12,800</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--t-meta)', padding: '4px 0' }}>
+        <span style={{ color: 'var(--text2)' }}>Avg Margin</span>
+        <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>36.9%</span>
       </div>
     </div>
   )
+}
+
+function ProfitTrendTable() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>
+        <span>Period</span>
+        <span style={{ textAlign: 'right' }}>Revenue</span>
+        <span style={{ textAlign: 'right' }}>Profit</span>
+      </div>
+      {PROFIT_TREND.groups.map((g) => (
+        <div key={g.label} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, fontSize: 'var(--t-meta)', padding: '3px 0' }}>
+          <span style={{ color: 'var(--text2)' }}>{g.label}</span>
+          <span className="figure" style={{ textAlign: 'right', color: 'var(--text)' }}>{`Rs ${((g.values[0] ?? 0) * 10000).toLocaleString('en-IN')}`}</span>
+          <span className="figure" style={{ textAlign: 'right', color: 'var(--success-text)', fontWeight: 600 }}>{`Rs ${((g.values[2] ?? 0) * 10000).toLocaleString('en-IN')}`}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export interface ProductReportsProps {
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
 }
 
 /** Ranked list with an inline bar — single hue, rank is not a category. */
@@ -165,8 +153,14 @@ function MoverList({ rows, tone, unit }: { rows: Array<{ name: string; value: st
  * what the figure already says, so a red/amber distinction never has to be seen
  * to read the row.
  */
-export default function ProductReports() {
+export default function ProductReports({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: ProductReportsProps = {}) {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const staff = isStaff(user?.role ?? 'Client')
   const [chip, setChip] = useState('This Month')
   const money = useCanViewMoney()
   const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Total Product Revenue' && k.label !== 'Gross Profit')
@@ -188,7 +182,17 @@ export default function ProductReports() {
         }
       />
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <PageBody
+        noun="product reports"
+        loading={propLoading}
+        error={propError}
+        onRetry={propOnRetry}
+        skeleton="table"
+        restricted={!staff}
+        restrictedRequiredRole="Staff"
+        restrictedReason="Product reports are for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal."
+      >
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {PERIOD_CHIPS.map((p) => {
           const on = chip === p
           return (
@@ -252,7 +256,7 @@ export default function ProductReports() {
           <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             {money && (
               <Card title="Product Sales Trend (Rs)" action={<PeriodPill />}>
-                <TrendChart />
+                <SalesTrendSummary />
               </Card>
             )}
             <Card title="Sales by Category" action={<PeriodPill />}>
@@ -263,25 +267,35 @@ export default function ProductReports() {
             </Card>
             {money && (
               <Card title="Product Revenue (Top 5)" action={<PeriodPill />}>
-                <HBars rows={TOP_REVENUE.rows} axisTicks={TOP_REVENUE.axisTicks} colorIndex={2} />
+                <MoverList
+                  rows={TOP_REVENUE.rows.map((r) => ({
+                    name: r.label,
+                    value: r.display,
+                    pct: Math.round((r.value / (TOP_REVENUE.rows[0]?.value ?? 1)) * 100),
+                  }))}
+                  tone={2}
+                  unit="Revenue"
+                />
               </Card>
             )}
             {money && (
               <Card title="Gross Profit Trend (Rs)" action={<PeriodPill />}>
-                <GroupedBars
-                  groups={PROFIT_TREND.groups}
-                  series={PROFIT_TREND.series}
-                  yTicks={PROFIT_TREND.yTicks}
-                  format={(v) => `Rs ${(v * 10000).toLocaleString('en-IN')}`}
-                  height={140}
-                />
+                <ProfitTrendTable />
               </Card>
             )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             <Card title="Inventory Turnover by Category" action={<PeriodPill />}>
-              <HBars rows={TURNOVER.rows} axisTicks={TURNOVER.axisTicks} colorIndex={2} />
+              <MoverList
+                rows={TURNOVER.rows.map((r) => ({
+                  name: r.label,
+                  value: r.display,
+                  pct: Math.min(100, Math.round((r.value / 12) * 100)),
+                }))}
+                tone={2}
+                unit="Turnover"
+              />
             </Card>
             <Card title="Fast Moving Products" action={<PeriodPill />}>
               <MoverList rows={FAST_MOVING} tone={3} unit="Units Sold" />
@@ -293,10 +307,15 @@ export default function ProductReports() {
               <MoverList rows={DEAD_STOCK} tone={5} unit="Days in Stock" />
             </Card>
             <Card title="Product Return Analysis" action={<PeriodPill />}>
-              <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-                <Donut slices={RETURNS} centreLabel="Total" centreValue={`${RETURNS_TOTAL} Units`} size={86} />
-                <Legend slices={RETURNS} />
-              </div>
+              <MoverList
+                rows={RETURNS.map((r) => ({
+                  name: r.label,
+                  value: `${r.value} ${r.percent}`,
+                  pct: Math.round((r.value / 38) * 100),
+                }))}
+                tone={5}
+                unit="Units"
+              />
             </Card>
           </div>
 
@@ -497,6 +516,7 @@ export default function ProductReports() {
           </div>
         </Rail>
       </div>
+      </PageBody>
 
       <FooterNote />
     </div>

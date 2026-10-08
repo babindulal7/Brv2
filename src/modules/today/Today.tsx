@@ -29,6 +29,15 @@ import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { useViewport } from '../../lib/device'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { isStaff } from '../../lib/rbac'
+import { PageBody } from '../../components/ui/PageBody'
+
+export interface TodayProps {
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+}
 
 /**
  * §3 Nepal Mode date pill — BS leads at field size, AD one step smaller
@@ -463,14 +472,19 @@ const NOT_TRACKED = 'Not tracked yet'
  *  - **Phone <768** — the `[Out][In][Alerts]` segmented control shows one of
  *    the three at a time, as card rows.
  */
-export default function Today() {
+export default function Today({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: TodayProps = {}) {
   const navigate = useNavigate()
   const viewport = useViewport()
+  const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   const money = useCanViewMoney()
   const [period, setPeriod] = useState<LivePeriod>('Today')
   const [picked, setPicked] = useState<string[]>([])
   const [segment, setSegment] = useState<Segment>('out')
-  const [allKpis, setAllKpis] = useState(false)
 
   const pickupSet = pickupsQuery(period, picked)
   const returnSet = returnsQuery(period, picked)
@@ -598,96 +612,64 @@ export default function Today() {
     error: alerts.error ?? quotes.error 
   }), [alerts.loading, quotes.loading, alerts.error, quotes.error])
 
-  /*
-   * §5.8 — "card counts must equal the counts shown on the panels below." Each
-   * card reads the same `useList` result the panel under it reads, so the two
-   * cannot drift; there is no separate KPI query to disagree.
+  /**
+   * Page Type: Work (Operational floor dispatch)
    *
-   * ## Four cards, or six?
+   * Page-type rule: <= 4 KPI cards per screen.
    *
-   * TODO(decision) — PLAN.md §4: how many KPI cards may Today carry? PLAN.md
-   * §4.0 (line 454) declares the "4-KPI cap" **superseded**, while Phase 6
-   * (line 338) still lists "Today ships a 6-KPI strip against a ≤4 cap" as a
-   * live violation, and `data/today.ts`:186-200 carries a ruling marked SETTLED
-   * 6 Aug 2026 for six cards. An implementer can cite either source and be
-   * right. Until one wins: spec 02's four render first, and the two of the six
-   * that still have a real query behind them — Active Rentals and Alerts — stay
-   * reachable behind the disclosure below rather than being deleted by either
-   * reading. Revenue and Utilization are not resurrected here; no query in
-   * `lib/queries/` produces either, and both already live in Reports ▸ Pulse,
-   * which is where `data/today.ts`'s two seeded constants still go.
+   * Money-visible roles receive: Outgoing · Incoming · Overdue · Cash due (4 cards).
+   * Money-blind roles (Warehouse, Technician, Driver) receive:
+   * Outgoing · Incoming · Overdue · Active Rentals (4 cards) — omitting Cash due per Law 6.
    */
-  const specKpis: Kpi[] = useMemo(() => [
-    {
-      label: period === 'Today' ? 'Outgoing today' : `Outgoing · ${period}`,
-      value: countOf(pickups, pickups.rows.length),
-      icon: 'truck',
-      accent: 'primary',
-      note: 'Booked and Packed',
-    },
-    {
-      label: period === 'Today' ? 'Incoming today' : `Incoming · ${period}`,
-      value: countOf(returns, returns.rows.length),
-      icon: 'return_arrow',
-      accent: 'progress',
-      // Scoped to the period on screen, and says so — the card beside it counts
-      // every overdue booking on any day, and two bare "overdue" figures side
-      // by side that legitimately differ is how a screen loses an operator's
-      // trust in both.
-      note: `${countOf(returns, overdueReturns)} overdue in this period`,
-    },
-    {
-      label: 'Overdue',
-      value: countOf(alerts, alerts.rows.length),
-      icon: 'alert_triangle',
-      accent: 'danger',
-      note: 'Any day · due back, still out',
-    },
-    /*
-     * §2.1 Notes — "KPI strip hides money entirely for floor roles — omitted,
-     * not blanked." Law 6, and `moneyVisibility.ts`'s own instruction: call
-     * sites must OMIT the card, never mask it. A money-blind session gets a
-     * three-card strip; there is no fourth card in its DOM to inspect, and the
-     * strip does not leave a hole where one was.
-     *
-     * TODO(decision) — PLAN.md §4: what derives "Cash due"? Spec 02 draws it as
-     * the fourth KPI and nothing in this repo computes it. `payments`
-     * (0006:176) is not joined by `listBookings`, `bookings.deposit_required`
-     * is the figure REQUIRED rather than the figure owed, and a paid-vs-due
-     * total is the Financial Engine's to compute, never a page's. Per rulings
-     * §8 it renders "Not tracked yet" and does NOT borrow
-     * `REVENUE_TODAY_PAISA`, which is a seeded Pulse constant for a different
-     * quantity entirely.
-     */
-    ...(money
-      ? ([
-          {
-            label: 'Cash due',
-            value: NOT_TRACKED,
-            icon: 'dollar',
-            accent: 'neutral',
-            note: 'No derivation exists in this build',
-          },
-        ] satisfies Kpi[])
-      : []),
-  ], [period, pickups, returns, alerts, money, overdueReturns])
+  const kpis: Kpi[] = useMemo(() => {
+    const base: Kpi[] = [
+      {
+        label: period === 'Today' ? 'Outgoing today' : `Outgoing · ${period}`,
+        value: countOf(pickups, pickups.rows.length),
+        icon: 'truck',
+        accent: 'primary',
+        note: 'Booked and Packed',
+      },
+      {
+        label: period === 'Today' ? 'Incoming today' : `Incoming · ${period}`,
+        value: countOf(returns, returns.rows.length),
+        icon: 'return_arrow',
+        accent: 'progress',
+        // Scoped to the period on screen, and says so — the card beside it counts
+        // every overdue booking on any day, and two bare "overdue" figures side
+        // by side that legitimately differ is how a screen loses an operator's
+        // trust in both.
+        note: `${countOf(returns, overdueReturns)} overdue in this period`,
+      },
+      {
+        label: 'Overdue',
+        value: countOf(alerts, alerts.rows.length),
+        icon: 'alert_triangle',
+        accent: 'danger',
+        note: 'Any day · due back, still out',
+      },
+    ]
 
-  const reachableKpis: Kpi[] = useMemo(() => [
-    {
-      label: 'Active Rentals',
-      value: countOf(active, active.total),
-      icon: 'briefcase',
-      accent: 'primary',
-      note: 'On Rent now',
-    },
-    {
-      label: 'Alerts',
-      value: countOf(alertsState, alertRows.length),
-      icon: 'bell',
-      accent: 'danger',
-      note: 'Exactly what the Alerts panel lists',
-    },
-  ], [active, alertsState, alertRows.length])
+    if (money) {
+      base.push({
+        label: 'Cash due',
+        value: NOT_TRACKED,
+        icon: 'dollar',
+        accent: 'neutral',
+        note: 'No derivation exists in this build',
+      })
+    } else {
+      base.push({
+        label: 'Active Rentals',
+        value: countOf(active, active.total),
+        icon: 'briefcase',
+        accent: 'primary',
+        note: 'On Rent now',
+      })
+    }
+
+    return base
+  }, [period, pickups, returns, alerts, active, money, overdueReturns])
 
   /*
    * The lists title themselves "Outgoing today" / "Incoming today". That is only
@@ -764,6 +746,8 @@ export default function Today() {
   )
 
   const stack = { display: 'flex', flexDirection: 'column' as const, gap: 'var(--sp-md)', minWidth: 0 }
+  const handleRetry = propOnRetry ?? refetchAll
+  const hasAnyRows = pickups.rows.length > 0 || returns.rows.length > 0 || alertRows.length > 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -784,88 +768,71 @@ export default function Today() {
         }
       />
 
-      {/* `columns={4}` pins the spec's 4-up shape, so revealing the two
-          reachable cards wraps them onto a second row instead of squeezing the
-          strip to six across. `KpiStrip` clamps to 3 at tablet and 2 at phone;
-          spec 02's tablet drawing asks for 4-up, and that clamp lives in
-          `components/ui/Page.tsx`, which ~25 other call sites share. */}
-      <KpiStrip items={allKpis ? [...specKpis, ...reachableKpis] : specKpis} columns={4} />
-      <div style={{ display: 'flex', marginTop: 'calc(-1 * var(--sp-sm))' }}>
-        <button
-          type="button"
-          onClick={() => setAllKpis((v) => !v)}
-          aria-expanded={allKpis}
-          style={{
-            marginLeft: 'auto',
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--link)',
-            fontSize: 'var(--t-meta)',
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            padding: '4px 2px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <Icon name={allKpis ? 'chevron_up' : 'chevron_down'} size={13} />
-          {allKpis ? 'Fewer figures' : `${reachableKpis.length} more figures`}
-        </button>
-      </div>
+      <PageBody
+        {...(propLoading !== undefined ? { loading: propLoading } : {})}
+        {...(propError !== undefined ? { error: propError } : {})}
+        {...(handleRetry ? { onRetry: handleRetry } : {})}
+        hasRows={hasAnyRows}
+        restricted={!isStaffMember}
+        restrictedRequiredRole="Staff"
+        restrictedReason="Today's operations dashboard is for Babin Rentals staff only. Clients may view their bookings in the client portal."
+        noun="today's operations"
+        skeleton="kpi"
+      >
+        <KpiStrip items={kpis} columns={4} />
 
-      {viewport === 'desktop' ? (
-        /* §2.1 Desktop — lists left, ALERTS + CALENDAR mini in the right rail. */
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0,1.55fr) minmax(0,1fr)',
-            gap: 'var(--sp-md)',
-            alignItems: 'start',
-          }}
-        >
+        {viewport === 'desktop' ? (
+          /* §2.1 Desktop — lists left, ALERTS + CALENDAR mini in the right rail. */
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0,1.55fr) minmax(0,1fr)',
+              gap: 'var(--sp-md)',
+              alignItems: 'start',
+            }}
+          >
+            <div style={stack}>
+              {outgoing}
+              {incoming}
+            </div>
+            <div style={stack}>
+              {alertsPanel}
+              {calendar}
+            </div>
+          </div>
+        ) : viewport === 'tablet' ? (
+          /* §2.1 Tablet — "OUTGOING rows · INCOMING rows · ALERTS full-width
+             below". The rail REFLOWS beneath the lists (rulings §7): its cards
+             render inline, at full width, and are not hidden behind a handle. */
           <div style={stack}>
             {outgoing}
             {incoming}
-          </div>
-          <div style={stack}>
             {alertsPanel}
             {calendar}
           </div>
-        </div>
-      ) : viewport === 'tablet' ? (
-        /* §2.1 Tablet — "OUTGOING rows · INCOMING rows · ALERTS full-width
-           below". The rail REFLOWS beneath the lists (rulings §7): its cards
-           render inline, at full width, and are not hidden behind a handle. */
-        <div style={stack}>
-          {outgoing}
-          {incoming}
-          {alertsPanel}
-          {calendar}
-        </div>
-      ) : (
-        /* §2.1 Phone — one of the three at a time. The calendar mini follows
-           beneath: no prose removes it, and it is the only date affordance left
-           once the three lists are behind a control. */
-        <div style={stack}>
-          <SegmentedControl
-            segment={segment}
-            setSegment={setSegment}
-            counts={{
-              out: countOf(pickups, pickups.rows.length),
-              in: countOf(returns, returns.rows.length),
-              alerts: countOf(alertsState, alertRows.length),
-            }}
-          />
-          {segment === 'out' ? outgoing : segment === 'in' ? incoming : alertsPanel}
-          {calendar}
-        </div>
-      )}
+        ) : (
+          /* §2.1 Phone — one of the three at a time. The calendar mini follows
+             beneath: no prose removes it, and it is the only date affordance left
+             once the three lists are behind a control. */
+          <div style={stack}>
+            <SegmentedControl
+              segment={segment}
+              setSegment={setSegment}
+              counts={{
+                out: countOf(pickups, pickups.rows.length),
+                in: countOf(returns, returns.rows.length),
+                alerts: countOf(alertsState, alertRows.length),
+              }}
+            />
+            {segment === 'out' ? outgoing : segment === 'in' ? incoming : alertsPanel}
+            {calendar}
+          </div>
+        )}
 
-      {timeline}
+        {timeline}
 
-      <FooterNote />
+        <FooterNote />
+      </PageBody>
     </div>
   )
 }

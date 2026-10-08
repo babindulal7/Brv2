@@ -474,7 +474,19 @@ const DEPOSIT_LINES: ReadonlyArray<{ label: string; source: string }> = [
  * The standalone route `/finance/payments` still renders `embedded={false}` and
  * keeps the full header, because a deep link arrives with no tab strip above it.
  */
-export default function Payments({ embedded = false }: { embedded?: boolean }) {
+export interface PaymentsProps {
+  embedded?: boolean
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+}
+
+export default function Payments({
+  embedded = false,
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: PaymentsProps = {}) {
   const [params, setParams] = useSearchParams()
   /* Law 13/14 — one width reading, at Foundation's locked 768 / 1180. */
   const viewport = useViewport()
@@ -790,9 +802,9 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
           */}
           <PageBody
             {...financeRestriction(money)}
-            loading={list.loading}
-            error={list.error}
-            onRetry={refreshAll}
+            loading={propLoading !== undefined ? propLoading : list.loading}
+            error={propError !== undefined ? propError : list.error}
+            onRetry={propOnRetry ?? refreshAll}
             hasRows={rows.length > 0}
             empty={list.isEmpty}
             emptyIsFiltered={list.isFiltered}

@@ -3,12 +3,20 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import { isStaff } from '../../lib/rbac'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { JOBS, BOOKING_STATUS } from '../../lib/workflow'
 import type { JobState } from '../../lib/workflow'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+
+export interface ResetWorkspaceProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
 import { stepWriteGate } from '../../data/operationsShell'
 import { BOOKING } from '../../data/booking'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
@@ -189,12 +197,17 @@ function problemReady(draft: ProblemDraft): boolean {
  * so it is now derived here instead of passed in — the same canonical gate,
  * one caller closer to the thing it gates.
  */
-export default function ResetWorkspace() {
+export default function ResetWorkspace({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: ResetWorkspaceProps = {}) {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
   /** The one identity this screen's dispatch may act as. No fallback. */
   const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   /**
    * The name written into `actor` on a cleaning or QC record. `null` with no
    * session — the four handlers below refuse rather than stamping a literal.
@@ -471,6 +484,44 @@ export default function ResetWorkspace() {
   }
 
   const jobsReset = JOBS.Reset
+
+  /* ── 5-State handling ─────────────────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="Cleaning & reset workspace is for Babin Rentals staff only."
+        restrictedRequiredRole="Staff"
+        noun="cleaning and reset"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propError) {
+    return (
+      <PageBody
+        error={propError}
+        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
+        noun="cleaning and reset"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propLoading) {
+    return (
+      <PageBody
+        loading={true}
+        skeleton="card"
+        noun="cleaning and reset"
+      >
+        <div />
+      </PageBody>
+    )
+  }
 
   /*
    * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,

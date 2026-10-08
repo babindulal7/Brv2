@@ -4,9 +4,17 @@ import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside } from '../operations/FloorAside'
 import { ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import { isStaff } from '../../lib/rbac'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+
+export interface HandoverWorkspaceProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
@@ -124,12 +132,17 @@ interface GateRow {
  * prop is gone with the modal it served. `/rentals/:bookingNo/handover` is the
  * only mount and works for ANY booking number.
  */
-export default function HandoverWorkspace() {
+export default function HandoverWorkspace({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: HandoverWorkspaceProps = {}) {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
   /** The one identity this screen's dispatches may act as. No fallback. */
   const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   /* Law 13/14 — width decides. §3.3's tablet layout is "checklist left,
      signature full-width beneath, client as a bar on top": the client card is
      already a full-width band above the split, and the summary rail must
@@ -467,6 +480,44 @@ export default function HandoverWorkspace() {
     if (query && !`${u.name} ${u.serial}`.toLowerCase().includes(query.toLowerCase())) return false
     return true
   })
+
+  /* ── 5-State handling ─────────────────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="Floor handover workspace is for Babin Rentals staff only."
+        restrictedRequiredRole="Staff"
+        noun="handover"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propError) {
+    return (
+      <PageBody
+        error={propError}
+        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
+        noun="handover session"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propLoading) {
+    return (
+      <PageBody
+        loading={true}
+        skeleton="card"
+        noun="handover session"
+      >
+        <div />
+      </PageBody>
+    )
+  }
 
   /*
    * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,

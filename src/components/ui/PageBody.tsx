@@ -61,7 +61,7 @@ import { LoadingSkeleton, ErrorBanner, EmptyState, RestrictedState } from './Sta
  *    screen does not tune a number that does nothing.
  */
 export interface PageBodyProps {
-  loading?: boolean
+  loading?: boolean | undefined
   /**
    * The REASON the load failed, NOT a finished sentence — `JWT expired`, not
    * `Could not load rentals. JWT expired`.
@@ -72,8 +72,8 @@ export interface PageBodyProps {
    * `useList` returns exactly this shape (`ListResult.error`) and says so on its
    * own side; the two comments are a pair, so neither drifts alone.
    */
-  error?: string | null
-  onRetry?: () => void
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
   /**
    * Whether `children` currently holds data — on a list screen, `rows.length > 0`.
    *
@@ -82,37 +82,37 @@ export interface PageBodyProps {
    * conservative reading: a screen that has not said it has rows is assumed to
    * have nothing to protect, and gets the old full-page behaviour.
    */
-  hasRows?: boolean
+  hasRows?: boolean | undefined
   /** True only when a successful query returned nothing. */
-  empty?: boolean
+  empty?: boolean | undefined
   /**
    * Whether the emptiness came from filters. The two empty states are different
    * questions: someone who filtered to zero wants Clear filters, not Add.
    */
-  emptyIsFiltered?: boolean
-  onClearFilters?: () => void
+  emptyIsFiltered?: boolean | undefined
+  onClearFilters?: (() => void) | undefined
   /** What is being loaded, in words — "rentals", "clients". Becomes the skeleton's label. */
-  noun?: string
+  noun?: string | undefined
   /** Set when the session's role may not view this surface at all. */
-  restricted?: boolean
-  restrictedReason?: string
+  restricted?: boolean | undefined
+  restrictedReason?: string | undefined
   /**
    * The role that *would* be allowed, rendered as a "Requires Owner" chip.
    * §2.5 asks the restricted state to "name who to ask", and `RestrictedState`
    * already supports it — without this passthrough a converted screen could not
    * reach it.
    */
-  restrictedRequiredRole?: string
+  restrictedRequiredRole?: string | undefined
   /** Shape of the skeleton, so it resembles what is arriving. */
-  skeleton?: 'card' | 'table' | 'kpi'
+  skeleton?: 'card' | 'table' | 'kpi' | undefined
   /** Skeleton row count. Honoured by `skeleton="table"` only — see limitation 2. */
-  skeletonRows?: number
+  skeletonRows?: number | undefined
   /** Empty-state overrides. Defaults are derived from `noun`. */
-  emptyTitle?: string
-  emptyMessage?: string
+  emptyTitle?: string | undefined
+  emptyMessage?: string | undefined
   /** Label for the empty state's one action, e.g. "Add client". Both this and `onEmptyAction` are needed for it to render. */
-  emptyActionLabel?: string
-  onEmptyAction?: () => void
+  emptyActionLabel?: string | undefined
+  onEmptyAction?: (() => void) | undefined
   children: ReactNode
 }
 

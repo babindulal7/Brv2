@@ -117,7 +117,17 @@ function pulseKpis(f: PeriodFigures): Kpi[] {
   ]
 }
 
-export function ReportCatalog() {
+export interface ReportCatalogProps {
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+}
+
+export function ReportCatalog({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: ReportCatalogProps = {}) {
   const viewport = useViewport()
   const money = useCanViewMoney()
   const restriction = financeRestriction(money)
@@ -239,7 +249,14 @@ export function ReportCatalog() {
       {/* Law 6 — the whole catalog is money. `restricted` outranks every other
           state in `PageBody`, so a money-blind session is told which role to ask
           rather than shown an empty catalog. */}
-      <PageBody noun="reports" {...restriction}>
+      <PageBody
+        noun="reports"
+        loading={propLoading}
+        error={propError}
+        onRetry={propOnRetry}
+        skeleton="table"
+        {...restriction}
+      >
         {matches ? (
           <Card title={`${matches.length} report${matches.length === 1 ? '' : 's'} matching “${query.trim()}”`} bodyStyle={{ padding: 0 }}>
             {matches.length === 0 ? (
@@ -597,3 +614,5 @@ function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogRepor
     </div>
   )
 }
+
+export default ReportCatalog

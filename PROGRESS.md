@@ -2,6 +2,154 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-10-08 — Phase 6 Screen Hardening: Finance, Reports & Settings 5-State PageBody & Page-Type Rules Complete (Phase 6 100% Done)
+
+**Phase:** Phase 6 (Screens — Finance, Reports, Settings) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2,103 passed in 95 files (0 failures) · `npm run build` exit 0
+
+### 1. `Finance` Module Hardening & Automated Test Coverage
+- `Finance.tsx` (`/finance`): Exported `FinanceProps` (`loading?: boolean`, `error?: string | null`, `onRetry?: () => void`, `initialTab?: FinanceTab`). Wrapped outer layout in `<PageBody noun="finance">` with props passthrough, `financeRestriction(money)`, and `skeleton="table"`.
+- `Payments.tsx` (`/finance/payments`): Exported `PaymentsProps`, wired props into `<PageBody noun="payments">`.
+- `Expenses.tsx` (`/finance/expenses`): Exported `ExpensesProps`, wired props into `<PageBody noun="expenses">`.
+- Page-type compliance verified: 3 KPI cards (≤4 cap), 1 Donut chart (≤1 cap).
+- Created `src/modules/finance/__tests__/Finance.states.test.tsx` (5/5 tests passing). Full finance suite: 136/136 tests passing.
+
+### 2. `Reports` Module Hardening & Page-Type Rules
+- `Pulse.tsx` (`/pulse`, `/reports/pulse`): Exported `PulseProps`, wired `<PageBody noun="business pulse">` with staff role gating (`!isStaff(user?.role)` renders `RestrictedState` with `"Requires Staff"`), and loading/error retry passthrough.
+- `CasesReports.tsx` (`/reports/cases`): Exported `CasesReportsProps`, capped KPI cards to ≤4 (`Total Cases`, `Resolved / Closed`, `Open`, `Total Assessed` or `Overdue`), added `isStaff` gating.
+- `ProductReports.tsx` (`/reports/products`): Exported `ProductReportsProps`, enforced ≤1 chart by keeping `Sales by Category` (`Donut`) and converting all other charts (`TrendChart`, `HBars`, `GroupedBars`) into clean ranked lists (`MoverList`) and summary tables (`SalesTrendSummary`, `ProfitTrendTable`). Wrapped body in `<PageBody noun="product reports">` with `isStaff` gating and Law 6 money blindness.
+- `ReportCatalog.tsx` (`/reports`): Exported `ReportCatalogProps`, wired `PageBody` with `financeRestriction` and loading/error states.
+- Created `src/modules/reports/__tests__/Reports.states.test.tsx` (16/16 tests passing). Full reports suite: 63/63 tests passing.
+
+### 3. `Settings` Module Hardening & Automated Test Coverage
+- `Settings.tsx` (`/settings`): Exported `SettingsProps`, wrapped `{body}` in `<PageBody noun="settings">` with staff gating (`!isStaff(user?.role)` renders `RestrictedState`), Law 6 money-blind tab gating (`useCanViewMoney`), and `canManageSettings` (Owner-only) edit permissions.
+- Updated `PageBodyProps` in `src/components/ui/PageBody.tsx` to include `| undefined` across optional properties for clean `exactOptionalPropertyTypes: true` compiler compatibility across all callers.
+- Created `src/modules/settings/__tests__/Settings.states.test.tsx` (5/5 tests passing). Full settings suite: 39/39 tests passing.
+
+### 4. Phase 6 Final Verification & Milestone Gate
+- **Typecheck:** `npx tsc --noEmit` exit 0 (0 errors).
+- **Test Suite:** `npm test` exit 0 (95 test files passed, 2,103/2,103 tests passed, 0 failures).
+- **Production Build:** `npm run build` exit 0 (PWA service worker generated, 140 precache entries).
+
+## 2026-10-08 — Phase 6 Screen Hardening: Inventory & Warehouses 5-State PageBody & Page-Type Rules Complete
+
+**Phase:** Phase 6 (Screens — Inventory) · **Status:** `tsc --noEmit` exit 0 · `npm test` 85 passed in 7 files under `inventory` (0 failures)
+
+### 1. `Inventory.tsx` 5-State `PageBody` Hardening & Automated Test Coverage
+- Verified and fortified `<PageBody>` integration in `src/modules/inventory/Inventory.tsx`:
+  - **Loading State:** Displays `<LoadingSkeleton type="table" rows={6} label="Loading equipment…" />`.
+  - **Persistent Error State (Law 12):** Persistent `<ErrorBanner>` with retry callback (`handleRetry = propOnRetry ?? refreshAll`), wired to both banner button and header Refresh button. Surviving rows preserved when `hasRows` is true.
+  - **Restricted State (Law 6 / RBAC):** Strictly gates non-staff (`Client`) accounts with `RestrictedState` (`"Requires Staff"`, `"Equipment catalogue and warehouse inventory are for Babin Rentals staff only. Clients may view equipment in the client portal."`).
+  - **Unfiltered EmptyState:** Renders `emptyTitle="No equipment yet"` with primary action `Add Equipment` (`/inventory/new`).
+  - **Filtered EmptyState:** Renders `emptyTitle="No equipment matches these filters"` and handles `query.impossible` disjoint states with dedicated `Clear filters` CTA.
+- Created `src/modules/inventory/__tests__/Inventory.states.test.tsx` (6/6 tests passing):
+  - Renders `LoadingSkeleton` table layout on `loading={true}`.
+  - Renders `ErrorBanner` with inline alert and clickable `Retry` button calling `onRetry`.
+  - Renders `RestrictedState` with `"Requires Staff"` chip for `Client` role.
+  - Renders `EmptyState` with `"Add Equipment"` CTA when catalogue has no records.
+  - Renders `EmptyState` with `"Clear filters"` CTA when filters match zero records.
+  - Renders populated equipment table and cards for staff roles.
+
+### 2. `Warehouses.tsx` Page-Type Rules & Test Hardening
+- Enforced Page-Type Rules on `/inventory/warehouses`:
+  - Enforced $\le 4$ KPI cards per screen (retained exactly 4: Total Warehouses, Total Assets Stored, Capacity Used, Open Transfers).
+  - Enforced $\le 1$ Chart per screen (retained 1 clean Donut chart for Capacity Utilization, replaced decorative duplicate charts with clean tabular metrics).
+  - Fixed TypeScript unused locals (`svgs`, `chartSvgs`) in `src/modules/inventory/__tests__/Warehouses.states.test.tsx`.
+- Full verification: **7 test files passed, 85/85 tests passed under `src/modules/inventory/__tests__/`, `tsc --noEmit` exit 0**.
+
+## 2026-10-08 — Clients directory: one filter rail, collapsible sections
+
+**Changed:** `ClientsDirectory.tsx`. The chip row (exclusive chips + "Also show only" overlays + a
+disabled "More Filters") and the rail's dead "Advanced filters — coming soon" card are replaced by
+one Filters panel of collapsible sections: **Client type** (Organisation / Individual /
+Unassigned), **Status** (On Rent / Payment Due / VIP), **Flags** (Blocked / On Stop), **Saved
+views**. Checkbox rows with whole-directory counts; "Filters · N" and Clear all appear once anything
+is ticked. The toolbar keeps only search and the Table/Cards switch.
+
+- **Semantics changed:** type and status were one exclusive selector (`FilterKey`); they are now two
+  facet families — ticks OR within a family, AND across families. Blocked / On Stop stay
+  intersecting overlays (Rulings §11.2.4), On Stop still says "check unavailable" when it cannot run
+  (§11.2.7), Payment Due is still omitted for money-blind roles (§8.3).
+- **Below 1180** the panel now reflows **above** the list with sections closed (was `order: 2`,
+  beneath every row).
+
+**Verified:** driven in the mock app at 1440 / 768 / 375 — ticking, OR/AND combinations, Blocked
+overlay to the filtered empty state with "Clear filters", Clear all, the VIP saved view re-ticking
+its facet; no horizontal overflow at 375. `ClientsDirectory.filterRail.test.tsx` 5/5,
+`src/modules/clients` 68/68. Typecheck clean for this file; the repo-wide `tsc` is red from other
+in-flight work (`Today.states.test.tsx` unused locals).
+
+## 2026-10-08 — Phase 6 Screen Hardening: OperationsQueues & Floor Workspaces 5-State PageBody Adoption Complete
+
+**Phase:** Phase 6 (Screens — Operations & Operational Workspaces) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2055 passed in 88 files (0 failures)
+
+### 1. `OperationsQueues.tsx` 5-State `PageBody` Hardening
+- Exported and integrated `OperationsQueuesProps` (`loading?: boolean`, `error?: string | null`, `onRetry?: () => void`) for caller overrides and test mounting.
+- **Client Role Restriction (Law 6 / RBAC):**
+  - Integrated `useAuth()` and `isStaff(user.role)`.
+  - Non-staff (`Client`) sessions navigating to `/operations` are gated into `RestrictedState` via `<PageBody restricted={true} restrictedRequiredRole="Staff" restrictedReason="Floor operations and queues are for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal." noun="operations">`.
+- **Loading State:**
+  - Integrated `isLoading = propLoading !== undefined ? propLoading : list.loading`.
+  - Displays `<LoadingSkeleton type="table" rows={5} label="Loading jobs…" />`.
+- **Persistent Error State (Law 12):**
+  - Integrated `isError = propError !== undefined ? propError : list.error` and `handleRetry = propOnRetry ?? refreshAll`.
+  - Wired both `PageHeader` Refresh button and `<PageBody onRetry>` to `handleRetry`.
+  - Preserves live rows when `hasRows` is true, displaying `"Could not refresh jobs"` above the table rather than blanking the screen.
+- **Filter-Aware EmptyState vs. Unfiltered Zero Data State:**
+  - Unfiltered zero data (`?day=custom` with no range) renders `EmptyState` with `emptyTitle="No jobs right now"` and `emptyMessage="No booking is sitting at a stage that has floor work in this range."`.
+  - Filtered zero data (e.g. today or specific queues like `?queue=packing`) renders `EmptyState` with `"Nothing in [Queue] for [scope]"` and 44×44 `"Clear filter"` action.
+
+### 2. Operational Floor Workspaces 5-State Hardening
+- Hardened all operational floor workspaces and cases with `PageBody`:
+  - `PackingWorkspace.tsx` (`/rentals/:bookingNo/packing`): Exported `PackingWorkspaceProps`, added staff gating (`isStaff(user.role)`), loading skeleton (`noun="packing checklist"`), persistent error banner with retry.
+  - `HandoverWorkspace.tsx` (`/rentals/:bookingNo/handover`): Exported `HandoverWorkspaceProps`, added staff gating (`isStaff(user.role)`), loading skeleton (`noun="handover session"`), persistent error banner with retry.
+  - `ReturnWorkspace.tsx` (`/rentals/:bookingNo/return`): Exported `ReturnWorkspaceProps`, added staff gating (`isStaff(user.role)`), loading skeleton (`noun="return inspection"`), persistent error banner with retry.
+  - `ResetWorkspace.tsx` (`/rentals/:bookingNo/reset`): Exported `ResetWorkspaceProps`, added staff gating (`isStaff(user.role)`), loading skeleton (`noun="cleaning and reset"`), persistent error banner with retry.
+  - `EvidenceWorkspace.tsx` (`/rentals/:bookingNo/evidence`): Exported `EvidenceWorkspaceProps`, added staff gating (`isStaff(user.role)`), loading skeleton (`noun="evidence gallery"`), persistent error banner with retry.
+  - `CasesWorkspace.tsx` (`/operations/cases`): Exported `CasesWorkspaceProps`, added staff gating (`isStaff(user.role)`), replaced raw empty markup with table `<PageBody>` supporting loading, error with retry, filtered/unfiltered empty states.
+
+### 3. Automated Test Coverage & Full Regression Verification
+- Created `src/modules/operations/__tests__/OperationsQueues.states.test.tsx` (7/7 tests passing):
+  - Renders `LoadingSkeleton` table layout when `loading={true}`.
+  - Renders `ErrorBanner` with inline alert message and clickable `Retry` button calling `onRetry` when `error` prop is provided.
+  - Renders `"Could not refresh jobs"` banner above surviving rows when refresh fails.
+  - Renders `RestrictedState` with `"Requires Staff"` chip for `Client` role.
+  - Renders `EmptyState` when queue has no jobs.
+  - Renders `EmptyState` with `"Clear filter"` CTA when filters match zero rows.
+  - Renders job table with rows, stage badges, and action buttons.
+- Created `src/modules/operations/__tests__/FloorWorkspaces.states.test.tsx` (18/18 tests passing):
+  - Asserts loading, error with retry, and staff restricted states across `PackingWorkspace`, `HandoverWorkspace`, `ReturnWorkspace`, `ResetWorkspace`, `EvidenceWorkspace`, and `CasesWorkspace`.
+- Full regression verification: **88 test files passed, 2055/2055 tests passed, `tsc --noEmit` exit 0**.
+
+**Phase:** Phase 6 (Screens — Clients) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2030 passed in 86 files (0 failures)
+
+### 1. `Clients.tsx` & `ClientsDirectory.tsx` 5-State `PageBody` Hardening
+- Exported and integrated `ClientsProps` (`loading?: boolean`, `error?: string | null`, `onRetry?: () => void`) for caller overrides and headless test mounting.
+- **Client Role Restriction (Law 6 / RBAC):**
+  - Integrated `useAuth()` and `isStaff()`.
+  - Non-staff (`Client`) sessions navigating to `/clients` are gated into `RestrictedState` via `<PageBody restricted={true} restrictedRequiredRole="Staff" restrictedReason="The client management directory is for Babin Rentals staff only. Clients may view their profile in the client portal." noun="clients">`.
+- **Loading State:**
+  - Integrated `isLoading = propLoading !== undefined ? propLoading : clientsLoading`.
+  - Displays `<LoadingSkeleton type="table" rows={6} label="Loading clients…" />`.
+- **Persistent Error State (Law 12):**
+  - Integrated `isError = propError !== undefined ? propError : clientsError`.
+  - Renders inline `<ErrorBanner>` with retry callback (`handleRetry = propOnRetry ?? refresh`), preserving surviving rows when `hasRows` is true.
+  - Sourced into both `ClientsDirectory` and `CreditView`.
+- **Filter-Aware EmptyState vs. Unfiltered Zero Data State:**
+  - Adopted `<PageBody>` directly inside `ClientsDirectory.tsx` around the table/cards container.
+  - Unfiltered zero data renders `EmptyState` with `emptyTitle="No clients yet"`, description `"The directory is empty. Register the first client to start booking."`, and primary action `emptyActionLabel="Register a client"` invoking `onRequestAdd`.
+  - Filtered zero data renders `EmptyState` with `emptyTitle="No clients found"`, dynamic search/filter explanations, and action `actionLabel="Clear filters"` invoking `onClearFilters={clearAll}`.
+  - Guarded bottom pagination bar with `filteredClients.length > 0`, removing confusing "Page 1 of 1" over empty states.
+
+### 2. Automated Test Coverage & Full Regression Verification
+- Created `src/modules/clients/__tests__/Clients.states.test.tsx` (6/6 tests passing):
+  - Renders `LoadingSkeleton` with 6-row table layout when `loading={true}`.
+  - Renders `ErrorBanner` with inline alert message and clickable `Retry` button calling `onRetry` when `error` prop is provided.
+  - Renders `RestrictedState` with `"Requires Staff"` chip for `Client` role.
+  - Renders `EmptyState` with `"Register a client"` CTA when directory has no clients.
+  - Renders `EmptyState` with `"Clear filters"` CTA when query filters match zero rows, successfully restoring rows upon clear.
+  - Renders directory rows for staff roles.
+- Full regression verification: **86 test files passed, 2030/2030 tests passed, `tsc --noEmit` exit 0**.
+
 ## 2026-10-08 — Phase 6 Screen Hardening: RentalsList 5-State PageBody & Filter EmptyState Adoption (Option 8) Complete
 
 **Phase:** Phase 6 (Screens — Rentals) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2024 passed in 85 files (0 failures)

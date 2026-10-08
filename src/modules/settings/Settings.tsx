@@ -3,7 +3,8 @@ import type { CSSProperties } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
-import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
+import { ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
 import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
@@ -19,7 +20,7 @@ import {
 } from '../../lib/settingsStore'
 import type { SettingKey, SettingValue, SettingsRecord } from '../../lib/settingsStore'
 import { applyLanguage } from '../../lib/i18n'
-import { canManageSettings } from '../../lib/rbac'
+import { canManageSettings, isStaff } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
 import {
   TABS,
@@ -123,7 +124,17 @@ const tabButtonBase: CSSProperties = {
   cursor: 'pointer',
 }
 
-export default function Settings() {
+export interface SettingsProps {
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+}
+
+export default function Settings({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: SettingsProps = {}) {
   const money = useCanViewMoney()
   /* Law 13/14 — width decides, and the branch is on the viewport band, never
      on a platform or a user agent. */
@@ -139,6 +150,7 @@ export default function Settings() {
   const [branches, setBranches] = useState<Branch[]>(BRANCHES)
 
   const { user } = useAuth()
+  const staff = isStaff(user?.role ?? 'Client')
   const mayEdit = canManageSettings(user?.role ?? 'Client')
   const [leaveError, setLeaveError] = useState<string | null>(null)
 
@@ -235,7 +247,7 @@ export default function Settings() {
   const IMPORT_WHY = 'Importing branches writes to the org tree; no backend is connected in this build.'
 
   const headerActions =
-    load.status !== 'ready' ? null : active === 'branches' && !onPhoneList ? (
+    !staff || propLoading || load.status !== 'ready' ? null : active === 'branches' && !onPhoneList ? (
       <>
         <span
           aria-disabled="true"
@@ -366,28 +378,12 @@ export default function Settings() {
   /* ── body, by state then by width ────────────────────────────────────── */
 
   const body = (() => {
-    if (load.status === 'loading') {
-      return (
-        <LoadingSkeleton
-          type="card"
-          label="Loading settings — the stored values, not the defaults. Nothing on this page is shown until they arrive."
-        />
-      )
+    if (propLoading || load.status === 'loading') {
+      return null
     }
 
-    if (load.status === 'error') {
-      return (
-        <ErrorBanner
-          title="Settings could not be read."
-          message={
-            <>
-              {load.message} Until they load, this page would show the built-in defaults rather than your saved values — and a
-              stale VAT rate is a wrong invoice, so nothing is rendered instead.
-            </>
-          }
-          onRetry={reload}
-        />
-      )
+    if (propError || load.status === 'error') {
+      return null
     }
 
     /* PHONE — §11.1: a list of sections, each tapping through to its own
@@ -614,7 +610,18 @@ export default function Settings() {
               />
             )}
 
-            {body}
+            <PageBody
+              noun="settings"
+              loading={propLoading !== undefined ? propLoading : load.status === 'loading'}
+              error={propError !== undefined ? propError : (load.status === 'error' ? load.message : null)}
+              onRetry={propOnRetry ?? reload}
+              skeleton="card"
+              restricted={!staff}
+              restrictedRequiredRole="Staff"
+              restrictedReason="Settings are for Babin Rentals staff only. Clients may view their profile in the client portal."
+            >
+              {body}
+            </PageBody>
 
             <FooterNote extra={[`Data as of ${asOf}`]} />
           </div>

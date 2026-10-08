@@ -7,9 +7,17 @@ import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import { isStaff } from '../../lib/rbac'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
+
+export interface EvidenceWorkspaceProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { BOOKING } from '../../data/booking'
 import { TOTAL_ITEMS } from '../../data/packing'
@@ -106,7 +114,11 @@ const STAGE_FILTERS = ['Packing', 'Return', 'Damage'] as const
 const UNMATCH_UNAVAILABLE_REASON =
   'Unmatch cannot act yet. REVIEW_EVIDENCE accepts only "review" or "remove", and "remove" is the soft-delete §10 gives the Remove button — it would hide the photo, not detach its match. Detaching a wrong match needs its own verb. Nothing is written and this photo keeps its match.'
 
-export default function EvidenceWorkspace() {
+export default function EvidenceWorkspace({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: EvidenceWorkspaceProps = {}) {
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
   /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
@@ -116,6 +128,7 @@ export default function EvidenceWorkspace() {
   const place = floorPlacements(desktop, phone)
   /** The one identity a dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
 
   const [selected, setSelected] = useState<string[]>([])
   const [active, setActive] = useState<string>('p1')
@@ -163,6 +176,44 @@ export default function EvidenceWorkspace() {
     { label: 'Review', value: counts.Review, display: String(counts.Review), percent: pct(counts.Review) },
     { label: 'Unmatched', value: counts.Unmatched, display: String(counts.Unmatched), percent: pct(counts.Unmatched) },
   ]
+
+  /* ── 5-State handling ─────────────────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="Evidence workspace is for Babin Rentals staff only."
+        restrictedRequiredRole="Staff"
+        noun="evidence"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propError) {
+    return (
+      <PageBody
+        error={propError}
+        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
+        noun="evidence gallery"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
+  if (propLoading) {
+    return (
+      <PageBody
+        loading={true}
+        skeleton="card"
+        noun="evidence gallery"
+      >
+        <div />
+      </PageBody>
+    )
+  }
 
   /*
    * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,

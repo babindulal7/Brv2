@@ -640,7 +640,19 @@ function AddExpenseSheet({
  * so the tab strip is not sitting above a second page title, and nothing else
  * about the screen changes. Not a width branch (Law 13).
  */
-export default function Expenses({ embedded = false }: { embedded?: boolean }) {
+export interface ExpensesProps {
+  embedded?: boolean
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+}
+
+export default function Expenses({
+  embedded = false,
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: ExpensesProps = {}) {
   const { user } = useAuth()
   /** The one money gate. Mirrors `auth_can_view_money()` — Law 6. */
   const money = useCanViewMoney()
@@ -900,9 +912,9 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
               blanking a table somebody is reading.
             */}
             <PageBody
-              loading={list.loading}
-              error={list.error}
-              onRetry={list.refetch}
+              loading={propLoading !== undefined ? propLoading : list.loading}
+              error={propError !== undefined ? propError : list.error}
+              onRetry={propOnRetry ?? list.refetch}
               hasRows={list.rows.length > 0}
               empty={list.isEmpty}
               emptyIsFiltered={list.isFiltered}
