@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { WorkspaceHeaderActions } from '../../components/shell/WorkspacePortal'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, PageActions, Button, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -691,15 +690,13 @@ export default function OperationsQueues() {
           alignItems: 'start',
         }}
       >
-      {/* The filter-panel toggle lives in the global header, beside the page name (8 Oct 2026). */}
-      <WorkspaceHeaderActions>
-        <FilterButton
-          onClick={() => setShowMoreFilters((open) => !open)}
-          activeCount={operationFilterCount}
-          controls="operations-filters"
-          expanded={showMoreFilters}
-        />
-      </WorkspaceHeaderActions>
+      {/* Renders in the global header beside the page name (FilterButton's default). */}
+      <FilterButton
+        onClick={() => setShowMoreFilters((open) => !open)}
+        activeCount={operationFilterCount}
+        controls="operations-filters"
+        expanded={showMoreFilters}
+      />
       <div style={{ gridColumn: '1 / -1' }}>
         <PageHeader
           title="Operation"

@@ -1,5 +1,32 @@
 # Progress Log
 
+## 2026-10-08 — Every page's filter toggle in the global header
+
+**Did**
+- `FilterButton` now renders in the global header beside the page name by default (`WorkspaceHeaderActions`); one change moves the toggle on all 12 pages that use it. Operations' explicit wrapper from c21c1c4 is no longer needed and is removed. Calendar's full-view overlay opts out (`inHeader={false}`) because the overlay covers the header.
+
+**Ruled**
+- RULINGS-2026-10-08.md, "Global header" table.
+
+**Verified**
+- Browser (mock) 1366×900: /calendar, /rentals, /clients (and Membership), /inventory, /finance invoices and expenses, /tools, /operations, /crew, documents — exactly one toggle each, in the header, none left in the page; each opens its panel; no horizontal scroll. Finance's Dashboard tab has none by design. Calendar full view: the toggle stays inside the overlay and opens the panel. 375×812 on four pages: 44px, title not truncated, no horizontal scroll.
+- Clean temporary worktree (HEAD c21c1c4 + these three files only): tsc clean, 4158/4158 tests. In the shared worktree two New Rental tests fail — they pass without the other agent's uncommitted New Rental edits, so they belong to that work.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T21:50:19.631Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- The other agent's New Rental work (uncommitted here) breaks `newRentalSimplification` (phone layout) and `BookingClientSection` tests, fails `tsc` (unused `draftPersisted`) and `lint:shell` (RentalPricingSection.tsx:459).
+
 ## 2026-10-08 — Header filter toggle, no overdue banner, real row buttons, stage icons, clickable Operations rows
 
 **Did**

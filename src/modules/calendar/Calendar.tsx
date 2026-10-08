@@ -3283,7 +3283,8 @@ export default function Calendar() {
         style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--app)', overflow: 'auto', padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          <FilterButton onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} />
+          {/* Inside the full-view overlay, which covers the global header: stays in place. */}
+          <FilterButton inHeader={false} onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} />
           <h1 style={{ margin: 0, fontSize: 'var(--t-h2)', fontWeight: 700 }}>Calendar</h1>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)', marginLeft: 10 }}>{navButtons}</span>
           <span style={{ marginLeft: 'auto', width: 300 }}>

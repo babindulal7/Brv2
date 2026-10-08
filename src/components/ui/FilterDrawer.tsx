@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { WorkspaceHeaderActions } from '../shell/WorkspacePortal'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
@@ -533,19 +534,36 @@ export function FilterDrawer({
  * narrowed. Without it, someone returns to a page whose filters persisted from
  * last visit, sees four rows, and concludes the data is missing.
  */
+/**
+ * The page's filter-panel toggle. It belongs to the page as a whole, so by
+ * default it renders in the global header beside the page name (8 Oct 2026,
+ * RULINGS-2026-10-08.md) — every page that uses it moves there with no change of
+ * its own. `inHeader={false}` keeps it where it is written, for a toggle inside
+ * an overlay that covers the header (Calendar's full view). Outside the app
+ * shell (tests, embeds) it falls back to rendering in place.
+ */
 export function FilterButton({
-  onClick,
-  activeCount = 0,
-  controls,
-  expanded,
-  label = 'Filters',
-}: {
+  inHeader = true,
+  ...props
+}: FilterButtonProps & { inHeader?: boolean }) {
+  return inHeader ? <WorkspaceHeaderActions><FilterToggle {...props} /></WorkspaceHeaderActions> : <FilterToggle {...props} />
+}
+
+interface FilterButtonProps {
   onClick: () => void
   activeCount?: number
   controls: string
   expanded: boolean
   label?: string
-}) {
+}
+
+function FilterToggle({
+  onClick,
+  activeCount = 0,
+  controls,
+  expanded,
+  label = 'Filters',
+}: FilterButtonProps) {
   return (
     <button
       type="button"
