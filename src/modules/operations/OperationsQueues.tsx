@@ -632,6 +632,7 @@ export default function OperationsQueues() {
   }, [jobs, search, clientFilter, projectFilter])
   const clients = useMemo(() => Array.from(new Map(jobs.map((job) => [job.clientId, job.clientName])).entries()), [jobs])
   const projects = useMemo(() => Array.from(new Set(jobs.flatMap((job) => job.project ? [job.project] : []))).sort(), [jobs])
+  const localFilterOn = search.trim() !== '' || clientFilter !== 'all' || projectFilter !== 'all'
   const pageCount = Math.max(1, Math.ceil(visibleJobs.length / pageSize))
   const currentPage = Math.min(page, pageCount - 1)
   const pagedJobs = visibleJobs.slice(currentPage * pageSize, currentPage * pageSize + pageSize)
@@ -803,14 +804,18 @@ export default function OperationsQueues() {
             error={list.error}
             onRetry={refreshAll}
             hasRows={jobs.length > 0}
-            empty={list.isEmpty}
-            emptyIsFiltered={list.isFiltered}
+            /* From main's d7ca3bc: empty means nothing VISIBLE. Search, client
+               and project filter on screen, so the server set can hold rows
+               while the table shows none; that drew a bare table with no way
+               back. When those local filters are why, PageBody's own filtered
+               copy and Clear filters apply. */
+            empty={list.isEmpty || (!list.loading && !list.error && visibleJobs.length === 0)}
+            emptyIsFiltered={list.isFiltered || isFiltered || localFilterOn}
             onClearFilters={clearOperationFilters}
             noun="jobs"
             skeleton="table"
             skeletonRows={6}
-            emptyTitle={emptyTitle}
-            emptyMessage={emptyMessage}
+            {...(localFilterOn && jobs.length > 0 ? {} : { emptyTitle, emptyMessage })}
           >
             {!tabular && (
               <div style={{ padding: 'var(--sp-sm)', display: 'grid', gap: 'var(--sp-sm)' }}>

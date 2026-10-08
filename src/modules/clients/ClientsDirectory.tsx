@@ -2096,19 +2096,22 @@ export function ClientsDirectory({
               </DataTableShell>
             )}
 
-            <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
-              <Pagination
-                page={current}
-                total={filteredClients.length}
-                pageSize={perPage}
-                pageSizeOptions={CLIENT_ROWS_PER_PAGE}
-                onPageChange={setPage}
-                onPageSizeChange={(size) => {
-                  setPerPage(size)
-                  resetPage()
-                }}
-              />
-            </div>
+            {/* From main's d7ca3bc: no "Page 1 of 1" under an empty state. */}
+            {filteredClients.length > 0 && (
+              <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                <Pagination
+                  page={current}
+                  total={filteredClients.length}
+                  pageSize={perPage}
+                  pageSizeOptions={CLIENT_ROWS_PER_PAGE}
+                  onPageChange={setPage}
+                  onPageSizeChange={(size) => {
+                    setPerPage(size)
+                    resetPage()
+                  }}
+                />
+              </div>
+            )}
           </Card>
 
           {/* ── client profile rail ─────────────────────────────────── */}

@@ -7,7 +7,7 @@ import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { Button } from '../../components/ui/Button'
 import { SearchInput } from '../../components/ui/SearchInput'
-import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
 import Icon from '../../components/ui/Icon'
@@ -432,7 +432,6 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
         )}
       </div>
 
-      {casesError && <ErrorBanner title="Could not load cases" message={casesError} onRetry={() => setReadVersion((v) => v + 1)} />}
       {/* Toolbar & Chips */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
         <div
@@ -531,18 +530,28 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
 
       {/* Main Table */}
       <Card padding="none" style={{ overflow: 'hidden' }}>
-        {filteredCases.length === 0 ? (
-          <EmptyState
-            title={routeCaseId ? `No case matches ${routeCaseId}` : 'No cases found'}
-            description={
-              routeCaseId
-                ? 'Nothing in the queue carries this case ID. It may have been renumbered, or the link that brought you here is stale.'
-                : 'Adjust your filters or search query to find incident cases.'
-            }
-            actionLabel={routeCaseId ? 'Show all cases' : 'Clear Filters'}
-            onAction={() => (routeCaseId ? navigate('/inventory/cases') : patch({ status: null, q: null }))}
-          />
-        ) : (
+        {/* From main's d7ca3bc: the table goes through PageBody, so loading
+            and a failed read outrank "No cases found". Before, a slow or
+            failed `listCases` showed the empty state under the error. */}
+        <PageBody
+          loading={casesLoading}
+          error={casesError}
+          onRetry={() => setReadVersion((v) => v + 1)}
+          hasRows={filteredCases.length > 0}
+          empty={filteredCases.length === 0}
+          emptyIsFiltered={Boolean(routeCaseId) || searchQuery.trim() !== '' || activeFilter !== 'All'}
+          onClearFilters={() => (routeCaseId ? navigate('/inventory/cases') : patch({ status: null, q: null }))}
+          {...(routeCaseId ? { clearLabel: 'Show all cases' } : {})}
+          noun="cases"
+          skeleton="table"
+          skeletonRows={5}
+          emptyTitle={routeCaseId ? `No case matches ${routeCaseId}` : 'No cases found'}
+          emptyMessage={
+            routeCaseId
+              ? 'Nothing in the queue carries this case ID. It may have been renumbered, or the link that brought you here is stale.'
+              : 'Adjust your filters or search query to find incident cases.'
+          }
+        >
           <DataTableShell ariaLabel="Incident cases">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
@@ -665,7 +674,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
               </tbody>
             </table>
           </DataTableShell>
-        )}
+        </PageBody>
       </Card>
 
       <LogCaseModal

@@ -42,6 +42,8 @@ vi.mock('../../../lib/queries/cases', async (orig) => {
   return {
     ...actual,
     listCases: vi.fn().mockImplementation(async () => {
+      if (mockCasesData.current === 'pending') return new Promise(() => {})
+      if (mockCasesData.current === 'fail') throw new Error('JWT expired')
       const data = mockCasesData.current !== null ? mockCasesData.current : actual.CASES
       return {
         rows: data as any,
@@ -217,5 +219,23 @@ describe('CasesWorkspace — empty state', () => {
     expect(text()).toContain('No cases found')
     expect(text()).toContain('Adjust your filters or search query to find incident cases')
     expect(container.querySelectorAll('tbody tr')).toHaveLength(0)
+  })
+
+  /* From main's d7ca3bc, ported 8 Oct 2026: loading and a failed read
+     outrank the empty state. Before, both rendered "No cases found". */
+  it('shows the skeleton, not "No cases found", while the read is in flight', async () => {
+    mockCasesData.current = 'pending'
+    await mount('/inventory/cases')
+    expect(text()).toContain('Loading cases')
+    expect(text()).not.toContain('No cases found')
+  })
+
+  it('shows one error with Retry, not "No cases found", when the read fails', async () => {
+    mockCasesData.current = 'fail'
+    await mount('/inventory/cases')
+    expect(text()).toContain('Could not load cases')
+    expect(text()).toContain('JWT expired')
+    expect(text()).not.toContain('No cases found')
+    expect([...container.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Retry')).toBe(true)
   })
 })

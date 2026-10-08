@@ -321,6 +321,24 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
     })
     expect(text()).toContain('Return Overdue')
   })
+
+  /* From main's d7ca3bc, ported 8 Oct 2026: a search that hides every row is
+     an empty state with Clear filters, not a bare table. */
+  it('says nothing matches, with Clear filters, when the search hides every row', async () => {
+    await mount(<OperationsQueues />, '/operations')
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search ID, client, project"]')
+    expect(search).not.toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, 'no-such-booking')
+      search?.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    expect(text()).toContain('No jobs match these filters')
+    const clear = buttons().find((b) => b.textContent?.trim() === 'Clear filters')
+    expect(clear).toBeDefined()
+    await act(async () => clear?.click())
+    expect(text()).toContain('B-715')
+  })
 })
 
 describe('OperationsShell is the unified modal host', () => {
