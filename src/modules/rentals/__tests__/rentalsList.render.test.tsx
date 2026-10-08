@@ -99,7 +99,7 @@ const ROW: BookingListRow = {
 /* The mocked count, so a test can have more rows than one page. `vi.hoisted`
    because a `vi.mock` factory is hoisted above ordinary consts and cannot close
    over one. Reset in `afterEach`. */
-const stub = vi.hoisted(() => ({ total: 1 }))
+const stub = vi.hoisted(() => ({ total: 1, empty: false }))
 vi.mock('../../../actions/rentals/saveDraft', () => ({ listActiveDrafts: async () => [] }))
 vi.mock('../../../lib/queries/rentalViews', async (importOriginal) => { const real = await importOriginal<typeof import('../../../lib/queries/rentalViews')>(); return { ...real, listRentalViewCounts: async () => ({ rows: real.RENTAL_VIEWS.map(v => ({ id: v.id, count: 0 })) }) } })
 const authStub = vi.hoisted(() => ({ role: 'Owner' as SystemRole }))
@@ -109,7 +109,7 @@ const authStub = vi.hoisted(() => ({ role: 'Owner' as SystemRole }))
    renders. */
 vi.mock('../../../lib/queries/bookings', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../lib/queries/bookings')>()
-  return { ...real, listBookings: async () => ({ rows: [ROW], total: stub.total }) }
+  return { ...real, listBookings: async () => (stub.empty ? { rows: [], total: 0 } : { rows: [ROW], total: stub.total }) }
 })
 
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => true }))
@@ -147,8 +147,11 @@ let root: Root
 
 /** The live query string, so a test can assert what a refresh would restore. */
 let search = ''
+let pathname = ''
 function LocationProbe() {
-  search = useLocation().search
+  const location = useLocation()
+  search = location.search
+  pathname = location.pathname
   return null
 }
 
@@ -181,6 +184,7 @@ afterEach(async () => {
   container?.remove()
   document.body.innerHTML = ''
   stub.total = 1
+  stub.empty = false
   lines.rows = []
   lines.shouldFail = false
   authStub.role = 'Owner'
@@ -575,5 +579,27 @@ describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
     const liveSubBtn = button('Sub-Rental')
     expect(liveSubBtn).toBeDefined()
     expect(liveSubBtn?.disabled).toBe(false)
+  })
+})
+
+/* From main's 32c4d29, ported 8 Oct 2026: the unfiltered empty list offers its
+   one next step, to the roles `rental.create` allows. */
+describe('empty list — the New Rental step', () => {
+  it('offers New Rental to a role that can create, and it goes to /rentals/new', async () => {
+    stub.empty = true
+    await mount(1280)
+    expect(text()).toContain('No rentals yet')
+    const cta = button('New Rental')
+    expect(cta).toBeDefined()
+    await act(async () => cta?.click())
+    expect(pathname).toBe('/rentals/new')
+  })
+
+  it('offers nothing to a role that cannot create', async () => {
+    stub.empty = true
+    authStub.role = 'Accounts'
+    await mount(1280)
+    expect(text()).toContain('No rentals yet')
+    expect(button('New Rental')).toBeUndefined()
   })
 })

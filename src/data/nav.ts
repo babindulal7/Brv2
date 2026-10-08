@@ -178,6 +178,15 @@ export function isMoneySurface(path: string): boolean {
  * The floor workspaces are covered by {@link FLOOR_ROUTE_SUFFIXES} below —
  * they are `/rentals/:bookingNo/<step>` routes, so a prefix cannot name them.
  *
+ * RULING 2026-10-08: every staff module is on this list, not only the four
+ * above. `docs/PERMISSIONS.md` gives Client "Portal only": §3 marks Today,
+ * Calendar, Inventory, Settings and Tools ✕, and §7 serves the ◐ cells
+ * (own bookings P2, own record P3) inside the portal, "one page, no routes".
+ * main reached the same answer screen by screen (a `RestrictedState` in 19
+ * pages, 7-8 Oct). This puts it in the one list both gates read. `/finance`,
+ * `/reports` and `/admin` are refused to Client by {@link MONEY_ROUTES}
+ * already. Revert = drop the entries after `/clients/duplicates`.
+ *
  * ⚠ This list is a ROUTE gate for the external role only. It does not replace
  * the per-capability predicates (`canWriteFloor`, `canMergeClients`, …) that
  * decide which STAFF roles may act once inside — mirroring rule, Law 6.
@@ -187,6 +196,17 @@ export const STAFF_ROUTES: readonly string[] = [
   '/crew',
   '/clients/import',
   '/clients/duplicates',
+  '/today',
+  '/dashboard',
+  '/operations',
+  '/rentals',
+  '/calendar',
+  '/inventory',
+  '/clients',
+  '/documents',
+  '/team',
+  '/tools',
+  '/settings',
 ]
 
 /**

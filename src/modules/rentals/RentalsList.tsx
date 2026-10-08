@@ -1989,7 +1989,13 @@ export default function RentalsList() {
               noun="rentals"
               skeleton="table"
               skeletonRows={6}
-              emptyTitle={isFiltered ? 'No rentals match these filters' : 'No rentals found'}
+              emptyTitle={isFiltered ? 'No rentals match these filters' : 'No rentals yet'}
+              /* From main's 32c4d29: the unfiltered empty list offers its one
+                 next step. Gated like `rental.create` so a role that cannot
+                 create is not offered a page that refuses it. */
+              {...(!isFiltered && canWriteDesk
+                ? { emptyActionLabel: 'New Rental', onEmptyAction: () => navigate('/rentals/new') }
+                : {})}
               emptyMessage={
                 isFiltered
                   ? 'Try adjusting your search or active filters.'

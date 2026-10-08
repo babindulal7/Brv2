@@ -174,9 +174,11 @@ describe('Empirical Challenger — Sidebar R1 Verification', () => {
       // Finance and Analytics are money surfaces
       expect(allLinks).not.toContain('Finance')
       expect(allLinks).not.toContain('Analytics')
-      // Client can see dispatch, inventory, clients, documents
-      expect(allLinks).toContain('Today')
-      expect(allLinks).toContain('Inventory')
+      // RULING 2026-10-08: Client is portal-only (PERMISSIONS.md §3, §7), so
+      // no staff module is offered either. This used to expect Today and Inventory.
+      expect(allLinks).not.toContain('Today')
+      expect(allLinks).not.toContain('Inventory')
+      expect(allLinks).not.toContain('Rentals')
       expect(allLinks).not.toContain('Documents')
     })
 

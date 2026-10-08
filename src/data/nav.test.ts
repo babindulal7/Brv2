@@ -11,6 +11,7 @@ import {
   bottomBarSlots,
   moreNav,
   isMoneySurface,
+  isStaffSurface,
   SPEC_TABS,
 } from './nav'
 
@@ -116,6 +117,34 @@ describe('Law 6 — money-blind roles never see money surfaces', () => {
     it('strips the query, like activeNavTo', () => {
       expect(isMoneySurface('/finance?tab=invoices')).toBe(true)
     })
+  })
+})
+
+/**
+ * RULING 2026-10-08: Client is portal-only (PERMISSIONS.md §3 ✕ cells, §7 "one
+ * page, no routes"), so every staff module is a staff surface, refused by the
+ * Shell guard and omitted from nav through the same list.
+ */
+describe('Client is portal-only — every staff module is a staff surface', () => {
+  it('refuses each primary module and its children, query stripped', () => {
+    for (const path of ['/today', '/operations?queue=packing', '/rentals', '/rentals/B-715', '/rentals/new',
+      '/calendar', '/inventory/stock-check', '/clients', '/clients/C-1', '/settings', '/tools/numbering', '/crew']) {
+      expect(isStaffSurface(path), path).toBe(true)
+    }
+  })
+
+  it('offers a Client session no primary nav item', () => {
+    expect(permittedNav('Client')).toEqual([])
+  })
+
+  it('leaves the staff roles their modules', () => {
+    expect(permittedNav('Warehouse').map((s) => s.to)).toContain('/rentals')
+    expect(permittedNav('Driver').map((s) => s.to)).toContain('/today')
+  })
+
+  it('matches on a path segment, never a bare prefix', () => {
+    expect(isStaffSurface('/todayish')).toBe(false)
+    expect(isStaffSurface('/login')).toBe(false)
   })
 })
 

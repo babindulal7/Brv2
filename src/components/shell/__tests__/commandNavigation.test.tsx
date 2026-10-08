@@ -36,6 +36,7 @@ describe('command navigation', () => {
     await mount('Client')
     expect(host.textContent).not.toContain('Finance')
     expect(host.textContent).not.toContain('Crew Assist')
-    expect(host.textContent).toContain('Inventory')
+    // RULING 2026-10-08: Client is portal-only (PERMISSIONS.md §3, §7).
+    expect(host.textContent).not.toContain('Inventory')
   })
 })
