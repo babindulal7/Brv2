@@ -862,6 +862,11 @@ export default function RentalsList() {
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const mobileSearchTrigger = useRef<HTMLButtonElement>(null)
+  const closeMobileSearch = () => {
+    setMobileSearchOpen(false)
+    mobileSearchTrigger.current?.focus()
+  }
   const { showSuccessToast } = useToast()
   const bulkProcessing = false
 
@@ -1606,6 +1611,7 @@ export default function RentalsList() {
           <button
             type="button"
             className="rentals-header-mobile-search-btn"
+            ref={mobileSearchTrigger}
             onClick={() => setMobileSearchOpen((o) => !o)}
             aria-label="Toggle rentals search"
             aria-expanded={mobileSearchOpen}
@@ -1613,13 +1619,13 @@ export default function RentalsList() {
             <Icon name="search" size={16} />
           </button>
 
-          <FilterButton
+          {viewport !== 'phone' && <FilterButton
             onClick={() => setFiltersOpen((open) => !open)}
             activeCount={f.activeCount}
             controls="rentals-filters"
             expanded={filtersOpen}
             inHeader={false}
-          />
+          />}
 
           {/* When exactly 1 rental is selected, expose its operations menu in the header */}
           {selectedHeaderRental && canOperate && (
@@ -1629,34 +1635,26 @@ export default function RentalsList() {
             />
           )}
 
-          {/* Secondary actions collapse into More (⋯); only primary stays visible on smaller screens */}
-          {canOperate && (
+          {canWriteDesk && (
             <Button
-              className="rentals-header-desktop-action"
-              variant="secondary"
+              variant="primary"
               size="sm"
-              icon="refresh"
-              onClick={() => setFastReturnOpen(true)}
+              icon="plus"
+              aria-label="New Rental"
+              onClick={() => navigate('/rentals/new')}
             >
-              Fast Return
-            </Button>
-          )}
-
-          {canRecord && (
-            <Button
-              className="rentals-header-desktop-action"
-              variant="secondary"
-              size="sm"
-              icon="card"
-              onClick={() => setPaymentModalOpen(true)}
-            >
-              Record Payment
+              {viewport === 'phone' ? 'New' : 'New Rental'}
             </Button>
           )}
 
           <OverflowMenu
             ariaLabel="More rentals actions"
             items={[
+              ...(viewport === 'phone' ? [{
+                label: f.activeCount > 0 ? `Filters (${f.activeCount})` : 'Filters',
+                icon: 'filter' as const,
+                onClick: () => setFiltersOpen((open) => !open),
+              }] : []),
               ...(selectedHeaderRental
                 ? [
                     {
@@ -1726,12 +1724,6 @@ export default function RentalsList() {
                   ]
                 : []),
               {
-                label: 'Duplicate Rental',
-                icon: 'copy' as const,
-                onClick: () => {},
-                unavailable: 'Duplication is not available for this record',
-              },
-              {
                 label: 'Productions Hub',
                 icon: 'queues' as const,
                 onClick: () => navigate('/crew/productions'),
@@ -1748,17 +1740,6 @@ export default function RentalsList() {
               },
             ]}
           />
-
-          {canWriteDesk && (
-            <Button
-              variant="primary"
-              size="sm"
-              icon="plus"
-              onClick={() => navigate('/rentals/new')}
-            >
-              Add
-            </Button>
-          )}
 
           {/* Data freshness badge: visible only on 1920px+ viewports to protect header width */}
           <span className="rentals-header-data-age">
@@ -1779,20 +1760,19 @@ export default function RentalsList() {
             onChange={(val) => f.setSearch(val)}
             onClear={() => {
               f.setSearch('')
-              setMobileSearchOpen(false)
             }}
             aria-label="Search rentals"
             placeholder="Search rentals…"
             wrapperStyle={{ width: '100%' }}
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === 'Escape') setMobileSearchOpen(false)
+              if (e.key === 'Escape') closeMobileSearch()
             }}
           />
           <button
             type="button"
             className="rentals-mobile-search-close"
-            onClick={() => setMobileSearchOpen(false)}
+            onClick={closeMobileSearch}
             aria-label="Close search"
           >
             <Icon name="close" size={16} />
