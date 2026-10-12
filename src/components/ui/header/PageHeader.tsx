@@ -9,7 +9,7 @@
  * money-blind (Law 6), single prominent primary CTA, and typed action registry driven.
  */
 
-import React, { cloneElement, isValidElement, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { cloneElement, isValidElement, useEffect, useLayoutEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import Icon, { type IconName } from '../Icon'
@@ -274,22 +274,22 @@ export function PageHeader({
   style,
 }: PageHeaderProps) {
   const ws = useOptionalWorkspace()
+  const setPageInfo = ws?.setPageInfo
+  const setHeaderData = ws?.setHeaderData
   const { user } = useAuth()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [activeConfirmAction, setActiveConfirmAction] = useState<PageActionItem | null>(null)
 
   // Sync page description into workspace if present
-  useEffect(() => {
-    if (ws && description) {
-      ws.setPageInfo(description)
-      return () => ws.setPageInfo(null)
-    }
-  }, [ws, description])
+  useLayoutEffect(() => {
+    setPageInfo?.(description ?? null)
+  }, [setPageInfo, description])
 
   // Sync header data into workspace shell when available
-  useEffect(() => {
-    if (!ws) return
-    ws.setHeaderData({
+  // RULING 2026-10-12: register through stable setters; context updates must not reset the header.
+  useLayoutEffect(() => {
+    if (!setHeaderData) return
+    setHeaderData({
       title,
       leading,
       icon,
@@ -311,11 +311,8 @@ export function PageHeader({
       creationContext,
       showAddMenu,
     })
-    return () => {
-      ws.setHeaderData(null)
-    }
   }, [
-    ws,
+    setHeaderData,
     title,
     leading,
     icon,
@@ -337,6 +334,11 @@ export function PageHeader({
     creationContext,
     showAddMenu,
   ])
+
+  useLayoutEffect(() => () => {
+    setHeaderData?.(null)
+    setPageInfo?.(null)
+  }, [setHeaderData, setPageInfo])
 
   // Global hotkey '/' to focus search input if not inside form controls
   useEffect(() => {

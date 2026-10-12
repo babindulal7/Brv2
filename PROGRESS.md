@@ -1,5 +1,78 @@
 # Progress Log
 
+## 2026-10-13 — Smarter application header on every page
+
+**Did**
+- Header creation is honest and one tap: `GlobalAddMenu` is a split button naming the page's own creation (New Client, New Equipment, New Bundle, New Document) with ▾ for the rest; the module falls back to the route, so Inventory, Documents and Tools no longer get Today's defaults. New Rental keeps one `Add ▾` menu because navigation owns a New Rental door. On a phone the ▾ is dropped.
+- Removed every creation flow that only showed a toast: the quick wizard ("Booking BK-2026-#### created", random number), the equipment/expense drawer and the generic dialog wrote nothing. Menus now offer New Rental (real workspace), New Client (`createClient`), New Equipment (`/inventory/new`) and New Bundle (`/inventory/bundles/new`); Documents keeps New Document through its own `createDocument` handler. New Equipment is offered only to `inventory.create` holders (Warehouse saw it and would have been refused).
+- `Header.tsx`: a title that repeats its parent collapses ("Clients › Clients" → "Clients"); on a phone the nearest linked ancestor becomes a 44px back button (Booking, Client, Asset, Bundle detail all get "‹" with no per-page code); the phone title takes the free width and ends in "…".
+- Phone headers de-crowded: Inventory Refresh/Export and Clients Export move to More; Booking Detail keeps its stage action, a 44px Operations button and one More (Print, Message, Extend, Assign crew, Sub-rental merged into the rental More, the duplicate Cancel dropped); its stage badge leaves the phone header because the stepper names the stage. Rental More items raised from 34–38px to 44px. Desktop unchanged.
+- New `headerCrumbs.test.tsx` (6); `globalAddMenu.test.tsx` Section 3 rewritten (11) plus a catalogue honesty test.
+
+**Ruled**
+- `RULINGS-2026-10-13.md` § "Smarter application header" — five rows (creation honesty, equipment gate, one-tap split/New Rental door, crumbs/back, phone de-crowding) with reverts; `// RULING 2026-10-13` at each code site. No permission cell, money rule, engine, migration or database write changed.
+
+**Verified**
+- Typecheck clean for every file this work touched; ESLint clean on them. `lint:shell` 650 files, `lint:ui-copy`, `check:contrast` 54/54 passed.
+- Final full suite on the finished code: 338 files, 4309/4309 tests passed (two workers), recorded in `.test-result.json`. Migrations and lifecycle were not re-run: no migration, RPC or engine changed.
+- Browser (mock, Owner, localhost:3009 served from this checkout): Clients/Inventory/Bundles show New Client/New Equipment/New Bundle split buttons at 1280px; Today/Tools show `Add ▾`; Add → New Rental lands on `/rentals?action=new` with no wizard dialog. At 375px: Booking B-902 header fits (was 624px wide, title 0px) with "‹ B-902 · An…", More, Operations, Search, profile; its More lists Print/Message/Extend/Assign crew/Sub-rental/Quote/Invoice/Duplicate/Audit/Cancel at 44px; Clients and Inventory headers no longer clip the profile button; every header control ≥ 44px; header 64px.
+- Not done: no live Supabase access; production build not run (the other session's in-progress type errors would fail it); the toast-only wizard, drawer and generic dialog components still exist, unreached.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T14:04:43.985Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Phone headers still crowded on Calendar, Finance, Operations and Settings (title 0px, 1–3 controls clipped at 375px). Finance and Operations were being edited by another session (pagination) during this work; tsc currently reports that session's in-progress errors in ClientsDirectory, Documents, Expenses and Finance.
+- Wire task/maintenance/inspection/crew/template/agreement/user/role/expense/payment creation to real actions before returning them to the menus; then delete the toast-only wizard, drawer and generic dialog paths.
+
+## 2026-10-12 — Single-header ownership verified in main
+
+**Did**
+- Completed the requested shell/Rentals first pass: page-owned actions suppress fallback Add; Rentals has one New Rental primary; Fast Return and Record Payment live once in More; phone Filters lives in More; one phone search; no Duplicate Rental placeholder. Preserved the newer committed role tests and ruling table.
+- Fixed a browser-discovered shared PageHeader registration loop. Stable setters update metadata without repeated cleanup; navigation releases ownership. Added bounded registration/release coverage to the header ownership suite.
+- Enforced the requested 64px phone header and 44px button/search-clear targets. Phone notes use profile, Alt+N remains, and phone title width yields to actions.
+- Saved screenshots, width measurements and verification logs under artifacts/one-header-2026-10-12/. Created docs/ONE_HEADER_ACCEPTANCE.md to distinguish this patch from remaining app-wide acceptance.
+- Restored a main-checkout mock server at localhost:3000; retained a verified demo review tab at 127.0.0.1:3009/rentals. The browser URL policy blocked reopening old internal error-page tabs; no workaround was used.
+
+**Ruled**
+- RULINGS-2026-10-12.md records page action ownership, 64px header, phone placement and stable registration. Existing domain engines, permissions, transactions and custody rules are unchanged.
+
+**Verified**
+- Clean dependency install, typecheck and full source lint passed. The installer reported 13 dependency vulnerabilities for deployment review; dependencies were not upgraded.
+- Final full suite: 337 files, 4294/4294 tests passed with two workers. An earlier four-worker run had two timeout failures (PWA install and smart hover); 16/16 isolated tests passed, and the final full run passed both suites and all four ownership regressions.
+- Local final gates: 160/160 migrations rebuilt with zero failures, exposure/hygiene checks green; lifecycle 30/30 green. No migration or data was applied to live Supabase.
+- Final build passed (exit 0), including 298 offline cache entries. Shell lint 649 files and theme contrast 54/54 passed.
+- Browser Owner: Rentals at 1440/1280/1024/390/320px has one primary, 64px header, 44px buttons, no header cutoff or horizontal page overflow. New Rental has Confirm/Save controls without Add at the same five widths. Extra effective-width checks simulate 125% reflow; native browser zoom was not tested.
+- Phone More stays in viewport. Filters changed 120 rows to 18 Quotes; search narrowed Quotes to one matching project. Clear, Escape and focus return worked. Today/Rentals/New Rental navigation worked after the loop fix. Warehouse browser check: no payment action or rendered rental amounts.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4294/4294 passed (recorded 2026-10-12T14:04:39.1995304Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T14:04:43.985Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- This first patch is complete in main; the latest registration/target refinements remain uncommitted. Existing user commits and documentation were preserved.
+- Follow docs/ONE_HEADER_ACCEPTANCE.md for selected-row registry consolidation, pagination placement, other module headers/actions, native zoom and full role/write/reload acceptance.
+- Review the dependency findings before deployment. Staging migration, JWT/PostgREST, RLS, anon exposure and cross-page security verification remain required before production readiness.
+
 ## 2026-10-12 — Rentals header tests brought up to the header rework
 
 **Did**

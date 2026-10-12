@@ -2029,6 +2029,65 @@ function BookingDetailView() {
     </>
   )
 
+  const bookingMoreItems: OverflowMenuItem[] = [
+    {
+      label: 'Message client',
+      icon: 'message' as const,
+      onClick: () => undefined,
+      ...messageClient,
+    },
+    ...(canBookingMoney && canOperate
+      ? [
+          {
+            label: 'Extend rental',
+            icon: 'calendar' as const,
+            onClick: () => setShowExtendModal(true),
+            ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+          },
+        ]
+      : []),
+    ...(user && canAssignPricedCrew(user.role)
+      ? [
+          {
+            label: 'Assign crew',
+            icon: 'users' as const,
+            onClick: () => setShowCrewModal(true),
+            ...(crewUnavailableReason ? { unavailable: crewUnavailableReason } : {}),
+          },
+        ]
+      : []),
+    ...(canCrewMoney && canOperate
+      ? [
+          {
+            label: 'Create sub-rental',
+            icon: 'box' as const,
+            onClick: () => setShowSubRentalModal(true),
+            ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+          },
+        ]
+      : []),
+  ]
+
+  /*
+   * RULING 2026-10-13: a phone header keeps the title, the stage action, a 44px
+   * Operations button and ONE More. Print and the booking items join the rental
+   * More (which already carries Cancel), and WhatsApp choices are listed flat
+   * because that menu has no submenus. Desktop is unchanged.
+   */
+  const phoneMoreItems = [
+    { label: 'Print booking', icon: 'file' as const, onClick: () => window.print() },
+    ...bookingMoreItems.flatMap((item) =>
+      item.submenu
+        ? item.submenu.map((sub) => ({
+            label: `Message: ${sub.label}`,
+            icon: 'message' as const,
+            onClick: sub.onClick,
+            ...(sub.unavailable ? { unavailable: sub.unavailable } : {}),
+          }))
+        : [{ label: item.label, icon: item.icon, onClick: item.onClick, ...(item.unavailable ? { unavailable: item.unavailable } : {}) }]
+    ),
+  ]
+
   return (
     <PageShell
       width="full"
@@ -2054,7 +2113,8 @@ function BookingDetailView() {
             <PageActions
             extra={
               <>
-                <Badge status={stage} />
+                {/* On a phone the stepper's "Step n of 6 — Stage" already names it; the title keeps the width. */}
+                {!onPhone && <Badge status={stage} />}
                 {booking.isCancelled && <Badge flag="Cancelled" />}
                 {subRental && <SubRentedMark label="Sub-rental" />}
                 {booking && (
@@ -2107,11 +2167,22 @@ function BookingDetailView() {
                     selectedCount={1}
                     ariaLabel="More actions for rental"
                     onActionCompleted={refreshBookingData}
+                    compact={onPhone}
+                    {...(onPhone ? { extraItems: phoneMoreItems } : {})}
                   />
                 )}
               </>
             }
-            secondary={[
+            secondary={onPhone ? [
+              <BookingOperationsMenu
+                key="ops"
+                bookingNo={id}
+                bookingStatus={stage}
+                unavailable={operationsUnavailable}
+                primary={false}
+                compact
+              />,
+            ] : [
               stage === 'Returned' && canCloseRental(gctx.role) && (
                 cancelledReason ? (
                   <Unavailable key="reset" reason={cancelledReason}>
@@ -2141,46 +2212,11 @@ function BookingDetailView() {
                 Print booking
               </Button>,
             ].filter(Boolean)}
-            overflow={
+            overflow={onPhone ? undefined :
               <OverflowMenu
                 ariaLabel="More booking actions"
                 items={[
-                  {
-                    label: 'Message client',
-                    icon: 'message' as const,
-                    onClick: () => undefined,
-                    ...messageClient,
-                  },
-                  ...(canBookingMoney && canOperate
-                    ? [
-                        {
-                          label: 'Extend rental',
-                          icon: 'calendar' as const,
-                          onClick: () => setShowExtendModal(true),
-                          ...(cancelledReason ? { unavailable: cancelledReason } : {}),
-                        },
-                      ]
-                    : []),
-                  ...(user && canAssignPricedCrew(user.role)
-                    ? [
-                        {
-                          label: 'Assign crew',
-                          icon: 'users' as const,
-                          onClick: () => setShowCrewModal(true),
-                          ...(crewUnavailableReason ? { unavailable: crewUnavailableReason } : {}),
-                        },
-                      ]
-                    : []),
-                  ...(canCrewMoney && canOperate
-                    ? [
-                        {
-                          label: 'Create sub-rental',
-                          icon: 'box' as const,
-                          onClick: () => setShowSubRentalModal(true),
-                          ...(cancelledReason ? { unavailable: cancelledReason } : {}),
-                        },
-                      ]
-                    : []),
+                  ...bookingMoreItems,
                   {
                     label: 'Cancel booking',
                     icon: 'close',

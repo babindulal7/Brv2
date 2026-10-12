@@ -20,7 +20,6 @@ import {
   canReversePayment,
   canManageSettings,
   isStaff,
-  canWriteFloor,
 } from '../../../lib/rbac'
 
 export type CreationGroupKey =
@@ -128,12 +127,13 @@ export const CREATION_ACTIONS: CreationActionDefinition[] = [
   {
     id: 'rental.new',
     label: 'New Rental',
-    description: 'Launch four-step rental reservation workflow',
+    description: 'Open the New Rental workspace',
     icon: 'plus',
     module: 'rentals',
     group: 'rentals',
     displayPriority: 1,
-    openingMode: 'wizard',
+    // RULING 2026-10-13: header creation opens the real workspace; the quick wizard confirmed nothing.
+    openingMode: 'route',
     route: '/rentals?action=new',
     isPermitted: (role) => canWriteBookingDesk(role),
     resolveContext: (facts) => ({
@@ -201,8 +201,10 @@ export const CREATION_ACTIONS: CreationActionDefinition[] = [
     module: 'inventory',
     group: 'inventory',
     displayPriority: 1,
-    openingMode: 'drawer',
-    isPermitted: (role) => canWriteFloor(role),
+    openingMode: 'route',
+    route: '/inventory/new',
+    // RULING 2026-10-13: createEquipment needs inventory.create (canCreateBundle), not floor write.
+    isPermitted: (role) => canCreateBundle(role),
     resolveContext: (facts) => ({
       equipmentId: facts.equipmentId,
     }),
@@ -215,7 +217,8 @@ export const CREATION_ACTIONS: CreationActionDefinition[] = [
     module: 'bundles',
     group: 'inventory',
     displayPriority: 2,
-    openingMode: 'modal',
+    openingMode: 'route',
+    route: '/inventory/bundles/new',
     isPermitted: (role) => canCreateBundle(role),
   },
   {
@@ -594,4 +597,46 @@ export function getGroupedGlobalActions(
  */
 export function getAllPermittedActions(role?: SystemRole | null): CreationActionDefinition[] {
   return CREATION_ACTIONS.filter((a) => !role || a.isPermitted(role))
+}
+
+/**
+ * Creation actions whose flow writes through a real action and reloads as saved.
+ *
+ * RULING 2026-10-13: the quick wizard, drawer and generic dialog behind the other
+ * ids show a success toast without writing anything ("Booking BK-2026-#### created"
+ * with a random number, "Expense Recorded", "Record Created"). A creation menu offers
+ * only these ids until a flow is wired to its action; the mapping above stays the
+ * per-module intent. Revert = return `true` from isCreationActionReady.
+ */
+export const READY_CREATION_ACTION_IDS: ReadonlySet<string> = new Set([
+  'rental.new',
+  'client.new',
+  'equipment.new',
+  'bundle.new',
+])
+
+export function isCreationActionReady(action: CreationActionDefinition): boolean {
+  return READY_CREATION_ACTION_IDS.has(action.id)
+}
+
+/**
+ * The page's creation choices as a menu offers them: permitted, ready, with the
+ * module's default first and the first ready alternative promoted when the
+ * default cannot be offered.
+ */
+export function getReadyContextualActions(
+  moduleOrPath: string,
+  role?: SystemRole | null
+): { defaultAction: CreationActionDefinition | null; otherActions: CreationActionDefinition[] } {
+  const { defaultAction, otherActions } = getContextualActions(moduleOrPath, role)
+  const ready = [defaultAction, ...otherActions].filter(
+    (a): a is CreationActionDefinition => a !== null && isCreationActionReady(a)
+  )
+  const [first, ...rest] = ready
+  return { defaultAction: first ?? null, otherActions: rest }
+}
+
+/** Every permitted creation action a menu may offer anywhere in the app. */
+export function getReadyPermittedActions(role?: SystemRole | null): CreationActionDefinition[] {
+  return getAllPermittedActions(role).filter(isCreationActionReady)
 }

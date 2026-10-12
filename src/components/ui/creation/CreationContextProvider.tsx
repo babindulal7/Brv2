@@ -62,7 +62,8 @@ export function useRegisterCreationContext(
 
 export function CreationContextProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
-  const [activeModule, setActiveModule] = useState('today')
+  // Empty until a page registers one; GlobalAddMenu then falls back to the route.
+  const [activeModule, setActiveModule] = useState('')
   const [contextData, setContextData] = useState<Record<string, unknown>>({})
   const [activeActionId, setActiveActionId] = useState<string | null>(null)
   const [mergedContext, setMergedContext] = useState<Record<string, unknown>>({})

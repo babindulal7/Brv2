@@ -153,7 +153,10 @@ describe('Documents Workspace (Bento 2.0 / Design Taste)', () => {
     )
 
     const addBtn = Array.from(el.querySelectorAll<HTMLButtonElement>('button')).find(
-      (b) => b.textContent?.includes('Add') || b.textContent?.includes('Create Document'),
+      (b) =>
+        b.textContent?.includes('Add') ||
+        b.textContent?.includes('Create Document') ||
+        b.textContent?.includes('New Document'),
     )
     expect(addBtn).toBeDefined()
 

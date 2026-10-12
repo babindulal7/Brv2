@@ -1,0 +1,102 @@
+[
+  {
+    "physicalWidth": 1440,
+    "zoomEquivalent": 1,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 1440
+  },
+  {
+    "physicalWidth": 1280,
+    "zoomEquivalent": 1,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 1280
+  },
+  {
+    "physicalWidth": 1024,
+    "zoomEquivalent": 1,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 1024
+  },
+  {
+    "physicalWidth": 390,
+    "zoomEquivalent": 1,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 390
+  },
+  {
+    "physicalWidth": 320,
+    "zoomEquivalent": 1,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 320
+  },
+  {
+    "physicalWidth": 1440,
+    "zoomEquivalent": 1.25,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 1152
+  },
+  {
+    "physicalWidth": 1280,
+    "zoomEquivalent": 1.25,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 1024
+  },
+  {
+    "physicalWidth": 1024,
+    "zoomEquivalent": 1.25,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 819
+  },
+  {
+    "physicalWidth": 390,
+    "zoomEquivalent": 1.25,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 312
+  },
+  {
+    "physicalWidth": 320,
+    "zoomEquivalent": 1.25,
+    "createCount": 1,
+    "cutOff": false,
+    "headerHeight": 64,
+    "overflow": false,
+    "smallButtons": [],
+    "width": 256
+  }
+]

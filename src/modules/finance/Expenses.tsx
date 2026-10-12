@@ -37,7 +37,6 @@ import type { Database } from '../../types/supabase'
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
-import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
 import { useNetwork } from '../../lib/network'
 import './finance.css'
@@ -993,11 +992,6 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
           </div>
 
           <Card title={countedTitle} bodyStyle={{ padding: 0 }}>
-            {total !== null && (
-              <AppPageToolbar
-                pagination={<Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />}
-              />
-            )}
             {/*
               Fixed ladder: restricted → error → loading → empty → children.
               `restricted` is spread here too — this card is the surface whose

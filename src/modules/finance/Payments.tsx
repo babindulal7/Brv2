@@ -28,7 +28,6 @@ import type { Database } from '../../types/supabase'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { DateField } from '../../components/ui/DateField'
-import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import '../../components/ui/list-workspace.css'
 import { Pagination } from '../../components/ui/Pagination'
 import { IntelCard } from '../../components/ui/IntelCard'
@@ -743,11 +742,6 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         }}
       >
         <Card title={`Payments${countSuffix}`} bodyStyle={{ padding: tabular ? 0 : 10 }}>
-          {total !== null && (
-            <AppPageToolbar
-              pagination={<Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />}
-            />
-          )}
           {/*
             Fixed ladder: restricted → error → loading → empty → children.
             `financeRestriction` outranks everything, so a money-blind session is

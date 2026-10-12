@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { FooterNote } from '../../components/ui/Page'
+import { RentalTimeline } from './RentalTimeline'
 import { RentalSummaryModal } from './modals/RentalSummaryModal'
 import { WorkspaceHeaderRightActions, WorkspaceHeaderSearch } from '../../components/shell/WorkspacePortal'
 import { SearchInput } from '../../components/ui/SearchInput'
@@ -115,7 +116,7 @@ import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext
  *
  * The legacy KPI strip is intentionally absent from the V2 list shell: the
  * operational table is the primary surface. Pagination, filter state and the
- * disabled Timeline affordance remain wired to their existing behaviour.
+ * Timeline view remain wired to their existing behaviour.
  */
 
 /**
@@ -853,7 +854,7 @@ export default function RentalsList() {
    */
   const gctx = useMemo(() => gateContext(role), [role])
 
-  const [view, setView] = useState<'Table' | 'Cards'>('Table')
+  const [view, setView] = useState<'Table' | 'Cards' | 'Timeline'>('Table')
   const [hiddenCols, setHiddenCols] = useState<Set<OptionalColumn>>(new Set())
   const [cancellingRental, setCancellingRental] = useState<RentalListRow | null>(null)
   const [inspectingRental, setInspectingRental] = useState<RentalListRow | null>(null)
@@ -1685,19 +1686,19 @@ export default function RentalsList() {
               ...(selectedHeaderRental
                 ? [
                     {
-                      label: 'Open Booking View',
+                      label: `Open Booking (${selectedHeaderRental.bookingNo})`,
                       icon: 'folder' as const,
                       onClick: () => navigate(`/rentals/${selectedHeaderRental.bookingNo}?view=booking`),
                     },
                     {
-                      label: 'Open Quote View',
+                      label: `Open Quote (${selectedHeaderRental.bookingNo})`,
                       icon: 'file' as const,
                       onClick: () => navigate(`/rentals/${selectedHeaderRental.bookingNo}?view=quote`),
                     },
                     ...(money
                       ? [
                           {
-                            label: 'Find Invoices',
+                            label: `Find Invoices (${selectedHeaderRental.bookingNo})`,
                             icon: 'invoice' as const,
                             onClick: () => navigate(`/finance/invoices?search=${encodeURIComponent(selectedHeaderRental.bookingNo)}`),
                           },
@@ -1706,7 +1707,7 @@ export default function RentalsList() {
                     ...(role === 'Owner' || role === 'Admin' || role === 'Manager'
                       ? [
                           {
-                            label: 'Audit Log',
+                            label: `Audit Log (${selectedHeaderRental.bookingNo})`,
                             icon: 'checklist' as const,
                             onClick: () => navigate(`/audit?recordId=${encodeURIComponent(selectedHeaderRental.id)}`),
                           },
@@ -1715,7 +1716,7 @@ export default function RentalsList() {
                     ...(canWriteDesk && !selectedHeaderRental.isCancelled && !selectedHeaderRental.isClosed
                       ? [
                           {
-                            label: 'Cancel Booking',
+                            label: `Cancel Booking (${selectedHeaderRental.bookingNo})`,
                             icon: 'alert_triangle' as const,
                             onClick: () => setCancellingRental(selectedHeaderRental),
                           },
@@ -1807,10 +1808,10 @@ export default function RentalsList() {
         filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}
         groupAriaLabel="Filter by operational view"
         rightSlot={
-          tabular && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              {/* Spec §19 — the list's only sort control. Pickup is the default;
-                  the type sorts are opt-in and round-trip in the URL (§34). */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {/* Spec §19 — the list's only sort control. Pickup is the default;
+                the type sorts are opt-in and round-trip in the URL (§34). */}
+            {tabular && (
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Sort
                 <select
@@ -1838,18 +1839,19 @@ export default function RentalsList() {
                   <option value="project_type:desc">Project Type Z → A</option>
                 </select>
               </label>
-              <SegmentedControl
-                size="sm"
-                ariaLabel="List view"
-                options={[
-                  { id: 'Table', label: 'Table', icon: 'checklist' },
-                  { id: 'Cards', label: 'Cards', icon: 'queues' },
-                ]}
-                value={view === 'Cards' ? 'Cards' : 'Table'}
-                onChange={(next) => setView(next as 'Table' | 'Cards')}
-              />
-            </span>
-          )
+            )}
+            <SegmentedControl
+              size="sm"
+              ariaLabel="List view"
+              options={[
+                ...(tabular ? [{ id: 'Table' as const, label: 'Table', icon: 'checklist' as const }] : []),
+                { id: 'Cards' as const, label: 'Cards', icon: 'queues' as const },
+                { id: 'Timeline' as const, label: 'Timeline', icon: 'calendar' as const },
+              ]}
+              value={!tabular && view === 'Table' ? 'Cards' : view}
+              onChange={(next) => setView(next as 'Table' | 'Cards' | 'Timeline')}
+            />
+          </span>
         }
       >
         {RENTAL_VIEWS.map((viewItem) => {
@@ -1989,16 +1991,6 @@ export default function RentalsList() {
               />
             </div>
           }
-          pagination={
-            <Pagination
-              page={page}
-              total={total}
-              pageSize={perPage}
-              pageSizeOptions={ROWS_PER_PAGE}
-              onPageChange={setPage}
-              onPageSizeChange={setPerPage}
-            />
-          }
         />
       )}
 
@@ -2028,7 +2020,11 @@ export default function RentalsList() {
                   : 'Get started by creating your first rental.'
               }
             >
-              {((view === 'Cards' && tabular) || !tabular) && (
+              {view === 'Timeline' && (
+                <RentalTimeline rows={rowsWithIntel.map(({ row }) => row)} />
+              )}
+
+              {view !== 'Timeline' && ((view === 'Cards' && tabular) || !tabular) && (
                 <div
                   style={
                     view === 'Cards' && tabular

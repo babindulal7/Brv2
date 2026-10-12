@@ -203,12 +203,14 @@ export default function Clients() {
         actions={
           <PageActions
             primary={<GlobalAddMenu module="clients" />}
-            secondary={[
+            // RULING 2026-10-13: on a phone, Export lives in More so the title and Add keep the header.
+            secondary={phone ? [] : [
               <Button key="export" icon="download" aria-label="Export clients" onClick={exportCsv}>
-                {phone ? '' : 'Export'}
+                Export
               </Button>,
             ]}
             overflow={[
+              ...(phone ? [{ label: 'Export clients', icon: 'download' as const, onClick: exportCsv }] : []),
               { label: 'Import Clients', icon: 'upload', onClick: () => setTab('import') },
               { label: 'Duplicate Center', icon: 'users', onClick: () => setTab('duplicates') },
               ...(money ? [{ label: 'Credit Policies', icon: 'card' as const, onClick: () => setTab('credit') }] : []),

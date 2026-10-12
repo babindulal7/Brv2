@@ -509,6 +509,17 @@ export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
             </div>
           }
           title="Sub-Rentals"
+          search={
+            subTab === 'Suppliers'
+              ? {
+                  value: supplierSearch,
+                  onChange: setSupplierSearch,
+                  onClear: () => setSupplierSearch(''),
+                  placeholder: 'Search supplier name, city, phone… (press /)',
+                  ariaLabel: 'Search suppliers',
+                }
+              : undefined
+          }
         />
       )}
 

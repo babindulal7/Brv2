@@ -22,6 +22,14 @@ function rowTime(date: string, time: string): number | null {
   return Number.isFinite(fallback) ? fallback : null
 }
 
+function rowMoment(moment: { date: string; time: string; ad?: string }): number | null {
+  if (moment.ad) {
+    const adVal = rowTime(moment.ad, moment.time)
+    if (adVal !== null) return adVal
+  }
+  return rowTime(moment.date, moment.time)
+}
+
 function rentalRowHref(row: RentalListRow): string {
   if ((row.status as string) === 'Draft') {
     return `/rentals?action=new&draft=${row.id}`
@@ -42,8 +50,8 @@ export interface TimelineWindow {
 }
 
 export function buildTimelineWindow(rows: readonly RentalListRow[], now = Date.now()): TimelineWindow {
-  const starts = rows.map((row) => rowTime(row.pickup.date, row.pickup.time)).filter((value): value is number => value !== null)
-  const ends = rows.map((row) => rowTime(row.ret.date, row.ret.time)).filter((value): value is number => value !== null)
+  const starts = rows.map((row) => rowMoment(row.pickup)).filter((value): value is number => value !== null)
+  const ends = rows.map((row) => rowMoment(row.ret)).filter((value): value is number => value !== null)
   const earliest = starts.length > 0 ? Math.min(...starts) : now
   const latest = ends.length > 0 ? Math.max(...ends) : earliest + DAY_MS
   const start = dayStart(earliest)
@@ -67,7 +75,11 @@ function PhoneTimeline({ rows }: { rows: readonly RentalListRow[] }) {
               <div className="rental-timeline__client">{row.client}</div>
               <div className="rental-timeline__project">{row.project ?? 'No project'}</div>
             </div>
-            <Badge tone={row.statusKey} label={row.status} size="sm" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Badge tone={row.statusKey} label={row.status} size="sm" />
+              {row.isOverdue && <Badge tone="danger" label="Overdue" size="sm" />}
+              {row.isExternal === true && <Badge tone="ext" size="sm" />}
+            </div>
           </div>
           <div className="rental-timeline-phone__journey">
             <div className="rental-timeline-phone__event">
@@ -129,15 +141,19 @@ export function RentalTimeline({ rows }: { rows: readonly RentalListRow[] }) {
           </div>
 
           {rows.map((row) => {
-            const pickup = rowTime(row.pickup.date, row.pickup.time) ?? timelineWindow.start
-            const ret = rowTime(row.ret.date, row.ret.time) ?? pickup + DAY_MS
+            const pickup = rowMoment(row.pickup) ?? timelineWindow.start
+            const ret = rowMoment(row.ret) ?? pickup + DAY_MS
             const left = Math.max(0, ((pickup - timelineWindow.start) / DAY_MS) * DAY_WIDTH)
             const right = Math.min(timelineWindow.dayCount * DAY_WIDTH, ((ret - timelineWindow.start) / DAY_MS) * DAY_WIDTH)
             const width = Math.max(28, right - left)
             return (
               <div key={row.id} className="rental-timeline__row">
                 <div className="rental-timeline__identity">
-                  <Link to={rentalRowHref(row)} className="rental-timeline__booking">{row.bookingNo}</Link>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Link to={rentalRowHref(row)} className="rental-timeline__booking">{row.bookingNo}</Link>
+                    {row.isOverdue && <Badge tone="danger" label="Overdue" size="sm" />}
+                    {row.isExternal === true && <Badge tone="ext" size="sm" />}
+                  </div>
                   <div className="rental-timeline__client">{row.client}</div>
                   <div className="rental-timeline__project">{row.project ?? 'No project'}</div>
                 </div>

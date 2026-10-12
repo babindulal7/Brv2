@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../../components/ui/Toast'
 
-const queueResults = vi.hoisted(() => ({ counts: [0, 0], calls: 0 }))
+const queueResults = vi.hoisted(() => ({ counts: [0, 0], calls: 0, refetch: vi.fn() }))
 vi.mock('../../../lib/queries/useList', () => ({
   useList: () => {
     const total = queueResults.counts[queueResults.calls++ % 2] ?? 0
@@ -16,7 +16,7 @@ vi.mock('../../../lib/queries/useList', () => ({
     isEmpty: total === 0,
     isFiltered: false,
     total,
-    refetch: () => {},
+    refetch: queueResults.refetch,
     }
   },
 }))
@@ -59,6 +59,7 @@ beforeEach(() => {
   window.sessionStorage.clear()
   queueResults.counts = [0, 0]
   queueResults.calls = 0
+  queueResults.refetch.mockClear()
 })
 afterEach(async () => {
   await act(async () => root.unmount())
@@ -66,6 +67,19 @@ afterEach(async () => {
 })
 
 describe('focused pickup and return dashboard', () => {
+  it('places the date beside queues and refreshes both queues from More', async () => {
+    await mount()
+    expect(container.querySelector('.dashboard-workbar [aria-label="Dispatch day for pickups and returns"]')).not.toBeNull()
+    expect(buttonByLabel('More Today actions')).toBeDefined()
+    await act(async () => buttonByLabel('More Today actions')!.click())
+    const menu = document.querySelector('[role="menu"][aria-label="More Today actions"]')!
+    expect(menu.textContent).toContain('Operations')
+    const refresh = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent?.includes('Refresh movements'))!
+    await act(async () => refresh.click())
+    expect(queueResults.refetch).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[role="menu"][aria-label="More Today actions"]')).toBeNull()
+  })
+
   it('keeps the same queue layout when Today has returns and another date is empty', async () => {
     window.sessionStorage.setItem('dashboard.pickupDateFilter', JSON.stringify({ kind: 'quick', period: 'Tomorrow' }))
     window.sessionStorage.setItem('dashboard.returnDateFilter', JSON.stringify({ kind: 'quick', period: 'Tomorrow' }))

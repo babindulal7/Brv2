@@ -10,7 +10,6 @@ import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { Pagination } from '../../components/ui/Pagination'
-import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { ListControlRow, ListWorkspace } from '../../components/ui/ListWorkspace'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
@@ -1589,9 +1588,10 @@ export default function Inventory() {
     tab === 'Equipment' && !isNew ? (
       <PageActions
         primary={<GlobalAddMenu module="inventory" />}
-        secondary={[
+        // RULING 2026-10-13: on a phone, Refresh and Export live in More so the title and Add keep the header.
+        secondary={phone ? [] : [
           <Button key="refresh" icon="refresh" onClick={refreshAll} aria-label="Refresh equipment">
-            {phone ? '' : 'Refresh'}
+            Refresh
           </Button>,
           <span
             key="export"
@@ -1599,11 +1599,15 @@ export default function Inventory() {
             title={`Exports the ${list.rows.length} models on this page. The list is paged server-side, so the file is the page, not the catalogue.`}
           >
             <Button icon="download" onClick={() => exportCsv(list.rows, money)} aria-label="Export equipment on this page">
-              {phone ? '' : 'Export'}
+              Export
             </Button>
           </span>,
         ]}
         overflow={[
+          ...(phone ? [
+            { label: 'Refresh equipment', icon: 'refresh' as const, onClick: refreshAll },
+            { label: 'Export this page', icon: 'download' as const, onClick: () => exportCsv(list.rows, money) },
+          ] : []),
           {
             label: 'Warranty Tracker',
             icon: 'check',
@@ -1898,20 +1902,6 @@ export default function Inventory() {
               })}
             </div>
             <Card title={countedTitle} bodyStyle={{ padding: 0 }}>
-              {total !== null && (
-                <AppPageToolbar
-                  pagination={
-                    <Pagination
-                      page={page}
-                      total={total}
-                      pageSize={rowsPerPage}
-                      pageSizeOptions={[25, 50, 100]}
-                      onPageChange={setPage}
-                      onPageSizeChange={setRowsPerPage}
-                    />
-                  }
-                />
-              )}
               {selected.size > 0 && (
                 <div
                   style={{

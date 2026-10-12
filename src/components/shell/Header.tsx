@@ -21,6 +21,7 @@ import {
 } from '../ui/header/pageActionRegistry'
 import { AddDropdownButton } from '../ui/header/PageHeader'
 import { GlobalAddMenu } from '../ui/creation/GlobalAddMenu'
+import { MobileHeaderSearch } from './MobileHeaderSearch'
 import './shell.css'
 
 export interface Crumb {
@@ -121,6 +122,27 @@ export default function Header({ crumbs, actions }: HeaderProps) {
   }, [])
 
   const activeCrumb = crumbs[crumbs.length - 1]?.label || crumbs[0]?.label || ''
+
+  // RULING 2026-10-13: the page's registered title names the current crumb, and a
+  // current crumb that only repeats its parent ("Clients › Clients") collapses into it.
+  const displayCrumbs = useMemo((): Crumb[] => {
+    const title = hData?.title && hData.title !== 'Babin Rentals OS' ? hData.title : null
+    const named = crumbs.map((c, i) => (i === crumbs.length - 1 && title ? { ...c, label: title } : c))
+    const current = named[named.length - 1]
+    const parent = named[named.length - 2]
+    if (current && parent && current.label === parent.label) return [...named.slice(0, -2), { label: parent.label }]
+    return named
+  }, [crumbs, hData?.title])
+
+  // On a phone only the current crumb shows, so its nearest linked ancestor becomes a back button.
+  const autoBack = useMemo(() => {
+    if (!isPhone || hData?.backHref || hData?.onBack) return null
+    for (let i = displayCrumbs.length - 2; i >= 0; i--) {
+      const c = displayCrumbs[i]
+      if (c?.to) return { to: c.to, label: c.label }
+    }
+    return null
+  }, [isPhone, hData?.backHref, hData?.onBack, displayCrumbs])
 
   const effectiveInfo = useMemo(() => {
     if (ws?.pageInfo) return ws.pageInfo
@@ -252,8 +274,9 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             alignItems: 'center',
             gap: 6,
             minWidth: 0,
-            flexShrink: 1,
-            maxWidth: isPhone ? '110px' : isTablet ? '260px' : '360px',
+            // RULING 2026-10-13: on a phone the title takes whatever the controls leave, and ends in "…".
+            flex: isPhone ? '1 1 auto' : '0 1 auto',
+            maxWidth: isPhone ? undefined : isTablet ? '260px' : '360px',
             overflow: 'hidden',
           }}
         >
@@ -289,6 +312,25 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               <Icon name="chevron_left" size={18} />
             </button>
           )}
+          {autoBack && (
+            <Link
+              to={autoBack.to}
+              aria-label={`Back to ${autoBack.label}`}
+              title={`Back to ${autoBack.label}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 44,
+                minHeight: 44,
+                color: 'var(--text2)',
+                textDecoration: 'none',
+                flexShrink: 0,
+              }}
+            >
+              <Icon name="chevron_left" size={18} />
+            </Link>
+          )}
 
           {/* Module or entity icon */}
           {hData?.icon && (
@@ -310,12 +352,10 @@ export default function Header({ crumbs, actions }: HeaderProps) {
 
           {/* Breadcrumb / Title Navigation */}
           <nav aria-label="Breadcrumb" style={{ minWidth: 0, overflow: 'hidden' }}>
-            <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
-              {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {
+            <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none', minWidth: 0 }}>
+              {(isPhone && displayCrumbs.length > 1 ? [displayCrumbs[displayCrumbs.length - 1]!] : displayCrumbs).map((c, i, arr) => {
                 const last = i === arr.length - 1
-                const labelText = (last && hData?.title && hData.title !== 'Babin Rentals OS')
-                  ? hData.title
-                  : c.label
+                const labelText = c.label
 
                 const labelEl = (
                   <span
@@ -331,14 +371,14 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       display: 'inline-block',
-                      maxWidth: isPhone ? '170px' : isTablet ? '200px' : '300px',
+                      maxWidth: isPhone ? '100%' : isTablet ? '200px' : '300px',
                     }}
                   >
                     {labelText}
                   </span>
                 )
                 return (
-                  <li key={`${i}-${c.label}`} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flexShrink: 0 }}>
+                  <li key={`${i}-${c.label}`} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flexShrink: last ? 1 : 0 }}>
                     {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
                     {c.to && !last ? (
                       <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', minWidth: 0 }}>
@@ -386,7 +426,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           {/* Page Info Tooltip */}
           <span
             style={{
-              display: 'inline-flex',
+              display: isPhone ? 'none' : 'inline-flex',
               flexShrink: 0,
               visibility: effectiveInfo ? 'visible' : 'hidden',
             }}
@@ -472,8 +512,8 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                       padding: 0,
                       display: 'grid',
                       placeItems: 'center',
-                      minWidth: 28,
-                      minHeight: 28,
+                      minWidth: 44,
+                      minHeight: 44,
                     }}
                   >
                     <Icon name="close" size={13} />
@@ -682,6 +722,9 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           }}
         >
           {/* 1. Bulk Selection Mode Bar in Header */}
+          {isPhone && searchConfig && !ws?.hasPageSearch && (
+            <MobileHeaderSearch key={hData?.title ?? activeCrumb} config={searchConfig} title={hData?.title ?? activeCrumb} />
+          )}
           {hData?.bulkSelection && hData.bulkSelection.count > 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 'var(--t-meta, 13px)', fontWeight: 600, color: 'var(--text)' }}>
@@ -812,7 +855,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           </button>}
 
           {/* 8. Phone Search Toggle Icon */}
-          {isPhone && !isDispatch && !ws?.hasPageSearch && (
+          {isPhone && !searchConfig && !isDispatch && !ws?.hasPageSearch && (
             <button
               type="button"
               onClick={() => openCommandPalette()}

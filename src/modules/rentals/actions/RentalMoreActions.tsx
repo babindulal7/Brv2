@@ -65,6 +65,8 @@ export interface RentalMoreActionsProps {
   triggerClassName?: string | undefined
   /** Custom trigger button inline styles */
   triggerStyle?: CSSProperties | undefined
+  /** Icon-only 44px trigger for a crowded phone header; the accessible name stays ariaLabel. */
+  compact?: boolean | undefined
 }
 
 export function RentalMoreActions({
@@ -75,6 +77,7 @@ export function RentalMoreActions({
   ariaLabel = 'More actions',
   triggerClassName = '',
   triggerStyle,
+  compact = false,
 }: RentalMoreActionsProps) {
   const { user } = useAuth()
   const canViewMoney = useCanViewMoney()
@@ -219,7 +222,8 @@ export function RentalMoreActions({
           className={`tap ${triggerClassName}`}
           style={{
             minHeight: 44,
-            padding: '0 12px',
+            minWidth: 44,
+            padding: compact ? 0 : '0 12px',
             borderRadius: 'var(--r-btn, 8px)',
             border: '1px solid var(--border)',
             background: open ? 'var(--hover-card)' : 'var(--card)',
@@ -228,6 +232,7 @@ export function RentalMoreActions({
             fontSize: 'var(--t-meta, 13px)',
             display: 'inline-flex',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: 6,
             cursor: 'pointer',
             fontFamily: 'inherit',
@@ -236,8 +241,8 @@ export function RentalMoreActions({
           }}
         >
           <Icon name="more_vert" size={15} style={{ color: 'var(--text2)' }} />
-          <span>More</span>
-          <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />
+          {!compact && <span>More</span>}
+          {!compact && <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />}
         </button>
 
         {open &&
@@ -281,7 +286,7 @@ export function RentalMoreActions({
                           extra.onClick()
                         }}
                         style={{
-                          minHeight: 38,
+                          minHeight: 44,
                           width: '100%',
                           display: 'flex',
                           alignItems: 'center',
@@ -317,7 +322,7 @@ export function RentalMoreActions({
                     title={quoteGroup.disabledReason}
                     onClick={() => setActiveSubmenu((cur) => (cur === 'quote' ? null : 'quote'))}
                     style={{
-                      minHeight: 38,
+                      minHeight: 44,
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',
@@ -367,7 +372,7 @@ export function RentalMoreActions({
                           title={item.disabledReason}
                           onClick={() => handleItemClick(item)}
                           style={{
-                            minHeight: 34,
+                            minHeight: 44,
                             width: '100%',
                             display: 'flex',
                             alignItems: 'center',
@@ -403,7 +408,7 @@ export function RentalMoreActions({
                     title={invoiceGroup.disabledReason}
                     onClick={() => setActiveSubmenu((cur) => (cur === 'invoice' ? null : 'invoice'))}
                     style={{
-                      minHeight: 38,
+                      minHeight: 44,
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',
@@ -453,7 +458,7 @@ export function RentalMoreActions({
                           title={item.disabledReason}
                           onClick={() => handleItemClick(item)}
                           style={{
-                            minHeight: 34,
+                            minHeight: 44,
                             width: '100%',
                             display: 'flex',
                             alignItems: 'center',
@@ -492,7 +497,7 @@ export function RentalMoreActions({
                     setDuplicateDialogOpen(true)
                   }}
                   style={{
-                    minHeight: 38,
+                    minHeight: 44,
                     width: '100%',
                     display: 'flex',
                     alignItems: 'center',
@@ -528,7 +533,7 @@ export function RentalMoreActions({
                     setAuditDrawerOpen(true)
                   }}
                   style={{
-                    minHeight: 38,
+                    minHeight: 44,
                     width: '100%',
                     display: 'flex',
                     alignItems: 'center',
@@ -565,7 +570,7 @@ export function RentalMoreActions({
                       setCancelDialogOpen(true)
                     }}
                     style={{
-                      minHeight: 38,
+                      minHeight: 44,
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',

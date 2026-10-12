@@ -1,0 +1,16 @@
+
+> babin-rentals-os@0.1.0 completion
+> node scripts/completion.mjs
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4294/4294 passed (recorded 2026-10-12T14:04:39.1995304Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T14:04:43.985Z.
+Counted by `npm run completion`, not typed.

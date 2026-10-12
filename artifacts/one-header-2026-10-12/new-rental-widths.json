@@ -1,0 +1,149 @@
+[
+  {
+    "controls": [
+      {
+        "cutOff": false,
+        "label": "New Rental info"
+      },
+      {
+        "cutOff": false,
+        "label": "Search bookings, clients, equipment and pages"
+      },
+      {
+        "cutOff": false,
+        "label": "Save draft"
+      },
+      {
+        "cutOff": false,
+        "label": "More rental actions"
+      },
+      {
+        "cutOff": false,
+        "label": "Confirm Booking"
+      },
+      {
+        "cutOff": false,
+        "label": "Team internal notes"
+      },
+      {
+        "cutOff": false,
+        "label": "BA — user profile"
+      }
+    ],
+    "height": 64,
+    "overflow": false,
+    "width": 1440
+  },
+  {
+    "controls": [
+      {
+        "cutOff": false,
+        "label": "New Rental info"
+      },
+      {
+        "cutOff": false,
+        "label": "Search bookings, clients, equipment and pages"
+      },
+      {
+        "cutOff": false,
+        "label": "Save draft"
+      },
+      {
+        "cutOff": false,
+        "label": "More rental actions"
+      },
+      {
+        "cutOff": false,
+        "label": "Confirm Booking"
+      },
+      {
+        "cutOff": false,
+        "label": "Team internal notes"
+      },
+      {
+        "cutOff": false,
+        "label": "BA — user profile"
+      }
+    ],
+    "height": 64,
+    "overflow": false,
+    "width": 1280
+  },
+  {
+    "controls": [
+      {
+        "cutOff": false,
+        "label": "New Rental info"
+      },
+      {
+        "cutOff": false,
+        "label": "Search bookings, clients, equipment and pages"
+      },
+      {
+        "cutOff": false,
+        "label": "More rental actions"
+      },
+      {
+        "cutOff": false,
+        "label": "Confirm Booking"
+      },
+      {
+        "cutOff": false,
+        "label": "Team internal notes"
+      },
+      {
+        "cutOff": false,
+        "label": "BA — user profile"
+      }
+    ],
+    "height": 64,
+    "overflow": false,
+    "width": 1024
+  },
+  {
+    "controls": [
+      {
+        "cutOff": false,
+        "label": "More rental actions"
+      },
+      {
+        "cutOff": false,
+        "label": "Confirm Booking"
+      },
+      {
+        "cutOff": false,
+        "label": "Search"
+      },
+      {
+        "cutOff": false,
+        "label": "BA — user profile"
+      }
+    ],
+    "height": 64,
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "controls": [
+      {
+        "cutOff": false,
+        "label": "More rental actions"
+      },
+      {
+        "cutOff": false,
+        "label": "Confirm Booking"
+      },
+      {
+        "cutOff": false,
+        "label": "Search"
+      },
+      {
+        "cutOff": false,
+        "label": "BA — user profile"
+      }
+    ],
+    "height": 64,
+    "overflow": false,
+    "width": 320
+  }
+]

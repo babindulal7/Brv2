@@ -184,7 +184,7 @@
 }
 
 @media (max-width: 767px) {
-  :root { --page-padding: var(--space-3); --global-header-height: 56px; }
+  :root { --page-padding: var(--space-3); --global-header-height: 64px; }
 }
 
 /* ══ DESKTOP — 1280 and up ═════════════════════════════════════════════════ */

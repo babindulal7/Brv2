@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act, StrictMode } from 'react'
+import { act, StrictMode, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { WorkspaceProvider } from '../../../lib/workspaceContext'
+import { WorkspaceProvider, useWorkspace } from '../../../lib/workspaceContext'
+import { PageHeader } from '../../ui/header/PageHeader'
 import { WorkspaceHeaderRightActions, WorkspaceHeaderSearch } from '../WorkspacePortal'
 import Header from '../Header'
 
@@ -41,6 +42,60 @@ async function renderPage(page: 'rentals' | 'edit' | 'plain') {
 }
 
 describe('page ownership of the application header', () => {
+  it('uses the contextual phone search, preserves its query on Escape and clears without closing', async () => {
+    state.viewport = 'phone'
+    function SearchPage() {
+      const [query, setQuery] = useState('BK-120')
+      return <PageHeader title="Today" search={{ value: query, onChange: setQuery, ariaLabel: 'Search movements' }} />
+    }
+    await act(async () => root.render(<MemoryRouter><WorkspaceProvider>
+      <Header crumbs={[{ label: 'Today' }]} /><SearchPage />
+    </WorkspaceProvider></MemoryRouter>))
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Search Today"]')!
+    expect(trigger).not.toBeNull()
+    expect(container.querySelector('[aria-label="Search"]')).toBeNull()
+    await act(async () => trigger.click())
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Search movements"]')!
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('BK-120')
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('[role="search"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    await act(async () => trigger.click())
+    expect(container.querySelector<HTMLInputElement>('input')?.value).toBe('BK-120')
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Clear search query"]')!.click())
+    expect(container.querySelector<HTMLInputElement>('input')?.value).toBe('')
+    expect(document.activeElement).toBe(container.querySelector('input'))
+    await act(async () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+    expect(container.querySelector('[role="search"]')).toBeNull()
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })))
+    expect(document.activeElement).toBe(container.querySelector('input'))
+  })
+
+  it('registers page metadata without repeated context updates and releases it on navigation', async () => {
+    let renders = 0
+    function WorkspaceProbe() {
+      const workspace = useWorkspace()
+      renders += 1
+      if (renders > 15) throw new Error('Header registration did not settle')
+      return <output>{workspace.headerData?.title ?? 'No page'}</output>
+    }
+    const actions = <button>Open Operations</button>
+    async function renderMetadata(active: boolean) {
+      await act(async () => root.render(<WorkspaceProvider>
+        <WorkspaceProbe />
+        {active && <PageHeader title="Today" description="Dispatch queues" actions={actions} />}
+      </WorkspaceProvider>))
+    }
+    await renderMetadata(true)
+    expect(container.querySelector('output')?.textContent).toBe('Today')
+    const settledRenders = renders
+    await renderMetadata(true)
+    expect(renders - settledRenders).toBeLessThan(3)
+    await renderMetadata(false)
+    expect(container.querySelector('output')?.textContent).toBe('No page')
+  })
+
   it('replaces fallback creation on list/edit navigation and restores it after release', async () => {
     await renderPage('plain')
     expect(container.textContent).toContain('Global Add')

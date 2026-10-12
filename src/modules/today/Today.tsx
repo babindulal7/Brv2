@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import Icon from '../../components/ui/Icon'
 import { CalendarPopover } from '../../components/ui/DateField'
 import { PageHeader } from '../../components/ui/Page'
-import { Button } from '../../components/ui/Button'
+import { OverflowMenu } from '../../components/ui/OverflowMenu'
 import { GlobalAddMenu } from '../../components/ui/creation/GlobalAddMenu'
 import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { PageShell } from '../../components/ui/PageShell'
@@ -579,7 +579,7 @@ export default function Today() {
         return
       }
 
-      if (e.key === '/') {
+      if (e.key === '/' && !isPhone) {
         e.preventDefault()
         counterInputRef.current?.focus()
       } else if (e.key === '[' || e.key === 'p' || e.key === 'P') {
@@ -596,7 +596,7 @@ export default function Today() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [goToToday, stepDay])
+  }, [goToToday, stepDay, isPhone])
 
   const navigate = useNavigate()
 
@@ -606,21 +606,6 @@ export default function Today() {
       header={
         <PageHeader
           title="Today"
-          status={
-            <span
-              className="eyebrow-pill"
-              style={{
-                textTransform: 'none',
-                fontWeight: 600,
-                fontSize: 'var(--t-meta, 13px)',
-                letterSpacing: 'normal',
-              }}
-            >
-              {pickupCount === undefined || returnCount === undefined
-                ? 'Movement board'
-                : `${pickupCount} outgoing · ${returnCount} incoming`}
-            </span>
-          }
           search={{
             value: globalSearch,
             onChange: setGlobalSearch,
@@ -631,46 +616,41 @@ export default function Today() {
             inputRef: counterInputRef,
           }}
           actions={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-              <DataAgeBadge
-                loadedAt={
-                  pickups.lastFetchedAt && returns.lastFetchedAt
-                    ? new Date(Math.min(pickups.lastFetchedAt.getTime(), returns.lastFetchedAt.getTime()))
-                    : null
-                }
-                onRefresh={refetchMovement}
-                loading={pickups.loading || returns.loading}
-              />
-              <MasterDispatchDateControl
-                filter={pickupDateFilter}
-                onChange={syncBothPanels}
-                today={dayAd}
-                onStepDay={stepDay}
-              />
-              <Button
-                variant="secondary"
-                icon="queues"
-                onClick={() => navigate('/operations')}
-                title="Open Operations turnaround queues"
-              >
-                Operations
-              </Button>
+            // RULING 2026-10-13: one compact action cluster; date filtering sits with its queues.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
               <GlobalAddMenu module="today" />
+              <OverflowMenu ariaLabel="More Today actions" items={[
+                { label: 'Operations', icon: 'queues', onClick: () => navigate('/operations') },
+                { label: 'Refresh movements', icon: 'refresh', onClick: refetchMovement,
+                  ...(pickups.loading || returns.loading ? { unavailable: 'Movements are refreshing' } : {}) },
+              ]} />
             </div>
           }
         />
       }
     >
       <div className="dashboard-workbar">
+        <MasterDispatchDateControl
+          filter={pickupDateFilter}
+          onChange={syncBothPanels}
+          today={dayAd}
+          onStepDay={stepDay}
+        />
         {/* The day in one line (ruled 8 Oct 2026, RULINGS-2026-10-08.md) — the
             same counts the Pickups/Returns badges show, said as a sentence. */}
         <div className="dashboard-workbar__intro">
-          <span>{masterDispatchParts(pickupDateFilter, dayAd).primary}</span>
           <p>
             {pickupCount === undefined || returnCount === undefined
               ? 'Movement board'
               : `${pickupCount} going out · ${returnCount} coming back`}
           </p>
+          <DataAgeBadge
+            loadedAt={pickups.lastFetchedAt && returns.lastFetchedAt
+              ? new Date(Math.min(pickups.lastFetchedAt.getTime(), returns.lastFetchedAt.getTime()))
+              : null}
+            loading={pickups.loading || returns.loading}
+            compact
+          />
         </div>
       </div>
 

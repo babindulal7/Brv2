@@ -801,16 +801,6 @@ export default function OperationsQueues() {
 
       <AppPageToolbar
         bulkActions={selectedBookingNos.size > 0 ? <span className="figure">{selectedBookingNos.size} selected</span> : undefined}
-        pagination={
-          <Pagination
-            page={currentPage + 1}
-            total={visibleJobs.length}
-            pageSize={pageSize}
-            pageSizeOptions={[25, 50, 100]}
-            onPageChange={(nextPage) => setPage(nextPage - 1)}
-            onPageSizeChange={setPageSize}
-          />
-        }
       />
       </>}
 

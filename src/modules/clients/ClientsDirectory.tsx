@@ -13,7 +13,6 @@ import {
   FilterOptionList,
   filterGroupStyle,
 } from '../../components/ui/FilterDrawer'
-import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { BsAdDate } from '../../components/ui/BsAdDate'
 import { Pagination } from '../../components/ui/Pagination'
 import type { ActiveFilter } from '../../components/ui/FilterDrawer'
@@ -1528,21 +1527,6 @@ export function ClientsDirectory({
           }}
         >
           <Card bodyStyle={{ padding: 0 }}>
-            <AppPageToolbar
-              pagination={
-                <Pagination
-                  page={current}
-                  total={filteredClients.length}
-                  pageSize={perPage}
-                  pageSizeOptions={CLIENT_ROWS_PER_PAGE}
-                  onPageChange={setPage}
-                  onPageSizeChange={(size) => {
-                    setPerPage(size)
-                    resetPage()
-                  }}
-                />
-              }
-            />
             {selectedRowIds.size > 0 && <div
               style={{
                 display: 'flex',

@@ -52,4 +52,3 @@ export function WorkspaceHeaderRightActions({ children }: { children: ReactNode 
   if (!workspace) return <>{children}</>
   return workspace.headerRightActionsElement ? createPortal(children, workspace.headerRightActionsElement) : null
 }
-

@@ -14,13 +14,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { ToastProvider } from '../../Toast'
 import {
   MODULE_CONTEXTUAL_MAPPING,
   getContextualActions,
   getGroupedGlobalActions,
   getAllPermittedActions,
+  getReadyContextualActions,
+  getReadyPermittedActions,
 } from '../CreationActionRegistry'
 import { GlobalAddMenu } from '../GlobalAddMenu'
 import { CreationContextProvider } from '../CreationContextProvider'
@@ -190,88 +192,95 @@ describe('Universal Add Dropdown — Specification Verification', () => {
   })
 
   // ───────────────────────────────────────────────────────────────────────────
-  // SECTION 3: GlobalAddMenu Component Interaction & Accessibility
+  // SECTION 3: GlobalAddMenu — one tap to the page's own creation
+  // RULING 2026-10-13: only creation flows that write through a real action are offered.
+  // New Rental keeps its navigation door (RULINGS-2026-10-07), so it stays inside Add.
   // ───────────────────────────────────────────────────────────────────────────
-  describe('Section 3: GlobalAddMenu Dropdown Interaction', () => {
-    it('renders the universal Add button with >= 44x44px touch target (Law 15)', async () => {
+  describe('Section 3: GlobalAddMenu', () => {
+    function LocationProbe() {
+      const location = useLocation()
+      return <output data-testid="location">{location.pathname + location.search}</output>
+    }
+
+    async function renderMenu(props: { module?: string; onSelectAction?: (a: { id: string }) => void }, path = '/today') {
       await act(async () => {
         root.render(
-          <MemoryRouter>
+          <MemoryRouter initialEntries={[path]}>
             <ToastProvider>
               <CreationContextProvider>
-                <GlobalAddMenu module="rentals" />
+                <GlobalAddMenu {...props} />
+                <LocationProbe />
               </CreationContextProvider>
             </ToastProvider>
           </MemoryRouter>
         )
       })
+    }
 
-      const triggerBtn = container.querySelector('button[aria-label="Create new record"]') as HTMLButtonElement
-      expect(triggerBtn).not.toBeNull()
-      expect(triggerBtn.textContent).toContain('Add')
-      expect(triggerBtn.style.minHeight).toBe('44px')
+    const primaryButton = () => container.querySelector<HTMLButtonElement>('.global-add-menu__primary')
+    const chevron = () => container.querySelector<HTMLButtonElement>('button[aria-label="More create options"]')
+    const addTrigger = () => container.querySelector<HTMLButtonElement>('button[aria-label="Create new record"]')
+    const location = () => container.querySelector('[data-testid="location"]')?.textContent
+    const menuItemText = () =>
+      Array.from(document.querySelectorAll('.global-add-menu .global-add-menu__item')).map((i) => i.textContent)
+
+    it('names the page creation on the one-tap segment, both segments >= 44px (Law 15)', async () => {
+      await renderMenu({ module: 'clients' })
+
+      expect(primaryButton()?.textContent).toContain('New Client')
+      expect(primaryButton()?.style.minHeight).toBe('44px')
+      expect(chevron()?.style.minHeight).toBe('44px')
+      expect(chevron()?.style.width).toBe('44px')
     })
 
-    it('opens dropdown on single click without initiating record creation', async () => {
+    it('opens the real equipment form in one tap, taking the module from the route', async () => {
+      await renderMenu({}, '/inventory')
+      expect(primaryButton()?.textContent).toContain('New Equipment')
+
       await act(async () => {
-        root.render(
-          <MemoryRouter>
-            <ToastProvider>
-              <CreationContextProvider>
-                <GlobalAddMenu module="rentals" />
-              </CreationContextProvider>
-            </ToastProvider>
-          </MemoryRouter>
-        )
+        primaryButton()!.click()
       })
+      expect(location()).toBe('/inventory/new')
+    })
 
-      const triggerBtn = container.querySelector('button[aria-label="Create new record"]') as HTMLButtonElement
-      expect(triggerBtn).not.toBeNull()
+    it('keeps New Rental inside one Add menu, since navigation already has a New Rental door', async () => {
+      await renderMenu({ module: 'today' })
 
-      // Dropdown menu is closed initially
+      expect(primaryButton()).toBeNull()
+      expect(addTrigger()?.textContent).toContain('Add')
+      expect(addTrigger()?.textContent).not.toContain('New Rental')
       expect(document.querySelector('.global-add-menu')).toBeNull()
 
-      // Single click opens menu
       await act(async () => {
-        triggerBtn.click()
+        addTrigger()!.click()
       })
-
-      const menu = document.querySelector('.global-add-menu')
-      expect(menu).not.toBeNull()
-
-      // Contextual actions are displayed: New Rental (default), New Quote, New Client
-      const items = menu?.querySelectorAll('.global-add-menu__item')
-      expect(items).toBeDefined()
-      expect(items!.length).toBeGreaterThanOrEqual(3)
-
-      const defaultItem = menu?.querySelector('.global-add-menu__item--default')
-      expect(defaultItem?.textContent).toContain('New Rental')
-
-      const allItemsText = Array.from(items!).map((i) => i.textContent)
-      expect(allItemsText.some((t) => t?.includes('New Quote'))).toBe(true)
-      expect(allItemsText.some((t) => t?.includes('New Client'))).toBe(true)
+      expect(menuItemText()).toEqual(['New Rental', 'New Client'])
+      expect(location()).toBe('/today')
     })
 
-    it('closes dropdown on Escape key', async () => {
+    it('opens the real New Rental workspace from the menu, not the quick wizard', async () => {
+      await renderMenu({ module: 'rentals' })
       await act(async () => {
-        root.render(
-          <MemoryRouter>
-            <ToastProvider>
-              <CreationContextProvider>
-                <GlobalAddMenu module="rentals" />
-              </CreationContextProvider>
-            </ToastProvider>
-          </MemoryRouter>
-        )
+        addTrigger()!.click()
+      })
+      const newRental = Array.from(document.querySelectorAll<HTMLButtonElement>('.global-add-menu__item')).find(
+        (b) => b.textContent === 'New Rental'
+      )
+      await act(async () => {
+        newRental!.click()
       })
 
-      const triggerBtn = container.querySelector('button[aria-label="Create new record"]') as HTMLButtonElement
+      expect(location()).toBe('/rentals?action=new')
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+    })
+
+    it('closes the menu on Escape', async () => {
+      await renderMenu({ module: 'clients' })
       await act(async () => {
-        triggerBtn.click()
+        chevron()!.click()
       })
       expect(document.querySelector('.global-add-menu')).not.toBeNull()
 
-      // Press Escape on document with bubble
       await act(async () => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       })
@@ -279,33 +288,56 @@ describe('Universal Add Dropdown — Specification Verification', () => {
       expect(document.querySelector('.global-add-menu')).toBeNull()
     })
 
-    it('hides financial actions in dropdown when user is Warehouse role', async () => {
+    it('hides financial actions in the menu for the Warehouse role', async () => {
       mockRole = 'Warehouse'
-
+      await renderMenu({ module: 'rentals' })
       await act(async () => {
-        root.render(
-          <MemoryRouter>
-            <ToastProvider>
-              <CreationContextProvider>
-                <GlobalAddMenu module="rentals" />
-              </CreationContextProvider>
-            </ToastProvider>
-          </MemoryRouter>
-        )
+        addTrigger()!.click()
       })
-
-      const triggerBtn = container.querySelector('button[aria-label="Create new record"]') as HTMLButtonElement
-      await act(async () => {
-        triggerBtn.click()
-      })
-
-      const menu = document.querySelector('.global-add-menu')
-      const menuText = menu?.textContent ?? ''
-
+      const menuText = document.querySelector('.global-add-menu')?.textContent ?? ''
       expect(menuText).toContain('New Rental')
       expect(menuText).toContain('New Client')
-      // Quote must NOT appear
       expect(menuText).not.toContain('New Quote')
+    })
+
+    it('runs a page-owned creation through the page handler and hides sibling flows that save nothing', async () => {
+      const onSelect = vi.fn()
+      await renderMenu({ module: 'documents', onSelectAction: onSelect })
+
+      expect(primaryButton()?.textContent).toContain('New Document')
+      await act(async () => {
+        primaryButton()!.click()
+      })
+      expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'document.new' }))
+
+      if (chevron()) {
+        await act(async () => {
+          chevron()!.click()
+        })
+        expect(menuItemText()).not.toContain('New Template')
+        expect(menuItemText()).not.toContain('New Agreement')
+      }
+    })
+
+    it('renders nothing where no working creation flow exists for the page', async () => {
+      await renderMenu({ module: 'operations' })
+      expect(primaryButton()).toBeNull()
+      expect(addTrigger()).toBeNull()
+    })
+
+    it('offers New Equipment only to roles that hold inventory.create', () => {
+      expect(getReadyContextualActions('inventory', 'Owner').defaultAction?.id).toBe('equipment.new')
+      const warehouse = getReadyContextualActions('inventory', 'Warehouse')
+      expect(warehouse.defaultAction).toBeNull()
+      expect(warehouse.otherActions).toHaveLength(0)
+    })
+
+    it('never offers a creation flow that only shows a toast', () => {
+      const ids = getReadyPermittedActions('Owner').map((a) => a.id)
+      expect(ids.sort()).toEqual(['bundle.new', 'client.new', 'equipment.new', 'rental.new'])
+      for (const id of ['quote.new', 'payment.record', 'expense.new', 'task.new', 'user.new']) {
+        expect(ids).not.toContain(id)
+      }
     })
   })
 
@@ -351,6 +383,25 @@ describe('Universal Add Dropdown — Specification Verification', () => {
       expect(onSelectSpy).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'bundle.new' })
       )
+    })
+
+    it('lists no creation flow that only shows a toast', async () => {
+      await act(async () => {
+        root.render(
+          <MemoryRouter>
+            <CreationActionSearch isOpen={true} onClose={vi.fn()} onSelectAction={vi.fn()} />
+          </MemoryRouter>
+        )
+      })
+
+      const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement
+      await act(async () => {
+        searchInput.value = 'payment'
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+
+      const labels = Array.from(container.querySelectorAll('.action-search-match')).map((m) => m.textContent)
+      expect(labels.some((t) => t?.includes('Record Payment'))).toBe(false)
     })
   })
 

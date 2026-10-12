@@ -7,8 +7,6 @@ interface AppPageToolbarProps {
   filterChips?: ReactNode
   /** Right slot: Result count, columns, view toggles */
   rightSlot?: ReactNode
-  /** Pagination component */
-  pagination?: ReactNode
 }
 
 /**

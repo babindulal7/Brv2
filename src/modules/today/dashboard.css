@@ -95,7 +95,7 @@
   /* The dispatch calendar drops over the movement panels below, which are
      positioned with their own z-index — without this the popup can paint
      under them. */
-  z-index: 60;
+  z-index: auto;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -2319,10 +2319,18 @@
    belong to surfaces/labels; zero figures stay neutral and red needs overdue work. */
 .dashboard-workbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 30rem);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 1rem 1.5rem;
   min-width: 0;
+}
+
+.dashboard-workbar__intro {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .dashboard-workbar__intro span {
@@ -3024,7 +3032,7 @@
    of these, and a wall of solid blue would drown the rows themselves. Three
    classes deep to outrank the older `.rental-dashboard__panels … .is-dominant` link style. */
 .rental-dashboard .rental-dashboard__panels .movement-card__cta-btn {
-  min-height: var(--tap, 44px);
+  min-height: 56px;
   padding: 0 0.95rem;
   border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
   border-radius: var(--r-btn, 8px);
@@ -3202,6 +3210,42 @@
 @keyframes today-row-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
+}
+
+/* RULING 2026-10-13: full dates and floor actions must remain readable on phone/iPad. */
+.rental-dashboard .movement-card__schedule strong {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1279px) {
+  .rental-dashboard .rental-dashboard__panels .movement-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "client booking"
+      "pickup pickup"
+      "return return"
+      "status status";
+  }
+  /* The status below already states overdue duration, without duplicating a narrow rail. */
+  .rental-dashboard .movement-card__when { display: none; }
+  .rental-dashboard .movement-card__client { white-space: normal; overflow-wrap: anywhere; }
+  .rental-dashboard .movement-card__schedule {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: left;
+  }
+  .rental-dashboard .movement-card__schedule strong { text-align: right; }
+  .rental-dashboard .movement-card__status-action { flex-direction: column; align-items: stretch; gap: 8px; }
+  .rental-dashboard .movement-card__cta-btn { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 767px) {
+  .rental-dashboard .dashboard-master-date-control__date-btn { padding-inline: 4px; gap: 4px; }
+  .rental-dashboard .dashboard-master-date-control__cal { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

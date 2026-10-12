@@ -18,6 +18,7 @@ import { useAuth } from '../../../lib/auth'
 import {
   CREATION_ACTIONS,
   CANONICAL_CREATION_GROUPS,
+  isCreationActionReady,
   type CreationActionDefinition,
   type CreationGroupKey,
 } from './CreationActionRegistry'
@@ -39,9 +40,9 @@ export function CreationActionSearch({
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Filter actions based on role and query
+  // Filter actions based on role, readiness and query
   const permittedActions = CREATION_ACTIONS.filter(
-    (act) => !user || act.isPermitted(user.role)
+    (act) => (!user || act.isPermitted(user.role)) && isCreationActionReady(act)
   )
 
   const filteredActions = permittedActions.filter((act) => {

@@ -49,7 +49,6 @@ import {
   type SortKey,
 } from '../../lib/queries/documents'
 import { DateField } from '../../components/ui/DateField'
-import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { ListControlRow } from '../../components/ui/ListWorkspace'
 import { Pagination } from '../../components/ui/Pagination'
 import { IS_MOCK } from '../../lib/supabase'
@@ -755,22 +754,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </span>}
           />
 
-          <AppPageToolbar
-            pagination={
-              <Pagination
-                page={current}
-                total={rows.length}
-                pageSize={perPage}
-                pageSizeOptions={PER_PAGE}
-                onPageChange={setPage}
-                onPageSizeChange={(size) => {
-                  setPerPage(size)
-                  setPage(1)
-                }}
-              />
-            }
-          />
-
           {/* §11 — the bulk bar appears only on selection. */}
           {selected.size > 0 && (
             <div className="doc-bulk-bar">
@@ -983,6 +966,22 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 </tbody>
               </table>
             </DataTableShell>
+          )}
+
+          {rows.length > 0 && (
+            <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+              <Pagination
+                page={current}
+                total={rows.length}
+                pageSize={perPage}
+                pageSizeOptions={PER_PAGE}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPerPage(size)
+                  setPage(1)
+                }}
+              />
+            </div>
           )}
 
         </Card>

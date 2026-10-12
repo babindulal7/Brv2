@@ -20,6 +20,8 @@ export interface BookingOperationsMenuProps {
   /** A booking-level refusal, such as cancellation. */
   unavailable?: string | null
   primary?: boolean
+  /** Icon-only 44px trigger for a crowded phone header; the accessible name stays "Operations". */
+  compact?: boolean
 }
 
 /**
@@ -32,6 +34,7 @@ export default function BookingOperationsMenu({
   bookingStatus,
   unavailable = null,
   primary = false,
+  compact = false,
 }: BookingOperationsMenuProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -76,13 +79,16 @@ export default function BookingOperationsMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
+        {...(compact ? { 'aria-label': 'Operations', title: 'Operations' } : {})}
         onClick={() => setOpen((value) => !value)}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
+          justifyContent: 'center',
           gap: 6,
           minHeight: 44,
-          padding: '0 12px',
+          minWidth: 44,
+          padding: compact ? 0 : '0 12px',
           borderRadius: 'var(--r-btn)',
           fontFamily: 'inherit',
           fontSize: 'var(--t-meta)',
@@ -92,8 +98,7 @@ export default function BookingOperationsMenu({
           ...triggerSkin,
         }}
       >
-        Operations
-        <Icon name="chevron_down" size={14} />
+        {compact ? <Icon name="checklist" size={17} /> : <>Operations<Icon name="chevron_down" size={14} /></>}
       </button>
 
       {open && (

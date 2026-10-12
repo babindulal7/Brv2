@@ -59,7 +59,6 @@ import DailyClosing from './DailyClosing'
 import { ReportCatalog } from '../reports/ReportCatalog'
 import { DateField } from '../../components/ui/DateField'
 import { exportInvoicePdf } from '../../lib/pdf/exportPdf'
-import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
 import './finance.css'
 import { BsAdDate } from '../../components/ui/BsAdDate'
@@ -1542,18 +1541,6 @@ export default function Finance() {
                         })}
                   </div>
                 <Card title={invoiceCardTitle} bodyStyle={{ padding: 0 }}>
-                  {list.total !== null && (
-                    <AppPageToolbar
-                      pagination={
-                        <Pagination
-                          page={page}
-                          total={list.total}
-                          pageSize={ROWS_PER_PAGE}
-                          onPageChange={setPage}
-                        />
-                      }
-                    />
-                  )}
                   {/*
                     Fixed ladder: restricted → error → loading → empty → children.
                     `restricted` is spread here as well as on the page body: this
@@ -1740,6 +1727,17 @@ export default function Finance() {
                             </span>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {list.total !== null && list.total > ROWS_PER_PAGE && (
+                      <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                        <Pagination
+                          page={page}
+                          total={list.total}
+                          pageSize={ROWS_PER_PAGE}
+                          onPageChange={setPage}
+                        />
                       </div>
                     )}
                   </PageBody>
