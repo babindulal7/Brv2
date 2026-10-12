@@ -467,13 +467,14 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                   gap: 8,
                   width: '100%',
                   minWidth: 0,
-                  height: 38,
+                  height: 44,
                   minHeight: 44, /* TouchInset compliant (Law 15) */
                   padding: '0 12px',
                   borderRadius: 'var(--r-input, 8px)',
                   background: 'var(--input-bg)',
                   border: '1px solid var(--input-border)',
                   boxShadow: 'var(--specular-rim), 0 1px 3px rgba(0, 0, 0, 0.04)',
+                  boxSizing: 'border-box',
                 }}
               >
                 <Icon name="search" size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
@@ -532,13 +533,14 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                   width: '100%',
                   flexShrink: 1,
                   minWidth: 0,
-                  height: 38,
+                  height: 44,
                   minHeight: 44, /* TouchInset compliant (Law 15) */
                   padding: '0 14px',
                   borderRadius: 'var(--r-input)',
                   background: 'var(--input-bg)',
                   border: '1px solid var(--input-border)',
                   boxShadow: 'var(--specular-rim), 0 1px 3px rgba(0, 0, 0, 0.04)',
+                  boxSizing: 'border-box',
                   cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
@@ -591,7 +593,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               className="workspace-header-search"
               style={{
                 display: ws?.hasPageSearch ? 'flex' : 'none',
-                width: 'min(360px, 100%)',
+                width: '100%',
                 minWidth: 0,
               }}
             />

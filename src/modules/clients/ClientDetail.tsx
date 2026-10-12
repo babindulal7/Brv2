@@ -748,19 +748,26 @@ function ClientDetailView() {
 
       {leaveError && <ErrorBanner title="Unsaved changes." message={leaveError} />}
 
-      <KpiStrip items={kpis} columns={kpis.length} />
+      <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : kpis.length} />
 
       {/* Spec 8.2 TABLET — "section tabs scroll". They used to squash instead,
           because the row had no overflow behaviour of its own. */}
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', overflowX: 'auto', overscrollBehaviorX: 'contain' }}>
+      <div
+        role="tablist"
+        aria-label="Client detail sections"
+        style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', overflowX: 'auto', overscrollBehaviorX: 'contain' }}
+      >
         {tabs.map((t) => {
           const on = activeTab === t.key
           return (
             <button
               key={t.key}
               type="button"
+              role="tab"
+              id={`client-tab-${t.key}`}
+              aria-controls={`client-panel-${t.key}`}
+              aria-selected={on}
               onClick={() => setTab(t.key)}
-              aria-current={on ? 'page' : undefined}
               style={{
                 // Law 15 — this strip is the record's only section switch.
                 minHeight: 44,
@@ -783,9 +790,10 @@ function ClientDetailView() {
         })}
       </div>
 
-      {activeTab === 'overview' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--sp-md)' }}>
-          <Card title="Identity">
+      <div role="tabpanel" id={`client-panel-${activeTab}`} aria-labelledby={`client-tab-${activeTab}`}>
+        {activeTab === 'overview' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--sp-md)' }}>
+            <Card title="Identity">
             <EditableRows
               edit={edit}
               rows={[
@@ -1378,6 +1386,7 @@ function ClientDetailView() {
             up first, not fabricated here. */}No activity recorded yet. </p>
         </Card>
       )}
+      </div>
 
       <FooterNote extra={['Clients are never deleted — a closed account is retained and marked']} />
 

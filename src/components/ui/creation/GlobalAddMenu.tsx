@@ -187,9 +187,9 @@ function GlobalAddMenuView({
 
   const segment = {
     minHeight: 44,
-    border: '1px solid var(--accent, #e65100)',
-    background: 'var(--accent, #e65100)',
-    color: '#ffffff',
+    border: '1px solid transparent',
+    background: 'var(--btn-primary-bg, var(--primary, #2456d6))',
+    color: 'var(--btn-primary-fg, #ffffff)',
     fontWeight: 600,
     fontSize: 'var(--t-meta, 13px)',
     display: 'inline-flex',

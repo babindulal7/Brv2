@@ -1287,6 +1287,10 @@ export default function Inventory() {
     []
   )
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [bundleSearch, setBundleSearch] = useState('')
+  const [bundleFilterCount, setBundleFilterCount] = useState(0)
+  const [maintenanceSearch, setMaintenanceSearch] = useState('')
+  const [subRentalSearch, setSubRentalSearch] = useState('')
   const [sort, setSort] = useState<SortKey>('Equipment A–Z')
   const [view, setView] = useState<'table' | 'grid'>('table')
   const [density, setDensity] = useState<Density>('comfortable')
@@ -1628,7 +1632,7 @@ export default function Inventory() {
           leading: (
             <FilterButton
               onClick={() => setFiltersOpen((open) => !open)}
-              activeCount={tab === 'Equipment' ? activeFacetCount : 0}
+              activeCount={tab === 'Equipment' ? activeFacetCount : bundleFilterCount}
               controls={tab === 'Equipment' ? 'inventory-filters' : 'bundle-filters'}
               expanded={filtersOpen}
             />
@@ -1659,7 +1663,31 @@ export default function Inventory() {
                 onClear: () => setSearchTerm(''),
                 ariaLabel: 'Search inventory',
               }
-            : undefined
+            : tab === 'Bundles' && params.get('action') !== 'new'
+              ? {
+                  value: bundleSearch,
+                  onChange: setBundleSearch,
+                  placeholder: 'Search bundles, ID, or equipment… (press /)',
+                  onClear: () => setBundleSearch(''),
+                  ariaLabel: 'Search bundles',
+                }
+              : tab === 'Maintenance'
+                ? {
+                    value: maintenanceSearch,
+                    onChange: setMaintenanceSearch,
+                    placeholder: 'Search job, equipment, serial… (press /)',
+                    onClear: () => setMaintenanceSearch(''),
+                    ariaLabel: 'Search maintenance jobs',
+                  }
+                : tab === 'Sub-Rentals'
+                  ? {
+                      value: subRentalSearch,
+                      onChange: setSubRentalSearch,
+                      placeholder: 'Search SR ID, equipment, partner… (press /)',
+                      onClear: () => setSubRentalSearch(''),
+                      ariaLabel: 'Search sub-rentals',
+                    }
+                  : undefined
         }
         description="Find equipment, check availability, and manage stock."
         actions={equipmentActions}
@@ -1731,11 +1759,17 @@ export default function Inventory() {
           />
           </Suspense>
       ) : tab === 'Bundles' ? (
-        <Bundles filtersOpen={filtersOpen} onFiltersClose={() => setFiltersOpen(false)} />
+        <Bundles
+          filtersOpen={filtersOpen}
+          onFiltersClose={() => setFiltersOpen(false)}
+          searchQuery={bundleSearch}
+          onSearchChange={setBundleSearch}
+          onActiveFilterCountChange={setBundleFilterCount}
+        />
       ) : tab === 'Sub-Rentals' ? (
-        <SubRental embedded />
+        <SubRental embedded searchQuery={subRentalSearch} onSearchChange={setSubRentalSearch} />
       ) : tab === 'Maintenance' ? (
-        <Maintenance />
+        <Maintenance searchQuery={maintenanceSearch} onSearchChange={setMaintenanceSearch} />
       ) : tab === 'Stock Check' ? (
         /*
          * §7.3 as a pane. The same component still serves

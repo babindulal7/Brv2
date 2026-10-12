@@ -301,7 +301,7 @@ export function BundleDetail() {
         }
       />
 
-      <KpiStrip items={kpis} columns={kpis.length} />
+      <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : kpis.length} />
 
       {/*
         §4.44 — the window every availability figure below is measured against,

@@ -6,6 +6,7 @@ import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { getInventoryReportSummary, sharePercent, type InventoryReportSummary } from '../../lib/queries/inventoryReports'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import ShortageSection from './ShortageSection'
 
 const NOT_MEASURED = 'not measured'
@@ -42,6 +43,7 @@ export function inventoryCsv(summary: InventoryReportSummary | null, money: bool
 
 export default function InventoryReports() {
   const money = useCanViewMoney()
+  const viewport = useViewport()
   const [summary, setSummary] = useState<InventoryReportSummary | null>(null)
   const [loaded, setLoaded] = useState(false)
 
@@ -85,7 +87,7 @@ export default function InventoryReports() {
       {/* Real counts only (Law 16). A figure with no source reads "Not measured",
           never 0 or a plausible default; before the read lands it reads "…". */}
       <KpiStrip
-        columns={4}
+        columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4}
         items={[
           { label: 'Total Assets', value: countValue(summary?.activeUnits), icon: 'box', accent: 'primary', note: 'Units not retired' },
           { label: 'Utilization', value: 'Not measured', icon: 'activity', accent: 'progress', note: 'No rate-over-time source yet' },

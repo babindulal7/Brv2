@@ -218,7 +218,21 @@ function DocTile({ icon, index }: { icon: IconName; index: number }) {
  * `/documents` and `/finance/documents` both render `embedded={false}` and keep
  * both, because a deep link arrives with no tab strip above it.
  */
-export default function Documents({ embedded = false }: { embedded?: boolean }) {
+export default function Documents({
+  embedded = false,
+  filtersOpen: externalFiltersOpen,
+  onFiltersClose,
+  searchQuery: externalSearchQuery,
+  onSearchChange,
+  onActiveFilterCountChange,
+}: {
+  embedded?: boolean
+  filtersOpen?: boolean
+  onFiltersClose?: () => void
+  searchQuery?: string
+  onSearchChange?: (q: string) => void
+  onActiveFilterCountChange?: (count: number) => void
+}) {
   const { user } = useAuth()
   /* §8.3 — the shared hook, same call site as every other screen. `role` is
      still read off the session below, but only for `gateContext`'s field-level
@@ -277,7 +291,15 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const [params, setParams] = useSearchParams()
   const catParam = params.get('cat')
   const category: CategoryKey | 'All' = categories.find((c) => c.key.toLowerCase() === catParam)?.key ?? 'All'
-  const [query, setQuery] = useState('')
+  const [localQuery, setLocalQuery] = useState('')
+  const query = externalSearchQuery ?? localQuery
+  const setQuery = useCallback(
+    (q: string) => {
+      if (onSearchChange) onSearchChange(q)
+      else setLocalQuery(q)
+    },
+    [onSearchChange],
+  )
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [type, setType] = useState(ALL_TYPES)
@@ -285,7 +307,9 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const [related, setRelated] = useState(ALL_RELATED)
   const [branch, setBranch] = useState(ALL_BRANCHES)
   const [sort, setSort] = useState<SortKey>('Created Date')
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
+  const filtersOpen = externalFiltersOpen ?? internalFiltersOpen
+  const closeFilters = onFiltersClose ?? (() => setInternalFiltersOpen(false))
   /*
     Spec 9.5 draws a card grid ("TABLET 3-up · PHONE 2-up") and this screen
     had no width read at all: `cards` defaulted to false at every width, so a
@@ -388,6 +412,10 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     branch !== ALL_BRANCHES,
   ].filter(Boolean).length
 
+  useEffect(() => {
+    onActiveFilterCountChange?.(documentFilterCount)
+  }, [documentFilterCount, onActiveFilterCountChange])
+
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
   const current = Math.min(page, pageCount)
   // Memoized so its identity only changes when the page's actual row set
@@ -488,12 +516,14 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             ariaLabel: 'Search documents by name, ID, type, record or client',
           }}
           leading={
-            <FilterButton
-              onClick={() => setFiltersOpen(!filtersOpen)}
-              activeCount={documentFilterCount}
-              controls="documents-filters"
-              expanded={filtersOpen}
-            />
+            !embedded ? (
+              <FilterButton
+                onClick={() => setInternalFiltersOpen(!filtersOpen)}
+                activeCount={documentFilterCount}
+                controls="documents-filters"
+                expanded={filtersOpen}
+              />
+            ) : undefined
           }
           actions={
             <>
@@ -685,7 +715,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             <FilterDrawer
               id="documents-filters"
               open={filtersOpen}
-              onClose={() => setFiltersOpen(false)}
+              onClose={closeFilters}
               desktopMode="overlay"
               width={360}
               resultCount={rows.length}
@@ -693,7 +723,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               activeCount={documentFilterCount}
               onClearAll={clearDocumentFilters}
               standardFooter
-              onApply={() => setFiltersOpen(false)}
+              onApply={closeFilters}
             >
               {categoriesContent}
             </FilterDrawer>

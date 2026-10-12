@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { recordExport } from '../../lib/exportAudit'
 import { useNavigate, Link } from 'react-router-dom'
+import { useViewport } from '../../lib/device'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
 import { DataTableShell } from '../../components/ui/DataTable'
@@ -373,8 +374,17 @@ function SupplierDirectoryTable({
   )
 }
 
-export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
+export function SubRental({
+  embedded = false,
+  searchQuery: externalSearchQuery,
+  onSearchChange,
+}: {
+  embedded?: boolean
+  searchQuery?: string
+  onSearchChange?: (q: string) => void
+} = {}) {
   const navigate = useNavigate()
+  const viewport = useViewport()
 
   const { user } = useAuth()
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
@@ -419,7 +429,15 @@ export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
           : records.filter((r) => r.status === label).length,
   })), [records, recordCount])
 
-  const [searchQuery, setSearchQuery] = useState('')
+  const [localSearchQuery, setLocalSearchQuery] = useState('')
+  const searchQuery = externalSearchQuery ?? localSearchQuery
+  const setSearchQuery = useCallback(
+    (q: string) => {
+      if (onSearchChange) onSearchChange(q)
+      else setLocalSearchQuery(q)
+    },
+    [onSearchChange],
+  )
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [subTab, setSubTab] = useState<'Transactions' | 'Suppliers'>('Transactions')
@@ -494,6 +512,8 @@ export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
     return ((revenue - cost) / revenue) * 100
   }
 
+  const kpiColumns = !canSeeFinance ? 1 : viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4
+
   return (
     <PageShell width="full">
       {!embedded && (
@@ -518,7 +538,13 @@ export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
                   placeholder: 'Search supplier name, city, phone… (press /)',
                   ariaLabel: 'Search suppliers',
                 }
-              : undefined
+              : {
+                  value: searchQuery,
+                  onChange: setSearchQuery,
+                  onClear: () => setSearchQuery(''),
+                  placeholder: 'Search SR ID, equipment, partner… (press /)',
+                  ariaLabel: 'Search sub-rental transactions',
+                }
           }
         />
       )}
@@ -547,7 +573,7 @@ export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
         <>
       {/* KPIs — Law 6 / §4.1: the three ₨ tiles are omitted entirely for a
           role without asset-finance visibility, not rendered then hidden. */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canSeeFinance ? 4 : 1}, minmax(0, 1fr))`, gap: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${kpiColumns}, minmax(0, 1fr))`, gap: 'var(--sp-md)' }}>
         <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card)' }}>
           <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             Records
@@ -604,8 +630,13 @@ export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
           {filterChips.map((chip) => (
             <button
               key={chip.label}
+              type="button"
+              aria-pressed={activeFilter === chip.label}
               onClick={() => setActiveFilter(chip.label)}
               style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                minHeight: 'var(--tap, 44px)',
                 padding: '6px 14px',
                 borderRadius: 'var(--r-modal)',
                 fontSize: 13,

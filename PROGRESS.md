@@ -1,5 +1,43 @@
 # Progress Log
 
+## 2026-10-13 — Calendar phone header de-crowding & production readiness baseline audit
+
+**Did**
+- Baseline Gate Audit executed and verified under `agency-reality-checker` protocol: fresh full run of all 11 release gates (`typecheck`, `lint`, `lint:shell`, `lint:ui-copy`, `lint:progress`, `check:contrast`, `check:fixtures`, `check:pglite`, `check:lifecycle`, `npm test`, `npm run build`) plus `check:anon`, `test:audit-coverage`, `test:race`, and `completion`.
+- Authored release documentation: `docs/release/2026-10-13/BASELINE.md` (exact exit codes and counts) and `docs/release/2026-10-13/BLOCKERS.md` (evidence-based blocker register).
+- De-crowded Calendar phone header (`src/modules/calendar/Calendar.tsx`):
+  - On phone (<768px), `FilterButton` is suppressed from the header leading position to preserve header title width; "Filters" (with active count badge) moves to the More overflow menu.
+  - Compacted primary CTA on phone to "Availability" with `calendar_event` icon (≥44px tap target).
+  - Relocated date stepper and range pill (`navButtons`: Today, BS/AD month steppers, range pill) on phone out of the 64px header into a dedicated content date toolbar (`.calendar-phone-nav`) directly above the month grid, preserving full BS and AD month labels and 44px buttons.
+  - Preserved contextual phone search via `MobileHeaderSearch`.
+  - Updated `src/components/ui/header/PageHeader.tsx` so leading elements mount within the shell div to allow portal components (like `FilterButton`) to portal properly into `Header.tsx`.
+- Added unit and responsive test suite: `src/modules/calendar/__tests__/CalendarHeader.test.tsx` (2/2 tests green).
+
+**Ruled**
+- `RULINGS-2026-10-13.md` § "Calendar phone header de-crowding": single 64px header, single compact primary action ("Availability"), contextual search, overflow More for Filters/Today, and content toolbar for date navigation on phone. No permission cell, money rule, engine, migration or database write changed.
+
+**Verified**
+- All 11 local gates pass exit code 0: `typecheck`, `lint`, `lint:shell` (650 files), `lint:ui-copy`, `check:contrast` (54/54), `check:fixtures` (640 files), `check:pglite` (160/160), `check:lifecycle` (30/30), `vitest` (4,311/4,311), `build` (exit 0).
+- Production status: **HOLD** (Local gates verified; live staging PostgREST/JWT verification unperformed; N-5 hard stop on live database push).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T22:08:25.891Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T22:08:43.905Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Phone headers still crowded on Finance, Operations, and Settings.
+- Perform live staging JWT and PostgREST verification before Owner production sign-off.
+- Secondary creation actions (maintenance, task, agreement) disabled pending real RPC implementation.
+
 ## 2026-10-13 — Smarter application header on every page
 
 **Did**

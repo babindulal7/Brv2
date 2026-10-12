@@ -27,11 +27,14 @@ import {
 } from '../../lib/queries/warranty'
 
 const chipStyle = (active: boolean): React.CSSProperties => ({
+  minHeight: 'var(--tap, 44px)',
   padding: '6px 14px',
   borderRadius: '9px',
   fontSize: '12px',
   fontWeight: 600,
   cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
   border: active ? '1px solid rgba(47, 125, 255, 0.4)' : '1px solid var(--border)',
   background: active ? 'rgba(47, 125, 255, 0.14)' : 'transparent',
   color: active ? 'var(--info)' : 'var(--text3)',
@@ -77,24 +80,32 @@ export default function WarrantyTracker() {
     setClaimTarget(null)
     setClaimAmount('10000')
     setClaimNotes('')
-    showSuccessToast(`Claim of ${formatMoney(rupees(amt))} recorded for ${claimTarget.name}`)
-  }, [claimTarget, claimAmount, claimNotes, showSuccessToast])
+    showSuccessToast(
+      canViewMoney
+        ? `Claim of ${formatMoney(rupees(amt))} recorded for ${claimTarget.name}`
+        : `Warranty claim recorded for ${claimTarget.name}`,
+    )
+  }, [claimTarget, claimAmount, claimNotes, canViewMoney, showSuccessToast])
 
   const kpis: Kpi[] = useMemo(() => [
-    {
-      label: 'Premiums Paid',
-      value: canViewMoney ? formatMoney(rupees(stats.totalPremiums)) : '•••',
-      icon: 'card',
-      accent: 'primary',
-      definition: 'Total cost of warranty policies & care packages across gear.',
-    },
-    {
-      label: 'Claims Recovered',
-      value: canViewMoney ? formatMoney(rupees(stats.totalRecovered)) : '•••',
-      icon: 'check',
-      accent: 'success',
-      definition: 'Value of repairs and replacements recovered through RMA warranty.',
-    },
+    ...(canViewMoney
+      ? [
+          {
+            label: 'Premiums Paid',
+            value: formatMoney(rupees(stats.totalPremiums)),
+            icon: 'card' as const,
+            accent: 'primary' as const,
+            definition: 'Total cost of warranty policies & care packages across gear.',
+          },
+          {
+            label: 'Claims Recovered',
+            value: formatMoney(rupees(stats.totalRecovered)),
+            icon: 'check' as const,
+            accent: 'success' as const,
+            definition: 'Value of repairs and replacements recovered through RMA warranty.',
+          },
+        ]
+      : []),
     { label: 'Expiring ≤ 60d', value: String(stats.expiringSoonCount), icon: 'alert_triangle', accent: 'warn' },
     { label: 'Expired / Void', value: String(stats.expiredCount), icon: 'alert_triangle', accent: 'danger' },
   ], [stats, canViewMoney])
@@ -105,11 +116,16 @@ export default function WarrantyTracker() {
         <PageHeader
           title="Equipment Warranty & RMA Tracker"
           description="Manufacturer guarantees, care packages, upcoming expirations (≤60d), and claims."
+          search={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search equipment, serial, provider… (press /)',
+          }}
         />
       }
     >
       {/* KPI strip */}
-      <KpiStrip items={kpis} columns={isPhone ? 2 : 4} />
+      <KpiStrip items={kpis} columns={isPhone || !canViewMoney ? 2 : 4} />
 
       {/* Filter and search bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', margin: 'var(--sp-md) 0' }}>
@@ -117,6 +133,8 @@ export default function WarrantyTracker() {
           {(['All', 'Expiring', 'Active', 'Expired'] as const).map((st) => (
             <button
               key={st}
+              type="button"
+              aria-pressed={filter === st}
               style={chipStyle(filter === st)}
               onClick={() => setFilter(st)}
             >
@@ -139,15 +157,19 @@ export default function WarrantyTracker() {
                 <th style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--text2)' }}>Coverage Provider</th>
                 <th style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--text2)' }}>End Date</th>
                 <th style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--text2)' }}>Status</th>
-                <th style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>Premium</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>Claims Recovered</th>
+                {canViewMoney && (
+                  <th style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>Premium</th>
+                )}
+                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>
+                  {canViewMoney ? 'Claims Recovered' : 'Claims'}
+                </th>
                 <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text3)' }}>
+                  <td colSpan={canViewMoney ? 7 : 6} style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text3)' }}>
                     No warranty records matching "{search}"
                   </td>
                 </tr>
@@ -178,22 +200,26 @@ export default function WarrantyTracker() {
                         label={item.status}
                       />
                     </td>
-                    <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 500 }}>
-                      {canViewMoney ? formatMoney(rupees(item.premiumCost)) : '•••'}
-                    </td>
+                    {canViewMoney && (
+                      <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 500 }}>
+                        {formatMoney(rupees(item.premiumCost))}
+                      </td>
+                    )}
                     <td style={{ padding: '10px 16px', textAlign: 'right' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>
-                        {canViewMoney ? formatMoney(rupees(item.claimsRecovered)) : '•••'}
-                      </div>
-                      <div style={{ fontSize: '11px', color: roi >= 100 ? 'var(--green)' : item.claimsCount > 0 ? 'var(--gold)' : 'var(--text3)' }}>
-                        {item.claimsCount} claim{item.claimsCount === 1 ? '' : 's'} {item.claimsCount > 0 ? `· ${roi}% ROI` : ''}
+                      {canViewMoney && (
+                        <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                          {formatMoney(rupees(item.claimsRecovered))}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '11px', color: canViewMoney && roi >= 100 ? 'var(--green)' : item.claimsCount > 0 ? 'var(--gold)' : 'var(--text3)' }}>
+                        {item.claimsCount} claim{item.claimsCount === 1 ? '' : 's'} {canViewMoney && item.claimsCount > 0 ? `· ${roi}% ROI` : ''}
                       </div>
                     </td>
                     <td style={{ padding: '10px 16px', textAlign: 'right' }}>
                       <Button
                         variant="outline"
+                        size="sm"
                         onClick={() => setClaimTarget(item)}
-                        style={{ fontSize: '12px', padding: '4px 10px' }}
                       >
                         Record Claim
                       </Button>
@@ -213,18 +239,23 @@ export default function WarrantyTracker() {
             <div style={{ padding: '10px 12px', background: 'var(--surface)', borderRadius: '8px', fontSize: 'var(--t-meta)' }}>
               <div><strong>Serial No:</strong> {claimTarget.serialNo}</div>
               <div><strong>Provider:</strong> {claimTarget.provider}</div>
-              <div><strong>Current Claims:</strong> {claimTarget.claimsCount} ({formatMoney(rupees(claimTarget.claimsRecovered))} recovered)</div>
+              <div>
+                <strong>Current Claims:</strong> {claimTarget.claimsCount}
+                {canViewMoney ? ` (${formatMoney(rupees(claimTarget.claimsRecovered))} recovered)` : ''}
+              </div>
             </div>
 
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Claim Value Recovered (NPR) *</label>
-              <input
-                type="number"
-                value={claimAmount}
-                onChange={(e) => setClaimAmount(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', marginTop: '4px' }}
-              />
-            </div>
+            {canViewMoney && (
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Claim Value Recovered (NPR) *</label>
+                <input
+                  type="number"
+                  value={claimAmount}
+                  onChange={(e) => setClaimAmount(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', marginTop: '4px' }}
+                />
+              </div>
+            )}
 
             <div>
               <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Claim / RMA Description</label>

@@ -14,6 +14,7 @@ import {
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 
 /**
  * The export body — the same four headline figures and the same two tables the
@@ -53,6 +54,7 @@ function equipmentCsv(): ReportCsvRow[] {
 
 export default function EquipmentPerformance() {
   const money = useCanViewMoney()
+  const viewport = useViewport()
   const [, setSummary] = useState<EquipmentPerformanceSummary | null>(null)
 
   useEffect(() => {
@@ -115,7 +117,7 @@ export default function EquipmentPerformance() {
           purchase-cost column, so both state the gap instead of printing
           1.45x and 8.2 months. */}
       <KpiStrip
-        columns={4}
+        columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4}
         items={[
           {
             label: 'Equipment Revenue',

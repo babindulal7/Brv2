@@ -9,6 +9,7 @@ import { ReportFamiliesNav } from '../../components/ui/ReportFamiliesNav'
 import Icon from '../../components/ui/Icon'
 import { formatMoney, rupees } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import { ROWS } from '../../data/rentals'
 import { CLIENTS_DATA } from '../../data/clients'
 import { CASES } from '../../data/cases'
@@ -87,6 +88,7 @@ const td = {
 
 export default function CustomReport() {
   const money = useCanViewMoney()
+  const viewport = useViewport()
   const [domain, setDomain] = useState<Domain>('rentals')
   const [search, setSearch] = useState('')
   const [selectedColumns, setSelectedColumns] = useState<string[]>([
@@ -311,8 +313,8 @@ export default function CustomReport() {
                 onClick={() => handleDomainChange(d)}
                 aria-pressed={active}
                 style={{
-                  height: 32,
-                  padding: '0 12px',
+                  minHeight: 44,
+                  padding: '0 14px',
                   fontSize: 'var(--t-meta)',
                   fontWeight: active ? 600 : 400,
                   border: '1px solid var(--border)',
@@ -377,8 +379,8 @@ export default function CustomReport() {
                 onClick={() => toggleColumn(col.id)}
                 aria-pressed={isSelected}
                 style={{
-                  height: 28,
-                  padding: '0 10px',
+                  minHeight: 36,
+                  padding: '0 12px',
                   borderRadius: 'var(--r-badge)',
                   fontSize: 'var(--t-meta)',
                   fontWeight: isSelected ? 600 : 400,
@@ -400,7 +402,7 @@ export default function CustomReport() {
       </div>
 
       {/* Dynamic KPIs */}
-      <KpiStrip items={kpis} />
+      <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : kpis.length} />
 
       {/* Dynamic Data Table */}
       <DataTableShell ariaLabel={`Custom tabular query with ${selectedColumns.length} fields over ${domain}`}>

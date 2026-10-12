@@ -3434,7 +3434,7 @@ export default function Calendar() {
     <PageShell width="full">
       <div className="calendar-v2">
         <PageHeader
-          leading={<FilterButton onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} />}
+          leading={!phone ? <FilterButton onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} /> : undefined}
           icon="calendar"
           title="Calendar"
           module="calendar"
@@ -3446,20 +3446,33 @@ export default function Calendar() {
           }}
           actions={
             <PageActions
-              extra={navButtons}
+              extra={!phone ? navButtons : undefined}
               primary={
-                <Button icon="calendar_event" variant="primary" onClick={() => setShowCheckAvailability(true)}>
-                  Check availability
+                <Button icon="calendar_event" variant="primary" onClick={() => setShowCheckAvailability(true)} aria-label="Check availability">
+                  {phone ? 'Availability' : 'Check availability'}
                 </Button>
               }
               secondary={[
-                viewTabs,
                 ...(desktop ? [
                   <Button key="full" icon="eye" onClick={() => setFullChoice(true)}>
                     Full View
                   </Button>,
                 ] : []),
               ].filter(Boolean)}
+              overflow={[
+                ...(phone ? [
+                  {
+                    label: activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters',
+                    icon: 'filter' as const,
+                    onClick: () => setShowFilters(true),
+                  },
+                  {
+                    label: 'Today',
+                    icon: 'calendar' as const,
+                    onClick: goToday,
+                  },
+                ] : []),
+              ]}
             />
           }
         />
@@ -3469,6 +3482,21 @@ export default function Calendar() {
       </FilterDrawer>
 
       {monthStepNote}
+
+      {phone && (
+        <div
+          className="calendar-phone-nav"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            flexWrap: 'wrap',
+            padding: 'var(--sp-sm) 0',
+          }}
+        >
+          {navButtons}
+        </div>
+      )}
 
       {/* The four-card KPI band that sat here (Active Bookings, Today's
           Operations, Equipment Utilization, Schedule Conflicts) was removed on

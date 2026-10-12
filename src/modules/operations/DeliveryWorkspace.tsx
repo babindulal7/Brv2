@@ -168,6 +168,11 @@ export function DeliveryWorkspace() {
         <PageHeader
           title="Delivery & Logistics"
           description="Kathmandu Valley rider & vehicle dispatch, gate passes, and delivery tracking."
+          search={{
+            value: searchQuery,
+            onChange: setSearchQuery,
+            placeholder: 'Search dispatch, booking, address, rider… (press /)',
+          }}
           actions={
             <PageActions
               primary={
@@ -372,14 +377,20 @@ export function DeliveryWorkspace() {
                               <button
                                 type="button"
                                 title="Print Gate Pass"
+                                aria-label={`Print Gate Pass for ${d.id}`}
                                 onClick={() => setGatePassSlip(d)}
                                 style={{
+                                  minWidth: 'var(--tap, 44px)',
+                                  minHeight: 'var(--tap, 44px)',
                                   padding: '4px 6px',
                                   borderRadius: 'var(--r-xs)',
                                   background: 'var(--surface2)',
                                   border: '1px solid var(--border)',
                                   color: 'var(--text2)',
                                   cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                               >
                                 <Icon name="file" size={13} />
@@ -569,6 +580,7 @@ export function DeliveryWorkspace() {
                                 type="button"
                                 onClick={() => handleOpenAssign(d)}
                                 style={{
+                                  minHeight: 'var(--tap, 44px)',
                                   padding: '5px 10px',
                                   borderRadius: 'var(--r-btn)',
                                   fontSize: '11.5px',
@@ -577,6 +589,8 @@ export function DeliveryWorkspace() {
                                   color: 'var(--gold)',
                                   border: '1px dashed var(--gold)',
                                   cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
                                 }}
                               >
                                 + Assign Rider
@@ -625,9 +639,9 @@ export function DeliveryWorkspace() {
                                 title="Print Gate Pass / Delivery Slip"
                                 onClick={() => setGatePassSlip(d)}
                                 style={{
-                                  minWidth: 36,
-                                  height: 34,
-                                  padding: '0 8px',
+                                  minWidth: 'var(--tap, 44px)',
+                                  minHeight: 'var(--tap, 44px)',
+                                  padding: '0 10px',
                                   borderRadius: 'var(--r-btn)',
                                   background: 'var(--surface2)',
                                   border: '1px solid var(--border)',
@@ -635,6 +649,7 @@ export function DeliveryWorkspace() {
                                   cursor: 'pointer',
                                   display: 'inline-flex',
                                   alignItems: 'center',
+                                  justifyContent: 'center',
                                   gap: 4,
                                   fontSize: '12px',
                                 }}

@@ -357,6 +357,7 @@ export default function OperationsReports() {
                 aria-pressed={on}
                 onClick={() => setActiveTab(key)}
                 className={`report-toggle-btn ${on ? 'is-active' : ''}`}
+                style={{ minHeight: 44 }}
               >
                 {label}
               </button>
@@ -368,7 +369,7 @@ export default function OperationsReports() {
       {/* TAB 1: PICKUPS & HANDOVER */}
       {activeTab === 'pickups' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={pickupKpis} />
+          <KpiStrip items={pickupKpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           <div
             style={{
@@ -507,7 +508,7 @@ export default function OperationsReports() {
       {/* TAB 2: RETURNS & INSPECTIONS */}
       {activeTab === 'returns' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={returnKpis} />
+          <KpiStrip items={returnKpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           <div
             style={{
@@ -628,7 +629,7 @@ export default function OperationsReports() {
       {/* TAB 3: OVERDUE FLEET */}
       {activeTab === 'overdue' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={overdueKpis} />
+          <KpiStrip items={overdueKpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           <div style={cardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>
@@ -719,7 +720,7 @@ export default function OperationsReports() {
       {/* TAB 4: PACKING FULFILLMENT */}
       {activeTab === 'packing' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={packingKpis} />
+          <KpiStrip items={packingKpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           <div style={cardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>

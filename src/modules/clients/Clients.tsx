@@ -161,6 +161,7 @@ export default function Clients() {
                   onClick={() => setMembershipFiltersOpen((open) => !open)}
                   controls="membership-filters"
                   expanded={membershipFiltersOpen}
+                  activeCount={Number(Boolean(params.get('mk')))}
                 />
               ),
             } : {})}
@@ -198,7 +199,26 @@ export default function Clients() {
                 },
                 ariaLabel: 'Search clients',
               }
-            : undefined
+            : activeTab === 'membership'
+              ? {
+                  value: params.get('mq') ?? '',
+                  onChange: (val: string) => {
+                    const next = new URLSearchParams(params)
+                    if (val.trim()) next.set('mq', val)
+                    else next.delete('mq')
+                    next.delete('mp')
+                    setParams(next, { replace: true })
+                  },
+                  placeholder: 'Search members by name, plan, or type… (press /)',
+                  onClear: () => {
+                    const next = new URLSearchParams(params)
+                    next.delete('mq')
+                    next.delete('mp')
+                    setParams(next, { replace: true })
+                  },
+                  ariaLabel: 'Search members',
+                }
+              : undefined
         }
         actions={
           <PageActions
