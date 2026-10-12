@@ -1,5 +1,77 @@
 # Progress Log
 
+## 2026-10-13 — Glass on Light ("frosted"); Glass becomes a finish
+
+**Did**
+- Glass now works on Light too. Mode `glass-light` resolves to `theme: 'light'` and stamps the same `data-style="glass"`; the `index.html` pre-paint does the same. `theme.css`: frosted palette (canvas `#e4ebf5`, white cards/sidebar at the 0.85 floor, Light's solid `#fff` tables/inputs/menus inherited) with a pale blue glow + white bloom. The shared finish rules (sidebar/card/floating-layer blur, card rim) moved from `[data-theme='dark'][data-style='glass']` to `[data-style='glass']`; palettes and glows stay per base. Reduced-transparency kill-switch covers both, theme-scoped so it out-ranks the glow rules (a bare selector lost on specificity; caught before shipping).
+- Glass is a finish on either base: pickers keep three buttons, Light · Dark · Glass. `theme.tsx` gained `glass` and `choose()` (Light/Dark keep the finish; Glass toggles it), so the three pickers carry no logic. The sidebar order is now Dark · Light · Glass, and the rail button keeps the finish. The Settings header picker gained `aria-pressed`.
+- `check:contrast` gained a glass section: it composites card and sidebar over each glow peak and the bare canvas, worst spot wins, for both bases (18 new checks). It failed frosted muted-on-canvas at 4.49:1 on the first glow, so the glow was lowered.
+- Tests: `themeGlass.test.tsx` +4 (frosted resolves light + style; Light/Dark keep the finish and Glass toggles; frosted survives reload; palette toggle frosted → dark). Two `useTheme` mocks updated to the new shape.
+
+**Ruled**
+- `RULINGS-2026-10-13.md` rows 10–12 (frosted ships; Glass is a finish, which changes row 1 so that Light → Glass gives frosted, Obsidian = Dark + Glass and stored `glass` is unchanged; contrast gate covers glass). `RULING 2026-10-13` comments at `theme.tsx`, `theme.css`, `Settings.tsx`, `shared.tsx`, `Sidebar.tsx`, `check-contrast.cjs`.
+
+**Verified**
+- `tsc --noEmit` exit 0; full suite 339 files, 4316/4316; `vite build` exit 0; `lint:shell` 650 clean; `check:contrast` 72/72 (frosted worst: muted on bare canvas 4.66:1, booking date on card 5.75:1; Obsidian worst: muted on bare canvas 4.94:1).
+- Browser pane, mock Owner, `localhost:3500` (this worktree, HMR): Settings "Light" while on Obsidian → `glass-light`, `data-theme=light`, `data-style=glass`, `--card rgba(255,255,255,.85)`, `--surface #fff`, booking ink `#985014`, Light+Glass both `aria-pressed`. Sidebar sequence dark, glass, light, glass, dark, light, glass → `glass`, `dark`, `light`, `glass-light`, `glass`, `glass-light`, `light`, with the pressed set matching each time. Frosted survives reload, and the boot frame paints the frosted canvas. Today's More menu in frosted is `rgba(255,255,255,.85)` + `blur(24px)`; sidebar blurred; no horizontal scroll. `/rentals/B-864/return` in frosted: floor `--card #ffffff`, 0 blurred elements. 375×812: Settings picker ends at 339px, 44px hit areas, no horizontal scroll; Today renders frosted. Reduced-transparency rule present for both bases (CSSOM; the media query itself not emulated). No console errors.
+- Not done: `prefers-reduced-transparency` not emulated live; not seen on the real warehouse tablet (floor screens stay solid either way).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T20:38:59.536Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- If Light → Glass should still jump straight to Obsidian, flip row 11 (revert noted there).
+- Booking-date colour, row 9: still waiting on Babin's word.
+- The rest of the glass entry's Remaining is unchanged (orange header Add buttons, Unsplash photos on `/inventory/warehouses`, mockup page layouts). The "Glass light twin" item is now done.
+
+## 2026-10-13 — Glass theme (Obsidian Glass hybrid)
+
+**Did**
+- New third theme **Glass** beside Light and Dark (Settings Theme row, Settings quick theme, sidebar footer). `mode: 'glass'` resolves to `theme: 'dark'` and stamps `data-style="glass"` on `<html>`; the pre-paint script in `index.html` does the same so there is no dark→glass flash.
+- `theme.css` final block: obsidian canvas with a blue-only glow (fixed), translucent cards/sidebar/header at the 0.85 floor with a hairline rim and 20px blur, solid "titanium" surfaces for tables, inputs and menus. Status colours, primary and on-colours inherited unchanged from dark.
+- Bug check (same session): floating menus/dialogs/tooltips in Glass were translucent without blur — page text showed through Today's More menu; now blurred by role. Pre-paint script now honours `high-contrast` (was one light frame per load). `/crew/timesheet` nested `<tbody>` replaced with a keyed Fragment. New `lib/__tests__/themeGlass.test.tsx` (3 tests: resolves to dark + style, clears on leave, survives reload).
+- **Applied** from `babin-glass-theme-13Oct2026-v2.zip` (10 files, cut from `602f39b`; every diff applied cleanly) onto worktree branch `claude/glass-theme-babin-v2-60f98c` — **except** one unlogged hunk: the ZIP also set `--booking-date-text: var(--text)` in the Light and Dark blocks, which would have turned booking dates from orange to plain text in every theme. Not applied; both lines stay as on `main` (ruling row 9).
+
+**Ruled**
+- `RULINGS-2026-10-13.md` § "Glass theme" — nine rows with reverts; `RULING 2026-10-13` comments at each code site. No permission, money, date, engine or migration rule changed. Row 9: booking dates stay orange (7 Oct ruling; B-7).
+
+**Verified**
+- `tsc --noEmit` exit 0; full suite 339 files, 4312/4312 passed (after the bug fixes); `lint:shell` 650 files clean; `vite build` exit 0; `check:contrast` 54/54 (that script reads only the light/dark blocks, so glass was checked separately: text 14.2:1, text2 8.8:1, muted 6.6:1, primary-text 6.3:1 on a card over the brightest glow; muted on bare canvas 4.8:1).
+- Browser (mock, Owner, headless Chromium, localhost:3000 from this checkout): Today, Inventory, Operations, Rentals render in glass at 1440×900; Today at 390×844. Sidebar picker Glass → Light → Dark → Glass sets `data-theme`/`data-style`/`br-theme-mode` correctly each time (`light -`, `dark -`, `dark glass`) and survives reload.
+- Bug check: every static route (~90) crawled as Owner in Glass AND Dark at 1440 — no Glass-only console error, no crash text, no horizontal scroll. Opened Add menu, More menu, New Client dialog: no translucent un-blurred floating layer remains. Floor `/rentals/B-864/return` and `/packing` in Glass: `--card` solid, 0 blurred elements. Settings theme row at 390/768: three buttons fit, no clipping, 44px hit area via `.tap`. Timesheet warning gone after the fix.
+- Not done: not measured on the real warehouse tablet (floor screens stay solid via `[data-floor]`, so they are unaffected); no light "frosted" twin yet.
+- **Re-verified after applying, in this worktree** (lines above are the ZIP author's): `tsc --noEmit` exit 0; `themeGlass.test.tsx` 3/3; full suite 339 files, 4312/4312; `vite build` exit 0; `lint:shell` 650 clean; `check:contrast` 54/54; `check:lifecycle` 30/30 (PGlite). Browser pane, mock Owner, `localhost:3500` served from this worktree (confirmed by fetching `theme.tsx`/`theme.css` from the server): Settings "Glass" → `data-theme=dark`, `data-style=glass`, `br-theme-mode=glass`, `--app #05080e`, `--card rgba(18,24,36,.85)`, `--surface #121722`, blue glow on body; survives navigation/reload; boot frame paints obsidian (no light flash). Sidebar picker Light → Dark → Glass: exactly one pressed each time, Dark not lit while Glass is on, `data-style` cleared on leave; 74×44 buttons. Today More menu open in Glass: `rgba(18,24,36,.85)` + `blur(24px)`. `/rentals/B-864/return` in Glass: `[data-floor]` `--card #121722`, 0 blurred elements. `/crew/timesheet`: 1 `tbody`, 0 nested, no console warning. Booking dates in Glass compute `rgb(232,160,110)` (orange). 390×844: Settings theme row fits (Glass right edge 354px), `.tap` hit area 44px, no horizontal scroll; Today renders. No console errors on any page visited.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T20:38:59.536Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Booking-date colour: if the ZIP's `var(--text)` change was intended, flip ruling row 9 (one edit per line in `theme.css`).
+- Header "Add" / "New Equipment" buttons are ORANGE in every theme, while v4.1 rules orange a status hue only (actions blue). Pre-existing, not changed here — needs a one-token ruling.
+- Glass light twin (frosted on cream) not built.
+- `/inventory/warehouses` loads four Unsplash stock photos from the internet — breaks offline use and shows images that are not Babin's warehouses. Not changed: needs a decision (remove, or upload real photos).
+- The Today bento layout, Titanium inventory density and command-centre floor from the canvas mockups are page-layout work, not theme work — not started.
+
 ## 2026-10-13 — Smarter application header on every page
 
 **Did**

@@ -5,7 +5,7 @@
  * the standalone's timesheet screen with weekly hours grid,
  * expandable per-staff day charts, KPI strip, and CSV export.
  */
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, Fragment } from 'react'
 import { Card, KpiStrip, PageHeader } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageActions } from '../../components/ui/PageActions'
@@ -284,7 +284,9 @@ export default function TimesheetTab() {
                 {filteredRows.map((row, i) => {
                   const isOpen = openIdx === i
                   return (
-                    <tbody key={row.name}>
+                    /* RULING 2026-10-13: a keyed Fragment, not a nested <tbody> —
+                       <tbody> inside <tbody> is invalid HTML (React validateDOMNesting). */
+                    <Fragment key={row.name}>
                       <tr
                         role="row"
                         tabIndex={0}
@@ -361,7 +363,7 @@ export default function TimesheetTab() {
                           </td>
                         </tr>
                       )}
-                    </tbody>
+                    </Fragment>
                   )
                 })}
               </tbody>

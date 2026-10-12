@@ -82,5 +82,51 @@ for(const [theme,T] of [['DARK ',D],['LIGHT',L]]){
   chk(theme,T,'btn-primary fg/bg','--btn-primary-fg','--btn-primary-bg',4.5)
   console.log('')
 }
+
+/* RULING 2026-10-13 — Glass, on both bases. Its ink sits on TRANSLUCENT cards
+   over a glowing canvas, which the hex-only blocks above cannot see. Parse the
+   glass palette and its body glow, composite, and keep the WORST spot: each
+   glow layer's peak over the canvas, and the bare canvas. Worst-of catches a
+   glow that lightens (Obsidian, light ink) and one that darkens (frosted, dark
+   ink) with the same code. */
+function raw(sel){const i=css.indexOf(sel); if(i<0) throw new Error('missing '+sel)
+  const s=css.indexOf('{',i), e=css.indexOf('\n}',s); return css.slice(s+1,e)}
+function decl(body,name){const m=body.match(new RegExp('\\n\\s*'+name+':\\s*([^;]+);'));return m&&m[1].trim()}
+function rgb(v){if(!v)return null
+  if(/^#[0-9a-fA-F]{6}$/.test(v))return [1,3,5].map(k=>parseInt(v.slice(k,k+2),16)).concat(1)
+  const m=v.match(/rgba?\(\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/)
+  return m&&[+m[1],+m[2],+m[3],m[4]===undefined?1:+m[4]]}
+function over([r,g,b,a],[R,G,B]){return [r*a+R*(1-a),g*a+G*(1-a),b*a+B*(1-a)]}
+function hex(c){return '#'+c.slice(0,3).map(x=>Math.round(x).toString(16).padStart(2,'0')).join('')}
+function chkWorst(theme,label,fg,bgs,need){
+  if(!fg){console.log(`MISS  ${theme} ${label}`);fails++;return}
+  let worst=null,at=null
+  for(const b of bgs){const r=ratio(fg,b); if(worst===null||r<worst){worst=r;at=b}}
+  n++; const ok=worst>=need; if(!ok)fails++
+  console.log(`${ok?'PASS':'FAIL'} ${worst.toFixed(2).padStart(6)}:1 (>=${need})  ${theme} ${label.padEnd(28)} ${fg} on ${at} (worst of ${bgs.length})`)
+}
+for(const [theme,T,base] of [['GLASS-D',D,'dark'],['GLASS-L',L,'light']]){
+  const P=raw(`:root[data-theme='${base}'][data-style='glass'] {`)
+  const B=raw(`:root[data-theme='${base}'][data-style='glass'] body {`)
+  /* A glass palette may override an ink; otherwise the base theme's applies. */
+  const ink=k=>{const v=decl(P,k);return v&&/^#/.test(v)?v:T[k]}
+  const canvas=rgb(decl(P,'--app'))
+  const spots=[canvas.slice(0,3),...[...B.matchAll(/rgba\([^)]*\)/g)].map(m=>over(rgb(m[0]),canvas))]
+  const cards=spots.map(s=>hex(over(rgb(decl(P,'--card')),s)))
+  const sides=spots.map(s=>hex(over(rgb(decl(P,'--sidebar')),s)))
+  const bare=spots.map(hex)
+  /* Dark's booking-date ink is var(--warn-text); light's is its own hex. */
+  const booking=ink('--booking-date-text')||ink('--warn-text')
+  chkWorst(theme,'text / glass card',ink('--text'),cards,4.5)
+  chkWorst(theme,'text2 / glass card',ink('--text2'),cards,4.5)
+  chkWorst(theme,'muted / glass card',ink('--muted'),cards,4.5)
+  chkWorst(theme,'primary-text / glass card',ink('--primary-text'),cards,4.5)
+  chkWorst(theme,'booking-date / glass card',booking,cards,4.5)
+  chkWorst(theme,'muted / bare canvas + glow',ink('--muted'),bare,4.5)
+  chkWorst(theme,'text2 / bare canvas + glow',ink('--text2'),bare,4.5)
+  chkWorst(theme,'nav-active / glass sidebar',ink('--nav-active-accent'),sides,4.5)
+  chkWorst(theme,'text2 / glass sidebar',ink('--text2'),sides,4.5)
+  console.log('')
+}
 console.log(`${n-fails}/${n} pass, ${fails} FAIL`)
 process.exit(fails?1:0)

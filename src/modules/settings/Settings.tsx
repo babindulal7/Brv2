@@ -94,7 +94,7 @@ export default function Settings() {
   const [branches, setBranches] = useState<Branch[]>(BRANCHES)
 
   const { user } = useAuth()
-  const { theme, setMode } = useTheme()
+  const { theme, glass, choose } = useTheme()
   const mayEdit = canManageSettings(user?.role ?? 'Client')
   const [leaveError, setLeaveError] = useState<string | null>(null)
 
@@ -558,7 +558,8 @@ export default function Settings() {
                     <button
                       type="button"
                       className={`app-settings-theme-btn tap ${theme === 'light' ? 'is-active' : ''}`}
-                      onClick={() => setMode('light')}
+                      aria-pressed={theme === 'light'}
+                      onClick={() => choose('light')}
                       title="Switch to light theme"
                     >
                       <Icon name="sun" size={14} />
@@ -567,11 +568,24 @@ export default function Settings() {
                     <button
                       type="button"
                       className={`app-settings-theme-btn tap ${theme === 'dark' ? 'is-active' : ''}`}
-                      onClick={() => setMode('dark')}
+                      aria-pressed={theme === 'dark'}
+                      onClick={() => choose('dark')}
                       title="Switch to dark theme"
                     >
                       <Icon name="moon" size={14} />
                       <span>Dark</span>
+                    </button>
+                    {/* RULING 2026-10-13: Glass is a finish on Light or Dark —
+                        on/off, pressed alongside the base it sits on. */}
+                    <button
+                      type="button"
+                      className={`app-settings-theme-btn tap ${glass ? 'is-active' : ''}`}
+                      aria-pressed={glass}
+                      onClick={() => choose('glass')}
+                      title={glass ? 'Turn the glass finish off' : 'Turn the glass finish on'}
+                    >
+                      <Icon name="sparkles" size={14} />
+                      <span>Glass</span>
                     </button>
                   </div>
                 </div>
