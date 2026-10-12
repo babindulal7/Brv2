@@ -359,9 +359,9 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', { timeout: 90000 
       const { default: RentalsList } = await import('../../modules/rentals/RentalsList')
       await mountComponent(<RentalsList />, ['/rentals'])
 
-      // Primary CTA
+      // Primary CTA — the page owns the header's creation slot (RULING 2026-10-12, header rework 77101d0)
       const newRentalBtn = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('New Rental'))
-      expect(newRentalBtn).toBeUndefined()
+      expect(newRentalBtn).toBeDefined()
 
       // Table headers
       const table = container.querySelector('table')

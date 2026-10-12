@@ -1,5 +1,32 @@
 # Progress Log
 
+## 2026-10-12 — Rentals header tests brought up to the header rework
+
+**Did**
+- Updated five tests that still asserted the pre-rework Rentals header (77101d0): four in `rentalsList.render.test.tsx` now open **More rentals actions** and check Fast Return, Record Payment, Scan Barcode and Refresh as menu items (Refresh still re-queries sub-rentals); the owner test and Tier 1 R3 now expect the header's **New Rental** primary.
+- Role checks kept: Technician — no New Rental, no Record Payment, Fast Return present; Accounts — no Fast Return, Record Payment present.
+
+**Ruled**
+- RULINGS-2026-10-12.md: the page owns the header's creation slot, superseding 7 Oct's navigation-only New Rental for the Rentals page; `// RULING 2026-10-12` at both test sites.
+
+**Verified**
+- `rentalsList.render` 32/32; e2e + Rentals list 74/74; ESLint clean on the changed test. Full suite 4293/4293 (recorded in `.test-result.json`). No production code changed.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-09T12:51:19.033Z). Suite: 4293/4293 passed (recorded 2026-10-12T11:27:32.918Z).
+Gates read from .lifecycle-result.json, written 2026-10-09T12:51:21.507Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- None for these tests.
+
 ## 2026-10-09 — Today date picker preserves dashboard layout
 
 **Did**

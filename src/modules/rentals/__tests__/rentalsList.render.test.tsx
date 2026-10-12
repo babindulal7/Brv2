@@ -193,6 +193,20 @@ afterEach(async () => {
 const text = () => document.body.textContent ?? ''
 const allButtons = () => [...document.body.querySelectorAll('button')]
 const button = (label: string) => allButtons().find((b) => (b.querySelector('[data-view-label]')?.textContent ?? b.textContent)?.trim() === label)
+/**
+ * The Rentals header's secondary actions (Fast Return, Record Payment, Scan
+ * Barcode, Refresh…) live in one overflow menu since the 9 Oct header rework
+ * (77101d0). Its items render only while it is open.
+ */
+async function openMore() {
+  const more = document.body.querySelector<HTMLButtonElement>('button[aria-label="More rentals actions"]')
+  expect(more).not.toBeNull()
+  await act(async () => {
+    more!.click()
+  })
+}
+const menuItem = (label: string) =>
+  [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent?.trim() === label)
 
 describe('§4.1 — one list, no tabs', () => {
   it('renders no tab strip and no trace of Productions', async () => {
@@ -468,34 +482,33 @@ describe('§Step 7 — CSV Export selection behavior', () => {
 })
 
 describe('§Step 8 & 9 — quick action permissions and mobile card parity', () => {
-  it('keeps Fast Return and Record Payment with New Rental in the shell', async () => {
+  it('leads the header with New Rental and keeps Fast Return, Record Payment and Scan in More', async () => {
     authStub.role = 'Owner'
     await mount(1280)
-    expect(button('New Rental')).toBeUndefined()
-    expect(button('Fast Return')).toBeDefined()
-    expect(button('Record Payment')).toBeDefined()
-    // Scan Barcode and Refresh are in the overflow menu (•••)
-    const moreBtn = container.querySelector('button[aria-label="More actions"]') as HTMLButtonElement
-    expect(moreBtn).not.toBeNull()
-    await act(async () => {
-      moreBtn.click()
-    })
-    expect(button('Scan Barcode')).toBeDefined()
+    // RULING 2026-10-12: the page owns the header's creation slot (headerOwnership), superseding 7 Oct's nav-only New Rental.
+    expect(button('New Rental')).toBeDefined()
+    expect(button('Fast Return')).toBeUndefined()
+    await openMore()
+    expect(menuItem('Fast Return')).toBeDefined()
+    expect(menuItem('Record Payment')).toBeDefined()
+    expect(menuItem('Scan Barcode')).toBeDefined()
   })
 
   it('hides New Rental and Record Payment for Technician, keeps Fast Return', async () => {
     authStub.role = 'Technician'
     await mount(1280)
     expect(button('New Rental')).toBeUndefined()
-    expect(button('Record Payment')).toBeUndefined()
-    expect(button('Fast Return')).toBeDefined()
+    await openMore()
+    expect(menuItem('Record Payment')).toBeUndefined()
+    expect(menuItem('Fast Return')).toBeDefined()
   })
 
   it('hides Fast Return for Accounts, keeps Record Payment', async () => {
     authStub.role = 'Accounts'
     await mount(1280)
-    expect(button('Fast Return')).toBeUndefined()
-    expect(button('Record Payment')).toBeDefined()
+    await openMore()
+    expect(menuItem('Fast Return')).toBeUndefined()
+    expect(menuItem('Record Payment')).toBeDefined()
   })
 
   it('provides Cancel Booking in both Desktop and Mobile views for desk writers', async () => {
@@ -539,14 +552,9 @@ describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
     // Data changes in database
     lines.rows = [{ booking_id: ROW.id, line_type: 'Sub-rental' }]
 
-    // Click Refresh from overflow menu
-    const moreBtn = container.querySelector('button[aria-label="More actions"]') as HTMLButtonElement
-    if (moreBtn) {
-      await act(async () => {
-        moreBtn.click()
-      })
-    }
-    const refreshBtn = button('Refresh')
+    // Click Refresh from the header's overflow menu
+    await openMore()
+    const refreshBtn = menuItem('Refresh')
     expect(refreshBtn).toBeDefined()
     await act(async () => {
       refreshBtn?.click()
