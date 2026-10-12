@@ -22,7 +22,8 @@ export async function listRentalViewCounts(filters: ListFilters): Promise<{ rows
   const booked = await Promise.all(RENTAL_VIEWS.map(async (view) => {
     if (view.id === 'Draft') return null
     const result = await listBookings({ ...base, chips: { ...chips, ...(view.stages.length ? { stage: [...view.stages] } : {}) }, headOnly: true })
-    return result.total ?? null
+    const total = result.total
+    return typeof total === 'number' && !Number.isNaN(total) ? total : null
   }))
   // A line-level Sub-Rental facet only provides saved booking ids; it cannot answer drafts.
   let drafts: number | null = null
@@ -39,10 +40,23 @@ export async function listRentalViewCounts(filters: ListFilters): Promise<{ rows
     })
     const { count, error } = await query
     if (error) throw new Error(`Could not count rental drafts: ${error.message}`)
-    drafts = count
+    drafts = typeof count === 'number' && !Number.isNaN(count) ? count : null
   }
-  return { rows: RENTAL_VIEWS.map((view, index) => ({
-    id: view.id,
-    count: view.id === 'Draft' ? drafts : view.id === 'All' ? (booked[index] === null || drafts === null ? null : (booked[index] ?? 0) + drafts) : booked[index] ?? null,
-  })) }
+  return { rows: RENTAL_VIEWS.map((view, index) => {
+    const bCount = booked[index]
+    const bNum = typeof bCount === 'number' && !Number.isNaN(bCount) ? bCount : null
+    let count: number | null = null
+    if (view.id === 'Draft') {
+      count = drafts
+    } else if (view.id === 'All') {
+      if (bNum === null || drafts === null) {
+        count = null
+      } else {
+        count = bNum + drafts
+      }
+    } else {
+      count = bNum
+    }
+    return { id: view.id, count }
+  }) }
 }

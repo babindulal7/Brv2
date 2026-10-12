@@ -9,6 +9,7 @@ import type { ItemCondition, NotReturnedDecision } from '../../../types/database
 import { useAuth } from '../../../lib/auth'
 import { canPerformOperations } from '../../../lib/rbac'
 import { newClientUuid, supabase } from '../../../lib/supabase'
+import { useToast } from '../../../components/ui/Toast'
 import {
   playScanSuccess,
   playScanError,
@@ -70,6 +71,7 @@ export function FastReturnModal({
   initialBookingRef = '',
 }: FastReturnModalProps) {
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   const isAuthorized = user ? canPerformOperations(user.role) : false
 
   const [bookingRef, setBookingRef] = useState(initialBookingRef)
@@ -378,6 +380,7 @@ export function FastReturnModal({
       )
 
       playCaseComplete()
+      showSuccessToast('Return Completed', `Rental ${loadedBooking.bookingNo} returned successfully`)
       onSuccess(loadedBooking.id)
       onClose()
     } catch (err: unknown) {

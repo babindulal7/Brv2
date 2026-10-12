@@ -238,7 +238,7 @@ export function FilterBar({
                   />
                 )}
                 <span>{opt.label}</span>
-                {opt.count !== undefined && opt.count !== null && (
+                {opt.count !== undefined && opt.count !== null && !Number.isNaN(opt.count) && (
                   <span
                     style={{
                       fontSize: '11px',

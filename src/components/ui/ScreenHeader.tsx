@@ -1,14 +1,8 @@
-import type { ReactNode } from 'react'
-import type { IconName } from './Icon'
-import { PageHeader } from './Page'
+import { PageHeader, type PageHeaderProps } from './Page'
 
-export interface ScreenHeaderProps {
+export interface ScreenHeaderProps extends Omit<PageHeaderProps, 'title'> {
   embedded?: boolean | undefined
-  leading?: ReactNode | undefined
-  icon?: IconName | undefined
   title: string
-  description?: string | undefined
-  actions?: ReactNode | undefined
 }
 
 /**
@@ -30,15 +24,17 @@ export function ScreenHeader({
   title,
   description,
   actions,
+  ...rest
 }: ScreenHeaderProps) {
   if (!embedded) {
     return (
       <PageHeader
         title={title}
-        {...(leading ? { leading } : {})}
-        {...(icon ? { icon } : {})}
-        {...(description ? { description } : {})}
-        {...(actions ? { actions } : {})}
+        {...(leading !== undefined ? { leading } : {})}
+        {...(icon !== undefined ? { icon } : {})}
+        {...(description !== undefined ? { description } : {})}
+        {...(actions !== undefined ? { actions } : {})}
+        {...rest}
       />
     )
   }

@@ -3434,27 +3434,35 @@ export default function Calendar() {
     <PageShell width="full">
       <div className="calendar-v2">
         <PageHeader
-        leading={<FilterButton onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} />}
-        icon="calendar"
-        title="Calendar"
-        actions={
-          <PageActions
-            extra={navButtons}
-            primary={
-              <Button icon="calendar_event" variant="primary" onClick={() => setShowCheckAvailability(true)}>
-                Check availability
-              </Button>
-            }
-            secondary={[
-              ...(desktop ? [
-                <Button key="full" icon="eye" onClick={() => setFullChoice(true)}>
-                  Full View
-                </Button>,
-              ] : []),
-            ]}
-          />
-        }
-      />
+          leading={<FilterButton onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} />}
+          icon="calendar"
+          title="Calendar"
+          module="calendar"
+          search={{
+            value: query,
+            onChange: setQuery,
+            placeholder: 'Search calendar events (press /)',
+            ariaLabel: 'Search calendar',
+          }}
+          actions={
+            <PageActions
+              extra={navButtons}
+              primary={
+                <Button icon="calendar_event" variant="primary" onClick={() => setShowCheckAvailability(true)}>
+                  Check availability
+                </Button>
+              }
+              secondary={[
+                viewTabs,
+                ...(desktop ? [
+                  <Button key="full" icon="eye" onClick={() => setFullChoice(true)}>
+                    Full View
+                  </Button>,
+                ] : []),
+              ].filter(Boolean)}
+            />
+          }
+        />
 
       <FilterDrawer id="calendar-filters" open={showFilters} onClose={() => setShowFilters(false)} desktopMode="overlay" resultCount={barList.loading ? null : bars.length} noun="events" activeCount={activeFilterCount} onClearAll={clearAll} standardFooter onApply={() => setShowFilters(false)}>
         {filtersPanel}

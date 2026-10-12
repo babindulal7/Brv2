@@ -123,8 +123,22 @@ export default function Settings() {
 
   const edit = useEditMode({ record: settings, fields: settingFields, onSave: onSaveSetting })
 
+  const [searchQuery, setSearchQuery] = useState('')
+
   /* Law 6 — money-only tab is removed from the strip, not disabled. */
-  const tabs = useMemo(() => TABS.filter((t) => money || !t.money), [money])
+  const tabs = useMemo(() => {
+    const base = TABS.filter((t) => money || !t.money)
+    if (!searchQuery.trim()) return base
+    const q = searchQuery.toLowerCase().trim()
+    return base.filter((t) => {
+      const conf = TAB_CONFIG[t.key]
+      return (
+        t.label.toLowerCase().includes(q) ||
+        (conf && conf.subtitle.toLowerCase().includes(q)) ||
+        TAB_SUMMARY[t.key]?.toLowerCase().includes(q)
+      )
+    })
+  }, [money, searchQuery])
 
   const raw = params.get('tab')
   const requested: TabKey = isTabKey(raw) ? raw : (raw !== null && LEGACY_TAB[raw]) || DEFAULT_TAB
@@ -486,6 +500,19 @@ export default function Settings() {
                 icon="settings"
                 title="Settings"
                 description="System preferences, organization profile, security, and workspace policies."
+                status={
+                  <span className="badge badge-neutral" style={{ fontWeight: 600 }}>
+                    {activeTab?.label ?? 'General'}
+                  </span>
+                }
+                isDirty={edit.dirtyKeys.length > 0}
+                search={{
+                  value: searchQuery,
+                  onChange: setSearchQuery,
+                  onClear: () => setSearchQuery(''),
+                  placeholder: 'Search settings…',
+                  ariaLabel: 'Search settings',
+                }}
                 actions={headerActions}
               />
 

@@ -17,6 +17,7 @@ import { Input } from '../../components/ui/Input'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { useToast } from '../../components/ui/Toast'
 import { RentalIntelFromFloor } from '../../components/intel/RentalIntelFromFloor'
 import { EquipmentIntelFromFloor } from '../../components/intel/EquipmentIntelFromFloor'
 import { captureError } from '../../lib/monitoring'
@@ -521,6 +522,7 @@ export default function ReturnWorkspace({
   const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
@@ -1127,6 +1129,7 @@ export default function ReturnWorkspace({
       )
       .then(() => {
         clearFloorScan('return', floor.id)
+        showSuccessToast('Return Completed', `Rental ${floor.bookingNo} returned successfully`)
         if (onConfirmSuccess) {
           onConfirmSuccess()
         } else {

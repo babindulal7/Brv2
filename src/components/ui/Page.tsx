@@ -1,4 +1,4 @@
-import React, { useEffect, isValidElement, type ReactNode, type CSSProperties } from 'react'
+import type { ReactNode, CSSProperties } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { InfoTooltip } from './InfoTooltip'
@@ -8,8 +8,6 @@ import { CollapsibleAside } from './CollapsibleAside'
 import { useViewport } from '../../lib/device'
 import { Button as SharedButton, type ButtonProps } from './Button'
 import { Card as SharedCard } from './Card'
-import { useOptionalWorkspace } from '../../lib/workspaceContext'
-import { extractValidActions } from './PageActions'
 
 /**
  * Page furniture shared by every Generation C screen.
@@ -61,108 +59,7 @@ export function Card({
 
 /* ── page title block ──────────────────────────────────────────────────── */
 
-export function PageHeader({
-  leading,
-  icon,
-  title,
-  eyebrow,
-  description,
-  actions,
-  breadcrumb,
-  status,
-}: {
-  leading?: ReactNode
-  icon?: IconName
-  title: string
-  eyebrow?: ReactNode
-  description?: ReactNode
-  actions?: ReactNode
-  breadcrumb?: ReactNode
-  status?: ReactNode
-}) {
-  const ws = useOptionalWorkspace()
-
-  useEffect(() => {
-    if (ws && description) {
-      ws.setPageInfo(description)
-      return () => ws.setPageInfo(null)
-    }
-  }, [ws, description])
-
-  const resolvedEyebrow = eyebrow
-
-  const validActions = actions ? extractValidActions(actions) : []
-  const hasActions = validActions.length > 0
-
-  return (
-    <header className="page-header animate-entrance" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-      <div className="page-header__copy" style={{ minWidth: 0, flex: '1 1 16rem' }}>
-        {breadcrumb && <div style={{ marginBottom: 'var(--space-2)' }}>{breadcrumb}</div>}
-        {resolvedEyebrow && (
-          <div style={{ marginBottom: 'var(--space-2)' }}>
-            {typeof resolvedEyebrow === 'string' ? <span className="eyebrow-pill">{resolvedEyebrow}</span> : resolvedEyebrow}
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-          {leading}
-          {icon && (
-            <span
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 'var(--r-sm)',
-                display: 'grid',
-                placeItems: 'center',
-                background: 'var(--nav-active-bg)',
-                color: 'var(--nav-active-accent)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
-                flexShrink: 0,
-              }}
-            >
-              <Icon name={icon} size={17} fill />
-            </span>
-          )}
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 'clamp(22px, 2vw, 28px)',
-              fontWeight: 600,
-              color: 'var(--text)',
-              letterSpacing: '-0.03em',
-              lineHeight: 1.15,
-              fontFamily: 'var(--font-display, inherit)',
-            }}
-          >
-            {title}
-          </h1>
-          {!ws && description && <InfoTooltip content={description} size={16} />}
-          {status}
-        </div>
-      </div>
-      {hasActions && (
-        <div
-          className="page-header__actions"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            flexWrap: 'wrap',
-            maxWidth: '100%',
-            marginLeft: 'auto',
-            alignSelf: 'flex-start',
-            flexShrink: 0,
-          }}
-        >
-          {validActions.map((action, idx) =>
-            isValidElement(action)
-              ? React.cloneElement(action, { key: action.key ?? `hdr-act-${idx}` })
-              : <span key={`hdr-act-${idx}`}>{action}</span>
-          )}
-        </div>
-      )}
-    </header>
-  )
-}
+export { PageHeader, type PageHeaderProps } from './header/PageHeader'
 
 /* ── buttons ───────────────────────────────────────────────────────────── */
 

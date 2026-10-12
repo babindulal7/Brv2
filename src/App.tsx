@@ -25,6 +25,7 @@ import { canViewMoney, isStaff } from './lib/rbac'
 import { installRoutePreload } from './lib/routePreload'
 import { OperationsWorkspaceProvider } from './modules/operations/OperationsWorkspaceContext'
 import { WorkspaceProvider, useWorkspace } from './lib/workspaceContext'
+import { CreationContextProvider } from './components/ui/creation/CreationContextProvider'
 import { SchemaGuardBanner } from './components/shell/SchemaGuardBanner'
 import { ConflictNotificationBanner } from './components/ui/ConflictNotificationBanner'
 
@@ -110,9 +111,10 @@ export default function App() {
       <SyncProvider>
         <OperationsWorkspaceProvider>
           <WorkspaceProvider>
-            <CommandPalette />
-            {showOnboarding && <WelcomeOnboarding onClose={() => setShowOnboarding(false)} />}
-            <Routes>
+            <CreationContextProvider>
+              <CommandPalette />
+              {showOnboarding && <WelcomeOnboarding onClose={() => setShowOnboarding(false)} />}
+              <Routes>
           <Route path="/login" element={<Login />} />
         {/*
           Password reset, built 15 Aug 2026. Mounted beside /login and outside
@@ -836,6 +838,7 @@ export default function App() {
           }
         />
       </Routes>
+            </CreationContextProvider>
           </WorkspaceProvider>
         </OperationsWorkspaceProvider>
       </SyncProvider>

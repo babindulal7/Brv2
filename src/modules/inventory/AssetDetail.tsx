@@ -454,14 +454,20 @@ function AssetDetailView() {
               <span style={{ color: 'var(--text2)' }}>{product.category ?? '—'}</span>
               <span>›</span>
               <span style={{ color: 'var(--text)', fontWeight: 600 }}>{product.name}</span>
-              <span className="inventory-asset-code">
-                {product.assetCode}
-              </span>
             </div>
+          }
+          status={
+            <span className="inventory-asset-code" style={{ marginLeft: 6 }}>
+              {product.assetCode}
+            </span>
           }
           actions={
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {user && ['Owner','Admin','Manager'].includes(user.role) && <Button onClick={() => navigate(`${location.pathname}?action=edit`)}>Edit Equipment</Button>}
+              {user && ['Owner','Admin','Manager'].includes(user.role) && (
+                <Button variant="secondary" icon="edit" onClick={() => navigate(`${location.pathname}?action=edit`)}>
+                  Edit Equipment
+                </Button>
+              )}
               {units[0] && (
                 <Button variant="secondary" icon="download" onClick={() => setLabelUnit(units[0] ?? null)}>
                   Print Labels

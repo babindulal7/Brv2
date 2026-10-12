@@ -14,6 +14,7 @@ import { JOBS, statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { useToast } from '../../components/ui/Toast'
 import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd } from '../../lib/bs'
 import { newClientUuid, supabase } from '../../lib/supabase'
@@ -305,6 +306,7 @@ export default function ResetWorkspace({
   const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every attribution on this screen may act as. No fallback. */
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   const actor = actorName(user)
   const NO_ACTOR =
     'Nobody is signed in, so this cleaning work cannot be recorded against anyone. ' +
@@ -975,6 +977,7 @@ export default function ResetWorkspace({
       .then(() => {
         sessionStorage.setItem(`reset_completed:${floor.id}`, 'true')
         void DomainEvents.emit(EVENT_TYPES.RENTAL_RESET_COMPLETED, { bookingNo: floor.bookingNo })
+        showSuccessToast('Reset Completed', `Rental ${floor.bookingNo} reset and returned to pool`)
         if (onConfirmSuccess) {
           onConfirmSuccess()
         } else {

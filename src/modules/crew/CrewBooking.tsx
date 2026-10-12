@@ -361,13 +361,36 @@ export function CrewBooking() {
         <PageHeader
           icon="crew"
           title="Crew Assist"
+          module="crew"
           leading={<FilterButton onClick={() => setFiltersOpen((open) => !open)} controls="crew-filters" expanded={filtersOpen} activeCount={Number(Boolean(selectedRole))} />}
+          status={
+            <span
+              className="eyebrow-pill"
+              style={{
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: 'var(--t-meta, 13px)',
+                letterSpacing: 'normal',
+              }}
+            >
+              {filteredRoster.length} staff
+            </span>
+          }
+          search={{
+            value: searchQuery,
+            onChange: setSearchQuery,
+            placeholder: 'Search crew, role, production… (press /)',
+            onClear: () => setSearchQuery(''),
+            ariaLabel: 'Search crew',
+          }}
           description="Roster management, shoot-day assignments, and conflict detection."
-          actions={canBookCrew ? (
-            <Button variant="primary" icon="plus" onClick={() => setBookCrewOpen(true)}>
-              Book Crew
-            </Button>
-          ) : undefined}
+          actions={
+            canBookCrew ? (
+              <Button variant="primary" icon="plus" onClick={() => setBookCrewOpen(true)}>
+                Assign Crew
+              </Button>
+            ) : undefined
+          }
         />
         <FilterDrawer id="crew-filters" open={filtersOpen} onClose={() => setFiltersOpen(false)} resultCount={filteredRoster.length} noun="crew members" activeCount={Number(Boolean(selectedRole))} onClearAll={() => setSelectedRole('')} standardFooter onApply={() => setFiltersOpen(false)}>
           <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Role

@@ -6,6 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { useViewport } from '../../lib/device'
 import { Card, PageHeader, PageActions, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { GlobalAddMenu } from '../../components/ui/creation/GlobalAddMenu'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import type { Kpi } from '../../components/ui/Page'
@@ -164,13 +165,44 @@ export default function Clients() {
               ),
             } : {})}
         title="Clients"
+        status={
+          activeTab === 'clients' && clients.length > 0 ? (
+            <span
+              className="eyebrow-pill"
+              style={{
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: 'var(--t-meta, 13px)',
+                letterSpacing: 'normal',
+              }}
+            >
+              {clients.length} {clients.length === 1 ? 'client' : 'clients'}
+            </span>
+          ) : null
+        }
+        search={
+          activeTab === 'clients'
+            ? {
+                value: params.get('q') ?? '',
+                onChange: (val: string) => {
+                  const next = new URLSearchParams(params)
+                  if (val.trim()) next.set('q', val)
+                  else next.delete('q')
+                  setParams(next, { replace: true })
+                },
+                placeholder: 'Search client, company, PAN, phone… (press /)',
+                onClear: () => {
+                  const next = new URLSearchParams(params)
+                  next.delete('q')
+                  setParams(next, { replace: true })
+                },
+                ariaLabel: 'Search clients',
+              }
+            : undefined
+        }
         actions={
           <PageActions
-            primary={
-              <Button variant="primary" icon="plus" aria-label="New Client" onClick={() => setTab('new')}>
-                {phone ? 'New' : 'New Client'}
-              </Button>
-            }
+            primary={<GlobalAddMenu module="clients" />}
             secondary={[
               <Button key="export" icon="download" aria-label="Export clients" onClick={exportCsv}>
                 {phone ? '' : 'Export'}

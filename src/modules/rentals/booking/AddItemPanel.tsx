@@ -355,23 +355,40 @@ export function AddItemPanel({
     const section = root?.closest('section')
     const workspace = root?.closest<HTMLElement>('#main-content')
     const footer = workspace?.querySelector<HTMLElement>('[aria-label="Record actions"]')
-    if (!section || !workspace || !footer) return
+    const navigation = document.querySelector<HTMLElement>('nav[aria-label="Main"]')
+    if (!section || !workspace) return
     const measure = () => {
       const panel = catalogueRef.current
       if (!panel) return
       // Measure the space after recentering the heading, independently of
-      // current scroll position. Account for the actual action-bar height.
+      // current scroll position. Main uses header actions; isolated forms can
+      // still have a footer. Both must also clear the phone navigation.
       const offset = panel.getBoundingClientRect().top - section.getBoundingClientRect().top
       const clearance = Math.max(12, Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0)
-      const available = footer.getBoundingClientRect().top - workspace.getBoundingClientRect().top - clearance - offset - 12
-      setCatalogueHeight(Math.min(onPhone ? 480 : 560, Math.max(320, available)))
+      const workspaceRect = workspace.getBoundingClientRect()
+      const viewportBottom = window.visualViewport
+        ? window.visualViewport.offsetTop + window.visualViewport.height
+        : window.innerHeight
+      let bottom = Math.min(workspaceRect.bottom || viewportBottom, viewportBottom)
+      if (footer) bottom = Math.min(bottom, footer.getBoundingClientRect().top)
+      if (navigation && getComputedStyle(navigation).position === 'fixed') {
+        bottom = Math.min(bottom, navigation.getBoundingClientRect().top)
+      }
+      const available = bottom - workspaceRect.top - clearance - offset - 12
+      setCatalogueHeight(Math.min(onPhone ? 480 : 560, Math.max(160, available)))
     }
     measure()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
     observer?.observe(workspace)
-    observer?.observe(footer)
+    if (footer) observer?.observe(footer)
+    if (navigation) observer?.observe(navigation)
     window.addEventListener('resize', measure)
-    return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
+    window.visualViewport?.addEventListener('resize', measure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+      window.visualViewport?.removeEventListener('resize', measure)
+    }
   }, [open, inline, onPhone])
 
   const existing = useMemo(() => new Set(existingLineIds), [existingLineIds])
@@ -718,6 +735,7 @@ export function AddItemPanel({
               placeholder="Search equipment, bundles & services by name, SKU, serial, brand, category…"
               value={query}
               onFocus={() => {
+                setFiltersExpanded(false)
                 setOpen(true)
                 recenterSearch()
               }}
@@ -726,6 +744,7 @@ export function AddItemPanel({
                 recenterSearch()
               }}
               onChange={(e) => {
+                setFiltersExpanded(false)
                 setQuery(e.target.value)
                 setActiveIndex(0)
                 if (!open) {
@@ -868,7 +887,7 @@ export function AddItemPanel({
       {open && (
         <div
           ref={catalogueRef}
-          className="new-rental-equipment-catalogue"
+          className={`new-rental-equipment-catalogue${onPhone && filtersExpanded ? ' is-filtering' : ''}`}
           role="dialog"
           aria-label="Add item to booking"
           style={{
@@ -888,6 +907,7 @@ export function AddItemPanel({
             borderRadius: 'var(--r-card)',
             overflow: 'hidden',
             maxHeight: inline && catalogueHeight !== null ? catalogueHeight : onPhone ? 'min(480px, 70vh)' : 'min(560px, 80vh)',
+            ...(onPhone && inline && catalogueHeight !== null ? { height: catalogueHeight } : {}),
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -911,7 +931,9 @@ export function AddItemPanel({
                   {...(activeId ? { 'aria-activedescendant': activeId } : {})}
                   placeholder="Search name, SKU, serial, brand, category, bundle code — or a model inside a bundle…"
                   value={query}
+                  onFocus={() => setFiltersExpanded(false)}
                   onChange={(e) => {
+                    setFiltersExpanded(false)
                     setQuery(e.target.value)
                     setActiveIndex(0)
                   }}
@@ -989,10 +1011,10 @@ export function AddItemPanel({
                 aria-expanded={filtersExpanded}
                 aria-controls={filtersId}
                 aria-describedby={filterSummaryId}
-                onClick={() => setFiltersExpanded((value) => !value)}
+                onClick={() => { setFiltersExpanded((value) => !value); recenterSearch() }}
               >
                 <Icon name="filter" size={16} />
-                <span>Filters &amp; sort</span>
+                <span>{filtersExpanded ? 'Show results' : 'Filters & sort'}</span>
                 {filtersOn > 0 && <span className="figure">· {filtersOn}</span>}
                 {sort !== 'recommended' && <span className="new-rental-equipment-catalogue-sort-label">{currentSortLabel}</span>}
                 <Icon name={filtersExpanded ? 'chevron_up' : 'chevron_down'} size={15} style={{ marginLeft: 'auto' }} />

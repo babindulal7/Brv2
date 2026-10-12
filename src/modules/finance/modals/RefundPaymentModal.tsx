@@ -6,6 +6,7 @@ import type { Paisa } from '../../../lib/money'
 import { generateClientUuid } from '../../../lib/dataAccess'
 import { refundPayment } from '../../../actions/payments/refundPayment'
 import { useAuth } from '../../../lib/auth'
+import { useToast } from '../../../components/ui/Toast'
 
 interface RefundPaymentModalProps {
   isOpen: boolean
@@ -32,6 +33,7 @@ export function RefundPaymentModal({
   client,
 }: RefundPaymentModalProps) {
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   const [refundAmount, setRefundAmount] = useState(0)
   const [reason, setReason] = useState('')
   const [clientUuid, setClientUuid] = useState(() => generateClientUuid())
@@ -72,6 +74,7 @@ export function RefundPaymentModal({
         { paymentId, amount: refundAmount, reason: reason.trim(), clientUuid },
         { userId: user.id, role: user.role },
       )
+      showSuccessToast('Payment Reversed', `Reversal of ${formatMoney(rupees(refundAmount))} processed`)
       onSuccess()
       onClose()
     } catch (err) {

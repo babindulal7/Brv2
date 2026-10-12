@@ -6,6 +6,7 @@ import { Badge } from '../../components/ui/Badge'
 import { enqueueMutation } from '../../lib/offlineQueue'
 import { newClientUuid } from '../../lib/supabase'
 import { useAuth } from '../../lib/auth'
+import { useToast } from '../../components/ui/Toast'
 import { captureError } from '../../lib/monitoring'
 
 export interface DriverHandoverModalProps {
@@ -50,6 +51,7 @@ export function DriverHandoverModal({
   onSuccess,
 }: DriverHandoverModalProps) {
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   const [recipientName, setRecipientName] = useState(clientName)
   const [notes, setNotes] = useState('')
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
@@ -275,6 +277,7 @@ export function DriverHandoverModal({
         { userId: user?.id || 'USR-DRIVER', role: user?.role || 'Driver' },
       )
 
+      showSuccessToast('Handover Completed', `Delivery for ${bookingNo} handed over to ${recipientName.trim()}`)
       onSuccess?.()
       onClose()
     } catch (err) {

@@ -52,16 +52,17 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
+const NOOP_TOAST: ToastContextValue = {
+  showSuccessToast: () => {},
+}
+
 export function useOptionalToast() {
   return useContext(ToastContext)
 }
 
-export function useToast() {
+export function useToast(): ToastContextValue {
   const ctx = useContext(ToastContext)
-  if (!ctx) {
-    throw new Error('useToast must be used within ToastProvider')
-  }
-  return ctx
+  return ctx ?? NOOP_TOAST
 }
 
 // Fades + slides each toast in on mount. A per-item component (rather than

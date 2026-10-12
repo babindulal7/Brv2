@@ -28,6 +28,8 @@ supabase/.branches
 typecheck_output.txt
 coverage/
 docs/docs.zip
+*.rar
+*.zip
 
 # Per-session agent scratch space — dev-server and tunnel logs, throwaway HTML.
 # Regenerable runtime noise, not project history.

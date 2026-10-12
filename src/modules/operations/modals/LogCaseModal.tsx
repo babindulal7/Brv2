@@ -6,6 +6,7 @@ import type { Paisa } from '../../../lib/money'
 import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
 import { useAuth } from '../../../lib/auth'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
+import { useToast } from '../../../components/ui/Toast'
 import type { Case, CasePriority, CaseType } from '../../../lib/queries/cases'
 
 export interface LogCaseModalProps {
@@ -30,6 +31,7 @@ export function LogCaseModal({
   initialNotes = '',
 }: LogCaseModalProps) {
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   // RS-07 / Law 6 — Warehouse sees no money: the cost and deposit-hold fields
   // are omitted for a money-blind role, and the submit path below must not
   // read them for that role.
@@ -111,6 +113,7 @@ export function LogCaseModal({
         notes: description,
       })
 
+      showSuccessToast('Incident Logged', `Case ${newCase.id} logged successfully`)
       if (onSuccess) {
         onSuccess(newCase)
       }

@@ -683,3 +683,96 @@
 .flight-case-body table tr:hover td {
   background: color-mix(in srgb, var(--card2, #f8fafc) 80%, var(--card)) !important;
 }
+
+/* -----------------------------------------------------------------------------
+ * Application Header Integrations for Rentals List
+ * -------------------------------------------------------------------------- */
+.workspace-header-right-actions {
+  min-width: 0;
+}
+
+.rentals-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Secondary actions hidden below 1280px to prevent header overflow */
+.rentals-header-desktop-action {
+  display: none !important;
+}
+
+@media (min-width: 1280px) {
+  .rentals-header-desktop-action {
+    display: inline-flex !important;
+  }
+}
+
+/* Data age badge: visible at desktop band (1280px+) */
+.rentals-header-data-age {
+  display: none;
+}
+
+@media (min-width: 1280px) {
+  .rentals-header-data-age {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* Mobile search trigger button: hidden on desktop/tablet, visible on phone */
+.rentals-header-mobile-search-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  border-radius: var(--r-btn, 8px);
+}
+
+.rentals-header-mobile-search-btn:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+@media (max-width: 767px) {
+  .rentals-header-mobile-search-btn {
+    display: inline-flex;
+  }
+}
+
+/* Mobile search overlay: positioned fixed below header, does not alter header height */
+.rentals-mobile-search-overlay {
+  position: fixed;
+  top: var(--header-h, 64px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.rentals-mobile-search-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  border-radius: var(--r-btn, 8px);
+  flex-shrink: 0;
+}

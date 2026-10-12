@@ -5,16 +5,20 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../../components/ui/Toast'
 
+const queueResults = vi.hoisted(() => ({ counts: [0, 0], calls: 0 }))
 vi.mock('../../../lib/queries/useList', () => ({
-  useList: () => ({
+  useList: () => {
+    const total = queueResults.counts[queueResults.calls++ % 2] ?? 0
+    return {
     rows: [],
     loading: false,
     error: null,
-    isEmpty: true,
+    isEmpty: total === 0,
     isFiltered: false,
-    total: 0,
+    total,
     refetch: () => {},
-  }),
+    }
+  },
 }))
 
 vi.mock('../../../modules/operations/OperationsWorkspaceContext', () => ({
@@ -51,13 +55,38 @@ const buttons = () => [...container.querySelectorAll('button')]
 const buttonByLabel = (label: string) =>
   buttons().find((button) => (button.getAttribute('aria-label') ?? '').includes(label))
 
-beforeEach(() => window.sessionStorage.clear())
+beforeEach(() => {
+  window.sessionStorage.clear()
+  queueResults.counts = [0, 0]
+  queueResults.calls = 0
+})
 afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
 })
 
 describe('focused pickup and return dashboard', () => {
+  it('keeps the same queue layout when Today has returns and another date is empty', async () => {
+    window.sessionStorage.setItem('dashboard.pickupDateFilter', JSON.stringify({ kind: 'quick', period: 'Tomorrow' }))
+    window.sessionStorage.setItem('dashboard.returnDateFilter', JSON.stringify({ kind: 'quick', period: 'Tomorrow' }))
+    await mount()
+    const layout = container.querySelector('.rental-dashboard__panels')!
+    const initialLayout = layout.className
+    const panels = [...layout.querySelectorAll('.movement-panel')]
+    const initialPanelStyles = panels.map((panel) => panel.className)
+
+    await act(async () => buttonByLabel('choose dispatch date filter')!.click())
+    queueResults.counts = [0, 3]
+    const today = [...document.querySelectorAll<HTMLButtonElement>('#dispatch-date-dialog button')].find((button) => button.textContent === 'Today')!
+    await act(async () => today.click())
+
+    expect(window.sessionStorage.getItem('dashboard.pickupDateFilter')).toContain('Today')
+    expect(container.textContent).toContain('3 coming back')
+    expect(layout.className).toBe(initialLayout)
+    expect([...layout.querySelectorAll('.movement-panel')]).toEqual(panels)
+    expect(panels.map((panel) => panel.className)).toEqual(initialPanelStyles)
+  })
+
   it('renders only the two operational panels', async () => {
     await mount()
     expect(container.textContent).toContain('Pickups')

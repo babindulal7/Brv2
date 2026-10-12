@@ -554,6 +554,7 @@ function ClientListbox({
     const workspace = input.closest<HTMLElement>('#main-content')
     const footer = workspace?.querySelector<HTMLElement>('[aria-label="Record actions"]')
     const shortcuts = workspace?.querySelector<HTMLElement>('[aria-label="Rental sections"]')
+    const navigation = document.querySelector<HTMLElement>('nav[aria-label="Main"]')
 
     // Follow the field during the section shortcuts' smooth scroll. The shell,
     // sticky shortcuts, and action footer all reduce the usable popup space.
@@ -579,6 +580,9 @@ function ClientListbox({
       const footerRect = footer?.getBoundingClientRect()
       if (footerRect && footerRect.height > 0 && footerRect.top > top && footerRect.top < bottom) {
         bottom = footerRect.top - 8
+      }
+      if (navigation && getComputedStyle(navigation).position === 'fixed') {
+        bottom = Math.min(bottom, navigation.getBoundingClientRect().top - 8)
       }
       const rect = input.getBoundingClientRect()
       const spaceBelow = Math.max(0, bottom - rect.bottom - 4)

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import Icon from '../../components/ui/Icon'
 import { CalendarPopover } from '../../components/ui/DateField'
-import { PageHeader, PageActions } from '../../components/ui/Page'
+import { PageHeader } from '../../components/ui/Page'
+import { Button } from '../../components/ui/Button'
+import { GlobalAddMenu } from '../../components/ui/creation/GlobalAddMenu'
 import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
@@ -513,11 +516,6 @@ export default function Today() {
   const isReturnToday = returnDateFilter.kind === 'quick' && returnDateFilter.period === 'Today'
   const pickupCount = pickups.loading || pickups.error ? undefined : pickups.total ?? pickups.rows.length
   const returnCount = returns.loading || returns.error ? undefined : returns.total ?? returns.rows.length
-  const panelFocus = pickupCount === 0 && (returnCount ?? 0) > 0
-    ? 'returns-focus'
-    : returnCount === 0 && (pickupCount ?? 0) > 0
-      ? 'pickups-focus'
-      : null
 
   useEffect(() => {
     if (isPhone && !mobileTabChosenRef.current && pickupCount === 0 && (returnCount ?? 0) > 0) {
@@ -600,39 +598,65 @@ export default function Today() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [goToToday, stepDay])
 
+  const navigate = useNavigate()
+
   return (
     <PageShell
       className="rental-dashboard"
       header={
         <PageHeader
           title="Today"
+          status={
+            <span
+              className="eyebrow-pill"
+              style={{
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: 'var(--t-meta, 13px)',
+                letterSpacing: 'normal',
+              }}
+            >
+              {pickupCount === undefined || returnCount === undefined
+                ? 'Movement board'
+                : `${pickupCount} outgoing · ${returnCount} incoming`}
+            </span>
+          }
+          search={{
+            value: globalSearch,
+            onChange: setGlobalSearch,
+            placeholder: 'Search or scan… (press /)',
+            onKeyDown: handleGlobalSearchKeyDown,
+            onClear: () => setGlobalSearch(''),
+            ariaLabel: 'Search or scan bookings, clients, serials',
+            inputRef: counterInputRef,
+          }}
           actions={
-            <PageActions
-              key="today-actions"
-              className="dashboard-date-actions"
-              extra={
-                <>
-                  {/* PLAN.md Phase 9 — the age of the OLDER of the two panels,
-                      so the badge never claims fresher data than is on screen
-                      (from main's Phase 9 work). */}
-                  <DataAgeBadge
-                    loadedAt={
-                      pickups.lastFetchedAt && returns.lastFetchedAt
-                        ? new Date(Math.min(pickups.lastFetchedAt.getTime(), returns.lastFetchedAt.getTime()))
-                        : null
-                    }
-                    onRefresh={refetchMovement}
-                    loading={pickups.loading || returns.loading}
-                  />
-                  <MasterDispatchDateControl
-                    filter={pickupDateFilter}
-                    onChange={syncBothPanels}
-                    today={dayAd}
-                    onStepDay={stepDay}
-                  />
-                </>
-              }
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+              <DataAgeBadge
+                loadedAt={
+                  pickups.lastFetchedAt && returns.lastFetchedAt
+                    ? new Date(Math.min(pickups.lastFetchedAt.getTime(), returns.lastFetchedAt.getTime()))
+                    : null
+                }
+                onRefresh={refetchMovement}
+                loading={pickups.loading || returns.loading}
+              />
+              <MasterDispatchDateControl
+                filter={pickupDateFilter}
+                onChange={syncBothPanels}
+                today={dayAd}
+                onStepDay={stepDay}
+              />
+              <Button
+                variant="secondary"
+                icon="queues"
+                onClick={() => navigate('/operations')}
+                title="Open Operations turnaround queues"
+              >
+                Operations
+              </Button>
+              <GlobalAddMenu module="today" />
+            </div>
           }
         />
       }
@@ -648,36 +672,6 @@ export default function Today() {
               : `${pickupCount} going out · ${returnCount} coming back`}
           </p>
         </div>
-        {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
-        <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
-          <div className="dashboard-counter-bar__search">
-            <Icon name="search" size={16} className="dashboard-counter-bar__icon" />
-            <input
-              ref={counterInputRef}
-              type="search"
-              className="dashboard-counter-bar__input"
-              placeholder="Search or scan…"
-              value={globalSearch}
-              onChange={(e) => setGlobalSearch(e.target.value)}
-              onKeyDown={handleGlobalSearchKeyDown}
-              aria-label="Search or scan bookings, clients, serials"
-            />
-            {globalSearch && (
-              <button
-                type="button"
-                className="dashboard-counter-bar__clear"
-                onClick={() => {
-                  setGlobalSearch('')
-                  counterInputRef.current?.focus()
-                }}
-                aria-label="Clear search"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            )}
-          </div>
-        </div>
-
       </div>
 
       {/* Spec §31: Mobile Segmented Control */}
@@ -699,8 +693,8 @@ export default function Today() {
         </div>
       )}
 
-      {/* Both queues stay visible; an empty side condenses so active work has room. */}
-      <div className={`rental-dashboard__panels${panelFocus ? ` rental-dashboard__panels--${panelFocus}` : ''}`}>
+      {/* RULING 2026-10-09: date filtering changes records, not queue width or order. */}
+      <div className="rental-dashboard__panels">
         {(!isPhone || mobileTab === 'pickups') && (
           <DashboardMovementPanel
             side="outgoing"
@@ -715,7 +709,6 @@ export default function Today() {
             onClearFilters={() => syncBothPanels({ kind: 'quick', period: 'Today' })}
             onLoadMore={() => setPickupPage((page) => page + 1)}
             hasMore={pickups.total !== null && pickups.rows.length < pickups.total}
-            compactEmpty={!isPhone && panelFocus === 'returns-focus'}
             isToday={isDispatchToday}
           />
         )}
@@ -735,7 +728,6 @@ export default function Today() {
             onClearFilters={() => syncBothPanels({ kind: 'quick', period: 'Today' })}
             onLoadMore={() => setReturnPage((page) => page + 1)}
             hasMore={returns.total !== null && returns.rows.length < returns.total}
-            compactEmpty={!isPhone && panelFocus === 'pickups-focus'}
           />
         )}
       </div>

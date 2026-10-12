@@ -152,14 +152,23 @@ describe('Documents Workspace (Bento 2.0 / Design Taste)', () => {
       </MemoryRouter>,
     )
 
-    const createBtn = Array.from(el.querySelectorAll<HTMLButtonElement>('button')).find(
-      (b) => b.textContent?.includes('Create Document'),
+    const addBtn = Array.from(el.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent?.includes('Add') || b.textContent?.includes('Create Document'),
     )
-    expect(createBtn).toBeDefined()
+    expect(addBtn).toBeDefined()
 
     act(() => {
-      createBtn?.click()
+      addBtn?.click()
     })
+
+    const newDocItem = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent?.includes('New Document'),
+    )
+    if (newDocItem) {
+      act(() => {
+        newDocItem.click()
+      })
+    }
 
     // Modal input should be rendered
     const titleInput = document.body.querySelector<HTMLInputElement>('input[placeholder*="Equipment Rental Agreement"]')

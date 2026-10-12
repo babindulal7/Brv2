@@ -62,6 +62,7 @@ const db = vi.hoisted(() => {
 
 vi.mock('../../../lib/supabase', () => ({
   supabase: db.supabase,
+  IS_MOCK: false,
 }));
 
 vi.mock('../../../lib/dataAccess', () => ({

@@ -19,6 +19,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { useToast } from '../../components/ui/Toast'
 import { RentalIntelFromFloor } from '../../components/intel/RentalIntelFromFloor'
 import { EquipmentIntelFromFloor } from '../../components/intel/EquipmentIntelFromFloor'
 import { captureError } from '../../lib/monitoring'
@@ -502,6 +503,7 @@ export default function PackingWorkspace({
   const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
@@ -1112,6 +1114,7 @@ export default function PackingWorkspace({
       .then((result) => {
         if (result.stage !== null) {
           clearFloorScan('pack', floor.id)
+          showSuccessToast('Packing Completed', `Rental ${floor.bookingNo} is now Packed`)
           if (onConfirmSuccess) {
             onConfirmSuccess()
           } else {

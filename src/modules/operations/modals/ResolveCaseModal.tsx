@@ -3,6 +3,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { useAuth } from '../../../lib/auth'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
+import { useToast } from '../../../components/ui/Toast'
 import { formatMoney } from '../../../lib/money'
 import { resolveCase } from '../../../actions/cases/resolveCase'
 import type { Case } from '../../../lib/queries/cases'
@@ -21,6 +22,7 @@ export function ResolveCaseModal({
   caseItem,
 }: ResolveCaseModalProps) {
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   const money = useCanViewMoney()
 
   const [status, setStatus] = useState<'Resolved' | 'Closed'>('Resolved')
@@ -68,6 +70,7 @@ export function ResolveCaseModal({
         { userId: user.id, role: user.role },
       )
 
+      showSuccessToast('Case Resolved', `Case marked as ${status}`)
       onSuccess?.(caseItem.id, status, resolution.trim())
       onClose()
     } catch (err) {

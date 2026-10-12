@@ -22,6 +22,7 @@ import type { BookingStatus, JobState } from '../../lib/workflow'
 import { NON_PACKABLE_LINE_TYPES } from '../../lib/bookingLineTypes'
 import { BarcodeScannerModal, type ScanOutcome } from '../../components/ui/BarcodeScannerModal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { useToast } from '../../components/ui/Toast'
 import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { newClientUuid } from '../../lib/supabase'
@@ -482,6 +483,7 @@ export default function HandoverWorkspace({
   const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
@@ -1238,6 +1240,7 @@ export default function HandoverWorkspace({
         if (!stillHere()) return
         // HO-05 — leave only when the stage moved; a held stage stays here and says so.
         if (result.stage !== null) {
+          showSuccessToast('Handover Completed', `Rental ${floor.bookingNo} is now On Rent`)
           if (onConfirmSuccess) {
             onConfirmSuccess()
           } else {

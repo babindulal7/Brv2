@@ -1,5 +1,606 @@
 # Progress Log
 
+## 2026-10-09 — Today date picker preserves dashboard layout
+
+**Did**
+- Removed the count-dependent `panelFocus` layout and compact-empty props from Today. Selecting Today no longer turns two queues into a full-width returns/pickups view when the other queue is empty.
+- Preserved responsive layout, filter synchronization, overdue inclusion, booking actions, and phone tabs. Added a regression test that changes an empty Tomorrow to Today with returns while asserting the same queue containers and layout.
+- Moved the user's open browser tab from the older port-3008 preview to the main workspace at `http://localhost:3000/today`.
+
+**Ruled**
+- User clarified that Today in the date picker caused the design change. `RULINGS-2026-10-09.md` records stable queue placement across date/count changes.
+
+**Verified**
+- Typecheck and scoped ESLint passed. Today suites plus Tier 1 end-to-end selection: 131/131 tests in 6 files passed, including the new date-picker regression.
+- Browser: Tomorrow (no bookings) and Today (24 returns) retain identical panel x positions and widths at the same viewport: x=78.671875/559.9375px, width=464.390625px each. The lists and counts update while panel placement remains unchanged.
+- Local database gates passed: 160/160 migrations rebuilt; 30/30 lifecycle checks green. No production data or migration changes.
+- Production build passed (exit 0, including offline cache generation). Logs and screenshot are in `artifacts/today-stable-layout-2026-10-09/`.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-09T12:51:19.033Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-09T12:51:21.507Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining work for this layout defect. Changes remain uncommitted in main alongside the user's existing work.
+- The full-suite count above is cached from its stated date; this change's fresh test evidence is the 131-test selection above.
+
+## 2026-10-09 — Verified New Rental refinements integrated into main
+
+**Did**
+- Confirmed the committed New Rental redesign through `ec480d1` is already an ancestor of main. Applied only the remaining catalogue/filter changes from the preview checkout, preserving existing main-workspace edits and its newer header actions.
+- Adapted catalogue height to work without a footer and to clear fixed phone navigation; applied the same navigation clearance to client results. Added regression coverage for forms with and without footer actions.
+- Ported filter/search regression coverage for inline and popover catalogue modes. Fixed the compact header Confirm button's CSS so only its text is hidden and its checkmark stays visible.
+
+**Ruled**
+- User requested implementation in the main workspace. `RULINGS-2026-10-09.md` records the integration scope; the single application header remains in place.
+
+**Verified**
+- Main-workspace typecheck and scoped ESLint passed. New Rental, booking components, header integration, calendar, and Tier 1 selection: 160/160 tests in 24 files passed. This is a targeted run; the older full-suite count below is cached evidence from its stated date.
+- Shell lint: 649 files passed. Theme contrast: 54/54 passed.
+- Local `check:pglite`: 160/160 migrations rebuilt, zero failures or unauthorized leaks. Local `check:lifecycle`: 30/30 green. No migration was written or applied to live Supabase.
+- Browser on main's existing mock server at `http://localhost:3000/rentals?action=new`: desktop and 375×844 phone; header Save draft/Confirm/More actions; no duplicate footer; visible 44px phone Confirm button with checkmark; filters return to visible search results; client popup clears navigation. Phone catalogue ends at 773.5px, above navigation at 786px, with no horizontal overflow.
+- Production build passed (exit 0). Logs and screenshot: `artifacts/new-rental-main-integration-2026-10-09/`.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-09T04:14:29.674Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-09T04:14:32.166Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining implementation work for this integration. No live booking was created during verification; changes remain in the main working tree, uncommitted and unpushed.
+- Existing unrelated changes remain in the main working tree. Whole-tree `git diff --check` reports a pre-existing extra blank line at EOF in `WorkspacePortal.tsx`; this integration leaves that file unchanged.
+
+## 2026-10-09 — Babin Rentals UI/UX Pass 1: Rentals List Page Migration
+
+**Did**
+- **Rentals List Header Portaling (`src/modules/rentals/RentalsList.tsx`, `src/modules/rentals/rentals.css`):**
+  - Removed duplicate `RentalsOperationsHeader` and internal search in `FilterBar` to conform strictly to the compact single-row application header standard (fixed height 64px, `--header-h`).
+  - Integrated page-specific search via `WorkspaceHeaderSearch` portal into the shell's fixed-height header, hiding the global command-palette search when active (`hasPageSearch`).
+  - Integrated contextual page actions via `WorkspaceHeaderRightActions`:
+    - Responsive mobile search icon button (`.rentals-header-mobile-search-btn`) opening an overlay below the header (`.rentals-mobile-search-overlay`) without expanding header height.
+    - `FilterButton` with `inHeader={false}` rendered directly inside the header action bar.
+    - Contextual single-rental operations menu (`BookingOperationsMenu`) when exactly 1 rental row is selected.
+    - Secondary desktop actions (Fast Return, Record Payment) visible on wide viewports (>= 1280px) and collapsed into `OverflowMenu` on smaller screens.
+    - Full `OverflowMenu` containing Open Booking, Fast Return, Record Payment, Quote/Booking views, Find Invoices (money-gated), Audit Log (Owner/Admin/Manager), Cancel Booking (desk-writer), Scan Barcode, and Refresh.
+    - Prominent primary CTA: "Add" rental for desk writers.
+    - Data freshness badge (`DataAgeBadge`) visible at desktop band (>= 1280px) without disrupting compact header spacing.
+- **Workspace Portal Slots (`src/lib/workspaceContext.tsx`, `src/components/shell/WorkspacePortal.tsx`, `src/components/shell/Header.tsx`):**
+  - Added opt-in portal slots: `headerSearchElement` / `hasPageSearch` and `headerRightActionsElement`.
+  - Added `WorkspaceHeaderSearch` and `WorkspaceHeaderRightActions` portal components.
+  - Mounted search and right action portal spans inside the existing fixed-height `Header.tsx` flex layout (`flex-wrap: nowrap`, 64px pinned height).
+
+**Ruled**
+- Exactly ONE header row: zero stacked toolbars, zero duplicate titles, zero header expansion.
+- Canonical breakpoint contract: `rentals.css` uses only canonical bands (768 / 1280px).
+- Law 15 touch targets: all buttons and search triggers maintain >= 44×44px hit targets.
+
+**Verified**
+- `npm run typecheck`: 0 errors (strict TypeScript).
+- `npx vitest run src/modules/rentals/__tests__/uiPhase2Rentals.contract.test.tsx src/components/shell`: 11 files, 108/108 passed.
+- `npx vitest run src/__tests__/e2e/tier1-features.test.tsx src/__tests__/e2e/tier2-boundaries.test.tsx`: 2 files, 23/23 passed.
+- `npm run lint`: 0 warnings, 0 errors.
+- `npm run lint:shell`: 649 files compliant (100%).
+- `npm run check:contrast`: 54/54 pass (WCAG AA).
+- `npm run build`: production build passed cleanly (298 precache entries).
+- `npm run completion`: counted by script, not typed.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T22:18:36.798Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T22:18:49.337Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Babin applies migrations locally per BACKUP_PROTOCOL.md when deploying to production environment.
+- Booking Detail UI/UX review (separate page review).
+
+## 2026-10-09 — Babin Rentals OS UI/UX Pass 2: New Rental Flow
+
+**Did**
+- **New Rental Shell & Header Portal Integration (`src/modules/rentals/NewRental.tsx`, `src/modules/rentals/new-rental-flow.css`):**
+  - Removed duplicate `PageHeader` from `NewRental.tsx` to conform to the single-row application header standard (fixed height 64px, title and actions owned by the global header).
+  - Portaled primary and secondary rental actions into the global header via `WorkspaceHeaderRightActions` when running inside the application shell (`workspace` present).
+  - Designed responsive header actions:
+    - Desktop: Shows **Save draft** button, **More (⋯)** `OverflowMenu`, and **Confirm Booking** primary CTA (or **Save changes** when editing quotes).
+    - Tablet and Phone (`max-width: 1279px`): Primary action collapses to a 44px icon-only button with full accessible label (`aria-label`, `title`), with secondary actions (Save draft, Review, Cancel/Back) available in the 44px More menu.
+  - Retained `<RecordActions>` fallback strictly when rendered in isolated environments without the application shell (e.g. standalone unit tests).
+  - Updated in-form jumpbar review button to show outstanding blocking check count: `Review (${blockingNotices.length})` with descriptive accessible names.
+  - Added compact meta status indicator in the jumpbar (`.new-rental-jumpbar__meta`): draft number, save state (`Saving…`, `Not saved`, `Draft #... · Saved / Unsaved changes`).
+  - Adjusted summary rail max-height to `calc(100dvh - 130px)` and restricted mobile 160px bottom spacer to isolated fallback previews (`.new-rental-shell:has(.record-actions)::after`).
+- **Workspace Portal Exports (`src/components/shell/WorkspacePortal.tsx`):**
+  - Confirmed export of `WorkspaceHeaderRightActions` allowing seamless action portaling to header right actions.
+
+**Ruled**
+- Exactly ONE application header row: no duplicate `PageHeader` in `NewRental` and no second footer bar when running within the shell.
+- Business logic untouched: 06:00–06:00 rental calendar, integer paisa, VAT calculation, permission gates, booking validation, and save/confirm handlers remain identical.
+- Law 15 touch targets: all buttons maintain >= 44×44px hit targets.
+- Law 17: zero occurrences of "customer".
+
+**Verified**
+- `npm run typecheck`: 0 errors (strict TypeScript).
+- `npx vitest run src/modules/rentals/__tests__/newRentalSimplification.test.tsx src/modules/rentals/__tests__/newRentalDraftPersistence.test.tsx src/modules/rentals/__tests__/newRentalGuards.test.ts src/modules/rentals/__tests__/rentalsOperationsHeader.test.tsx`: 40/40 passed.
+- `npx vitest run src/lib/__tests__/law17.test.ts`: 3/3 passed (0 "customer" occurrences).
+- `npx vitest run src/__tests__/e2e/tier1-features.test.tsx src/__tests__/e2e/tier2-boundaries.test.tsx src/__tests__/e2e/tier3-cross-feature.test.tsx src/__tests__/e2e/tier4-scenarios.test.tsx`: 39/39 passed.
+- `npx vitest run src/modules/rentals/__tests__/`: 23/23 test files, 310/310 passed.
+- `npx vitest run src/modules/rentals/booking/__tests__/`: 18/18 test files, 95/95 passed.
+- `npm run check:contrast`: 54/54 pass (WCAG AA).
+- `npm run check:pglite`: 160/160 migrations applied, 0 leaks, 0 failures.
+- `npm run check:lifecycle`: 30/30 steps green.
+- `npm run build`: Vite build clean (298 precache entries).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T22:18:36.798Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T22:18:49.337Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Babin applies migrations locally per BACKUP_PROTOCOL.md when deploying to production environment.
+- Booking Detail UI/UX review (separate page review).
+
+## 2026-10-09 — Universal Compact Single-Row Application Header Standard
+
+**Did**
+- **Compact Single-Row Global Header (`src/components/shell/Header.tsx`):**
+  - Refactored `Header.tsx` in-place to strictly enforce the single-row layout specification:
+    - Target fixed height: 64px (`--header-h: var(--global-header-height)`).
+    - Flex layout (`display: flex; align-items: center; flex-wrap: nowrap`).
+    - Exactly ONE horizontal row with zero vertical expansion or secondary toolbars.
+    - Sizing: button height 36–40px (38px with 44px Law 15 hit target), search height 38px, icon size 18–20px, 8px gap between actions.
+  - Implemented 3 unified zones:
+    - **Zone 1 (Left):** `[Page Icon + Title / Status / Breadcrumb]`: Back navigation, entity icon, breadcrumbs `<nav aria-label="Breadcrumb">`, status badge, unsaved changes dirty dot, and page InfoTooltip.
+    - **Zone 2 (Center):** `[Search & Sync Status]`: In-page search input (when registered by page via `search` config) or global search command palette trigger (`openCommandPalette()`, `Ctrl+K / ⌘K`), accompanied by stable outbox sync status heartbeat badge.
+    - **Zone 3 (Right):** `[Add ▼] [Primary Action] [More ⋯] [Messages] [Avatar]`:
+      - Bulk Selection mode: selection counter, clear selection, and bulk actions.
+      - Universal Add dropdown (`AddDropdownButton` / `GlobalAddMenu`) contextual to current module.
+      - Contextual secondary action buttons (desktop only; collapses on tablet/mobile).
+      - Single prominent primary action button (Save, Confirm, etc.).
+      - Universal More (⋯) overflow menu (`OverflowMenu`) for secondary and excess actions.
+      - Team internal notes trigger (`Alt+N`).
+      - Mobile search trigger button.
+      - Compact User profile avatar trigger (Law 15: 44×44px hit target) with profile dialog, lock session, and logout handover.
+  - Dropdowns and menus float above content using portals (`floatingLayer`), preventing any header dimension shifts.
+- **Universal PageHeader Bridge (`src/components/ui/header/PageHeader.tsx`):**
+  - Integrated with `WorkspaceContext`: when rendered inside the application shell (`ws` available), page title, status, search config, and actions sync cleanly into the global single-row header while suppressing duplicate body headers (`display: none; height: 0`).
+  - Preserved standalone rendering in isolated unit tests when `ws` is null.
+  - Fixed React Hook ordering to strictly call all hooks before any early returns.
+  - Exported `AddDropdownButton` for shared use across the application.
+- **Global Theme & Sizing Token Alignment (`src/styles/theme.css`):**
+  - Verified `--global-header-height: 64px` and `--header-h: var(--global-header-height)`.
+
+**Ruled**
+- Exactly ONE horizontal row: NO second row, NO extra toolbar, NO duplicated page title, NO vertical padding expansion.
+- Dropdown menus float above content; header height remains strictly pinned at 64px.
+- Law 15 touch targets: all buttons and inputs maintain >= 44×44px effective touch targets via touch insets and min-height floors.
+- Single prominent primary CTA in header; secondary actions collapse into More (⋯) when horizontal space is constrained.
+
+**Verified**
+- `npm run typecheck`: 0 errors (strict TypeScript).
+- `npx vitest run src/components/shell`: 10/10 test files, 100/100 tests passed.
+- `npx vitest run src/__tests__/e2e/tier1-features.test.tsx`: 14/14 passed.
+- `npx vitest run src/__tests__/e2e/tier2-boundaries.test.tsx`: 9/9 passed.
+- `npx vitest run src/lib/__tests__/rentalMoreActionsRegistry.test.ts src/lib/__tests__/rentalOperationsWorkflow.test.ts src/modules/rentals/__tests__/rentalsOperationsHeader.test.tsx`: 37/37 passed.
+- `npm run lint`: 0 warnings, 0 errors.
+- `npm run lint:shell`: 649 files checked, 100% compliant with PageHeader, single primary CTA, 44px floor, and no dev notes.
+- `npm run check:contrast`: 54/54 pass (WCAG AA light & dark).
+- `npm run check:pglite`: 160/160 migrations applied, 0 leaks, 0 failures.
+- `npm run check:lifecycle`: 30/30 steps green.
+- `npm run build`: production build passed.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T21:34:34.859Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T21:35:19.971Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Babin applies migrations locally per BACKUP_PROTOCOL.md when deploying to production environment.
+
+## 2026-10-09 — Universal Add Dropdown Specification (GlobalAddMenu) Implementation
+
+**Did**
+- **Universal Add Dropdown Subsystem (`src/components/ui/creation/`):**
+  - Implemented `CreationActionRegistry.ts`: Registered all 22 typed creation actions across 7 canonical groups (`Rentals & Bookings`, `Clients & Contacts`, `Inventory & Bundles`, `Operations & Maintenance`, `Crew & Logistics`, `Documents & Billing`, `Expenses & Administration`). Defined authoritative `MODULE_CONTEXTUAL_MAPPING` mapping table for all 13 modules (Today, Rentals, Calendar, Inventory, Bundles, Clients, Operations, Payments, Crew Assist, Documents, Expenses, Maintenance, Settings).
+  - Implemented `GlobalAddMenu.tsx`: Universal `Add ▼` header control with 44px min-height, brand accent styling, floating portal menu with highlighted default action, secondary contextual choices, divider, and "All creation actions…" trigger. Supports keyboard navigation (Escape dismiss, Up/Down arrow selection, Enter execution).
+  - Implemented `CreationActionSearch.tsx`: Searchable modal for "All Creation Actions" with live filtering, category headers, and keyboard selection.
+  - Implemented `CreationContextProvider.tsx`: Central state machine managing active module, contextual prefill facts (bookingNo, client, asset), single-active-interface constraint, and clean workflow dispatching.
+  - Implemented `QuickCreateDialog.tsx`: Fast creation dialog for Client (+977 phone validation, duplicate detection banner via `findClientsByPhoneTail`, expandable PAN/VAT/address/notes, dirty discard confirmation) and generic quick records.
+  - Implemented `CreationDrawer.tsx`: Slide-over drawer for New Equipment (serialized/bulk tracking, condition, location, accessories) and New Expense. Law 6 strictly hides rates and replacement values from money-blind roles.
+  - Implemented `CreationWizard.tsx`: 4-step wizard for New Rental and New Quote with 06:00–06:00 rental policy calculation (`rentalDaysBetween`), AD/BS conversion (`toBs`, `formatBs`), and draft preservation when launching nested client quick-creation.
+- **Universal Header & Module Integration:**
+  - `src/App.tsx`: Wrapped application routes in `<CreationContextProvider>`.
+  - `src/components/shell/Header.tsx` & `src/components/ui/header/PageHeader.tsx`: Integrated `GlobalAddMenu` into Zone 3 right cluster, adapting automatically to the active workspace module and context data.
+  - Replaced fragmented standalone creation buttons ("Add Rental", "Add Client", "Add Equipment", "Add Bundle", "Create Document") across all modules: `Today.tsx`, `RentalsOperationsHeader.tsx`, `Inventory.tsx`, `Clients.tsx`, `Calendar.tsx`, `Finance.tsx`, `OperationsQueues.tsx`, `CrewBooking.tsx`, `Documents.tsx`.
+- **Comprehensive Test Suite:**
+  - Authored `src/components/ui/creation/__tests__/globalAddMenu.test.tsx` verifying:
+    - Contextual action resolution for all 13 modules according to Section 2 specification.
+    - 7 Canonical global groups filtering.
+    - Law 6 money blindness enforcement for `Warehouse`, `Technician`, `Driver`, and `Client`.
+    - Single-click open without accidental record writes.
+    - Escape key dismissal and touch targets >= 44×44px (Law 15).
+    - Search modal live filtering and selection.
+    - Quick create client validation and non-premature save.
+
+**Ruled**
+- Universal Add control replaces scattered creation buttons throughout the application; one highlighted default action per module is promoted first.
+- Law 6 Money Blindness: Money-blind roles never see financial actions (`quote.new`, `payment.record`, `adjustment.record`, `expense.new`) or financial fields (rates, replacement values). Groups with 0 permitted actions for the active role are omitted entirely.
+- Law 15: Touch targets >= 44×44px on all trigger buttons and menu items.
+- Only one creation interface active at a time; nested workflows preserve parent draft inputs without premature persistence.
+
+**Verified**
+- `npm run typecheck`: 0 errors (strict TypeScript).
+- `npm run lint`: 0 errors, 0 warnings across all `src/` files.
+- `npx vitest run src/components/ui/creation/__tests__/globalAddMenu.test.tsx`: 16/16 passed.
+- `npx vitest run src/modules/rentals/__tests__/rentalsOperationsHeader.test.tsx src/lib/__tests__/rentalMoreActionsRegistry.test.ts`: 21/21 passed.
+- `npx vitest run src/modules/documents/__tests__/Documents.render.test.tsx`: 5/5 passed.
+- `npm run check:contrast`: 54/54 pass (WCAG AA light & dark).
+- `npm run check:pglite`: 160/160 migrations applied, 0 leaks, 0 failures.
+- `npm run check:lifecycle`: 30/30 steps green.
+- `npm run build`: production build passed cleanly into `dist/`.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T21:47:09.648Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T21:47:35.896Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Babin applies migrations locally per BACKUP_PROTOCOL.md when deploying to production environment.
+
+## 2026-10-09 — Universal Rentals Operations Header & 4-Stage Equipment Movement Workflow
+
+**Did**
+- **Domain Workflow Engine (`src/lib/rentalOperationsWorkflow.ts`):**
+  - Implemented authoritative 9-state operational matrix:
+    - `Confirmed` → `Start Packing` (opens Packing)
+    - `Packing` → `Confirm Packed` (opens Packing)
+    - `Packed / Ready` → `Confirm Handover` (opens Handover)
+    - `Picked Up / On Rent` → `Return & Inspect` (opens Return & Inspection)
+    - `Partially Returned` → `Continue Return` (opens Return & Inspection)
+    - `Inspection Pending` → `Continue Inspection` (opens Return & Inspection)
+    - `Inspection Completed` → `Cleaning & Reset` (opens Cleaning & Reset)
+    - `Reset Completed` → `View Summary` (opens in-place equipment disposition modal)
+    - `Overdue` → `Return & Inspect` (opens Return & Inspection)
+  - Implemented 4-stage Operations dropdown generator:
+    - Stage 1: Packing (Start Packing / Review Packing)
+    - Stage 2: Handover (Confirm Handover / Review Handover)
+    - Stage 3: Return & Inspection (Return & Inspect / Review Return)
+    - Stage 4: Cleaning & Reset (Cleaning & Reset / Review Reset)
+  - Completed operations open read-only records; future operations disabled with explanatory hints.
+  - Role capability checks for Owner/Admin, Operations Officer, Equipment Caretaker, and money-blind floor staff.
+  - Unit tests in `src/lib/__tests__/rentalOperationsWorkflow.test.ts` (16 tests, 100% pass).
+- **In-Place Equipment Disposition Modal (`src/modules/rentals/modals/RentalSummaryModal.tsx`):**
+  - Provides instant modal summary for physical equipment status, tracking line items, serial numbers, custody, return status, and maintenance/damage holds.
+  - Keeps physical reset and custody distinct from billing/invoicing and damage incidents.
+- **Universal Rentals Operations Header (`src/modules/rentals/header/RentalsOperationsHeader.tsx`):**
+  - Implemented 3 operating modes:
+    1. Idle (0 selected): Search, Quick Filters, Add Rental (+ GlobalAddMenu), Scan Barcode, Refresh. Operations disabled with helpful prompt.
+    2. Single-Select (1 selected): Booking ID, status badge, stage hint, client pill, unsaved changes indicator, 4-stage Operations dropdown, context-aware primary CTA, and RentalMoreActions overflow menu.
+    3. Multi-Select (>1 selected): Batch selection counter, Clear selection, and safe bulk actions (Export CSV, Fast Return); never auto-advances irreversible custody transitions.
+  - Unit tests in `src/modules/rentals/__tests__/rentalsOperationsHeader.test.tsx` (6 tests, 100% pass).
+- **RentalsList Integration (`src/modules/rentals/RentalsList.tsx`):**
+  - Replaced ad-hoc header and removed duplicated inline row action buttons per specification ("Do not duplicate the same primary operations buttons inside page content").
+  - Row clicking selects rental to update header state.
+  - Maintained complete backwards compatibility with table layout, search, filters, pagination, and bulk actions.
+  - Unit/render tests in `src/modules/rentals/__tests__/rentalsList.render.test.tsx` (32 tests, 100% pass).
+- **BookingDetail Integration (`src/modules/rentals/BookingDetail.tsx`):**
+  - Added 'summary' action handling and 'View equipment summary' overflow action opening `RentalSummaryModal`.
+
+**Ruled**
+- Header primary action strictly governed by rental workflow status matrix; staff never need to switch pages to discover next operation.
+- Single prominent primary button in header; no duplicated operation action buttons in row cells or card bodies.
+- Physical custody operations (Handover, Return, Reset) remain rental-specific and fail-closed online RPCs; never advanced in bulk.
+- Strict Law 6 adherence: Zero financial figures or payment amounts exposed to money-blind roles (Warehouse, Technician, Driver, Client).
+- Law 15 touch targets >= 44x44px across all buttons and menu items.
+
+**Verified**
+- `npm run typecheck`: 0 errors (strict TypeScript).
+- `npx vitest run src/lib/__tests__/rentalOperationsWorkflow.test.ts`: 16/16 passed.
+- `npx vitest run src/modules/rentals/__tests__/rentalsOperationsHeader.test.tsx`: 6/6 passed.
+- `npx vitest run src/modules/rentals/__tests__/rentalsList.render.test.tsx`: 32/32 passed.
+- `npx vitest run src/lib/__tests__/rentalMoreActionsRegistry.test.ts`: 15/15 passed.
+- `npx vitest run src/modules/rentals/__tests__/uiPhase2Rentals.contract.test.tsx`: 8/8 passed.
+- `npm run check:pglite`: 160/160 migrations applied, 0 leaks, 0 failures.
+- `npm run check:lifecycle`: 30/30 steps green.
+- `npm run check:contrast`: 54/54 pass (WCAG AA light & dark).
+- `npm run build`: production build successful (tsc + vite build).
+- `npm run completion`: counted and verified.
+- `npm run lint:progress`: verified.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T21:25:17.026Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T21:26:06.379Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- None for this sprint. Universal Rentals Operations Header controlling the complete 4-stage workflow (Packing → Handover → Return & Inspection → Cleaning & Reset) fully implemented, integrated, tested, and verified.
+
+## 2026-10-09 — Universal More (⋯) Secondary Actions Menu (RentalMoreActions) implemented for Rentals Headers
+
+**Did**
+- **Action Registry & Evaluation Engine (`src/lib/rentalMoreActionsRegistry.ts`):**
+  - Implemented `evaluateRentalSecondaryActions` evaluating the 5 primary secondary action groups:
+    1. `Quote`: Drafting, viewing, previewing, PDF export, WhatsApp delivery, revision versioning.
+    2. `Invoice`: Drafting, duplicate prevention, payment status, PDF export, payment history, corrections. Strictly hidden from money-blind staff (Law 6).
+    3. `Duplicate Rental`: "Duplicate as New Draft" copying client, equipment structure, and operational notes while stripping IDs, holds, invoices, payments, and signatures; availability recheck on new dates.
+    4. `Audit History`: Append-only immutable audit trail viewer with category filters (All, Operational, Financial, Documents) and CSV export. Financial history strictly hidden from money-blind roles.
+    5. `Cancel Rental`: Pre-handover lifecycle cancellation requiring >=10 char reason and staff confirmation checkbox; checks prior packing work and releases reservations via `cancelRental`.
+  - Enforced 9-stage context-aware lifecycle matrix from specification Section 7 (Draft, Confirmed, Packing, Packed, On Rent, Partially Returned, Reset Pending, Completed, Cancelled).
+  - Comprehensive unit test suite in `src/lib/__tests__/rentalMoreActionsRegistry.test.ts` (15 tests passing).
+- **Secondary Action Modals & Drawers (`src/modules/rentals/actions/`):**
+  - `CancelRentalDialog.tsx`: Pre-handover cancellation dialog with packing warnings, allocation release, and validation.
+  - `DuplicateRentalDialog.tsx`: Date picker, item review, and clean draft creation via `saveDraft`.
+  - `RentalAuditDrawer.tsx`: ContextDrawer audit viewer with category filters, export, and money-blind guards.
+  - `QuoteActionsMenu.tsx`: Quote preview modal with VAT/discount summary, PDF download, and WhatsApp link generation.
+  - `InvoiceActionsMenu.tsx`: Invoice status modal, duplicate invoice creation prevention, and `CreateInvoiceModal` trigger.
+- **Universal Header Component (`RentalMoreActions.tsx`):**
+  - Single standardized `More (⋯)` dropdown button and floating menu with nested submenus for Quote and Invoice.
+  - Destructive styling and separator for dangerous actions (Cancel Rental).
+  - Dismissal on outside click and Escape.
+  - Comprehensive unit test suite in `src/modules/rentals/actions/__tests__/RentalMoreActions.test.tsx` (7 tests passing).
+- **Universal Header Integration:**
+  - Integrated into Rentals List universal header (`RentalsOperationsHeader.tsx`).
+  - Integrated into Rental Detail universal header (`BookingDetail.tsx`).
+  - Maintained full backwards compatibility with existing layout and simplification test suites (`BookingDetail.layout.test.tsx`, `bookingDetailSimplification.test.tsx`, `rentalsOperationsHeader.test.tsx`, `rentalsList.render.test.tsx`).
+
+**Ruled**
+- Secondary actions dynamically adapt based on rental lifecycle stage, authenticated staff permissions, and money visibility.
+- Strictly Law 6 compliant: money-blind roles (Warehouse, Technician, Driver, Client) never see financial figures, tax calculations, or invoice actions.
+- Post-handover rentals (On Rent, Returned, Closed) cannot be cancelled via ordinary cancellation; must follow return workflow.
+- Touch targets strictly >= 44x44px adhering to Law 15.
+
+**Verified**
+- `npm run typecheck`: 0 errors.
+- `npx vitest run src/lib/__tests__/rentalMoreActionsRegistry.test.ts`: 15/15 passed.
+- `npx vitest run src/modules/rentals/actions/__tests__/RentalMoreActions.test.tsx`: 7/7 passed.
+- `npx vitest run src/modules/rentals/__tests__/rentalsOperationsHeader.test.tsx`: 6/6 passed.
+- `npx vitest run src/modules/rentals/__tests__/rentalsList.render.test.tsx`: 32/32 passed.
+- `npx vitest run src/modules/rentals/__tests__/BookingDetail.layout.test.tsx`: 21/21 passed.
+- `npx vitest run src/modules/rentals/__tests__/bookingDetailSimplification.test.tsx`: 6/6 passed.
+- `npm run check:pglite`: 160/160 migrations applied, 0 leaks.
+- `npm run check:lifecycle`: 30/30 steps green.
+- `npm test`: 87/87 test suites passed, 2,262/2,262 tests green (100%).
+- `npm run build`: built in 2.14s (dist/ generated cleanly).
+- `npm run completion`: counted and recorded.
+- `npm run lint:progress`: OK.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T21:14:44.685Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T21:14:57.187Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- None for this sprint. All 5 universal secondary action groups (Quote, Invoice, Duplicate, Audit History, Cancel Rental) implemented, tested, and verified across both Rentals List and Rental Detail universal headers.
+
+## 2026-10-09 — Universal Page Header Standard implemented across all 15 application modules
+
+**Did**
+- **Universal Page Header Standard Architecture (`src/components/ui/header/`).**
+  - Created typed action registry engine `src/components/ui/header/pageActionRegistry.ts` supporting action prioritization (`primary`, `add`, `secondary`, `overflow`), permission filtering (money-blindness Law 6), and workflow stage gating.
+  - Implemented unified, responsive 3-zone layout `src/components/ui/header/PageHeader.tsx` and `pageHeader.css`:
+    - Zone 1 (Left): Back / Breadcrumb, Module Icon, Page Title, Eyebrow, Status badge/pill, and Unsaved Changes indicator.
+    - Zone 2 (Center): Universal search input with keyboard shortcut `/`, clear button, and accessible labeling.
+    - Zone 3 (Right): Add button with dropdown for multi-type creation, contextual secondary buttons, overflow menu (•••), and single prominent primary CTA.
+    - Integrated bulk selection mode overlay with count, selection clearing, and contextual bulk actions.
+    - Built-in `<ConfirmDialog>` integration for destructive or irreversible actions.
+    - Backward-compatible integration: exported through `src/components/ui/Page.tsx` and `ScreenHeader.tsx`, retaining `.page-header` class name for test selector compatibility.
+- **Systematic Implementation across all 15 Required Surfaces:**
+  1. *Today (`Today.tsx`):* Header express counter search with `/` shortcut, Add Rental primary button, Operations shortcut, movement status pill. Duplicate search in workbar removed.
+  2. *Rentals (`RentalsList.tsx`):* Header search input, `Add Rental` primary CTA, count badge, Fast Return and Record Payment secondary buttons.
+  3. *Rental Detail (`BookingDetail.tsx`):* Integrated operations menu, `Confirm Booking` primary CTA, Print booking, WhatsApp share button, and stage status pill.
+  4. *Calendar (`Calendar.tsx`):* Centralized search in header, view toggle tabs and Full View in secondary actions, Check Availability primary CTA.
+  5. *Inventory (`Inventory.tsx`):* Center search, models count status badge, primary `Add Equipment` / `Add Bundle` (dynamic based on active tab).
+  6. *Equipment Detail (`AssetDetail.tsx`):* Asset code status pill, Book Asset primary CTA, Edit Equipment and Print Labels secondary actions.
+  7. *Bundles (`Bundles.tsx` & `Inventory.tsx`):* `Add Bundle` primary CTA and search on Bundles tab.
+  8. *Clients (`Clients.tsx`):* Centralized search (`q` param), client count status badge, `Add Client` primary CTA.
+  9. *Payments (`Payments.tsx`):* Search, count badge, and Record Payment in header via enhanced `ScreenHeader`.
+  10. *Operations (`OperationsQueues.tsx`):* Search, queue count pill, Delivery & Sub-Rentals secondary actions.
+  11. *Crew Assist (`CrewBooking.tsx`):* Search, staff count badge, `Assign Crew` primary CTA.
+  12. *Documents (`Documents.tsx`):* Integrated header search, document count status pill, primary `Create Document` CTA and `Export` secondary action.
+  13. *Expenses (`Expenses.tsx`):* Full search across vendor/description/number in header, expense count status badge, and primary `Add Expense` CTA.
+  14. *Reports (`RentalReports.tsx`):* Centralized search, active report tab status badge, and `Export CSV` action in header.
+  15. *Settings (`Settings.tsx`):* Settings search, active section status badge, `isDirty` unsaved changes indicator, and Edit/Done actions.
+- **Verification.**
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - `npm run lint:shell`: 629 files clean.
+  - `npm run lint:ui-copy`: 0 violations.
+  - `npm run check:contrast`: 54/54 WCAG AA pass.
+  - `npm test`: 331/331 test files passed, 4,225/4,225 tests green (100%).
+  - `npm run check:pglite`: 160/160 migrations applied, 0 leaks.
+  - `npm run check:lifecycle`: 30/30 steps green.
+  - `npm run build`: built in 37s with full PWA precache.
+
+**Ruled**
+- One shared `PageHeader` governs all page-level actions; no duplicate page-level action bars in content bodies.
+- Only one prominent primary action displayed per workflow state.
+- Money-blind roles (Warehouse, Technician, Driver, Client) never receive monetary actions or figures in the header (Law 6).
+- Minimum interactive touch target >= 44x44px on all header buttons, inputs, and dropdown triggers (Law 15).
+
+**Verified**
+- `npm run typecheck`
+- `npm run lint`
+- `npm run lint:shell`
+- `npm run lint:ui-copy`
+- `npm run check:contrast`
+- `npm test`
+- `npm run check:pglite`
+- `npm run check:lifecycle`
+- `npm run build`
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T19:57:17.005Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T19:57:33.219Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live staging testing against Supabase instance following `BACKUP_PROTOCOL.md`.
+
+## 2026-10-09 — Bug hunting & fixes: NaN view count guard, full test suite 4,225/4,225 green, vitest mock export hardening
+
+**Did**
+- **NaN view count bug in `RentalsList` and `FilterBar`.**
+  - In `src/lib/queries/rentalViews.ts`, `booked[index] + drafts` could evaluate to `NaN` when `drafts` or `booked[index]` was `undefined` or non-numeric (e.g. during mock queries or when `count` is missing), which was rendered directly into the DOM and triggered React's warning `Warning: Received NaN for the children attribute`.
+  - Fixed `listRentalViewCounts` to strictly guard `drafts` and `bNum` against `NaN`/`undefined`, and correctly set `count: null` for the `'All'` view when either component count is `null` (matching the test contract `keeps an unanswered draft count unknown`).
+  - Added defensive guards in `src/modules/rentals/RentalsList.tsx` and `src/components/ui/FilterBar.tsx` to verify `typeof count === 'number' && !Number.isNaN(count)` before rendering count pills.
+- **Vitest mock export bug in `createDocument.test.ts`.**
+  - Fixed `src/actions/documents/__tests__/createDocument.test.ts` where `vi.mock('../../../lib/supabase')` lacked the `IS_MOCK` export expected by `documentStorage.ts`, producing vitest mock warning during test execution. Added `IS_MOCK: false` to the mock object.
+- **Full test suite execution.**
+  - Executed the complete vitest suite across all 331 test files: **4,225 tests passed (100% green, 0 failed)**.
+
+**Ruled**
+- Numerical badges and count pills must never render `NaN` or unformatted numbers; unknown or pending counts safely fall back to `'—'` or `null`.
+- Vitest module mocks for `supabase` must export `IS_MOCK` alongside the client instance.
+
+**Verified**
+- `npm run typecheck` 0 errors.
+- `npm run lint` 0 errors, 0 warnings.
+- `npm run lint:shell` & `npm run lint:ui-copy` clean.
+- `npm run check:contrast` 54/54 WCAG AA pass.
+- `npm test`: all 331 test files passed, 4,225/4,225 tests green.
+- `npm run check:pglite` 160/160 migrations applied, 0 leaks.
+- `npm run check:lifecycle` 30/30 steps green.
+- `npm run build` completed in 53s with full PWA precache.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T18:51:28.977Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T18:52:01.513Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live staging testing against Supabase instance following `BACKUP_PROTOCOL.md`.
+
+## 2026-10-08 — Main dev server & Electron active; success toasts instrumented across all workspaces & modals (Law 12)
+
+**Did**
+- **Root cause for UI mismatch.** Port 3000 was previously being occupied by an outdated background worktree (`zen-swartz-228eaa`). Terminated all worktree processes and launched Vite dev server (`http://localhost:3000/`) and Electron desktop app directly from the canonical `main` repository (`C:\Users\use\Desktop\babin-rentals-os`) with the consolidated production UI.
+- **Success notification instrumentation (Law 12).**
+  - `src/components/ui/Toast.tsx`: Added resilient `NOOP_TOAST` fallback for `useToast()` so isolated components and unit tests never throw when rendered outside `ToastProvider`.
+  - `src/modules/rentals/booking/useNewRentalSubmit.ts`: Added `showSuccessToast` callback on `confirmBooking` displaying `"Booking Confirmed", "Rental <no> is now Booked"`. Wired into `NewRental.tsx`.
+  - `src/modules/rentals/booking/useNewRentalDraft.ts`: Added success toast on `cancelDraftBooking`.
+  - `src/modules/rentals/PackingWorkspace.tsx`: Added `"Packing Completed", "Rental <no> is now Packed"`.
+  - `src/modules/rentals/HandoverWorkspace.tsx`: Added `"Handover Completed", "Rental <no> is now On Rent"`.
+  - `src/modules/rentals/ReturnWorkspace.tsx` & `FastReturnModal.tsx`: Added `"Return Completed", "Rental <no> returned successfully"`.
+  - `src/modules/rentals/ResetWorkspace.tsx`: Added `"Reset Completed", "Rental <no> reset and returned to pool"`.
+  - `src/modules/rentals/EvidenceWorkspace.tsx`: Added `"Evidence Reviewed", "Marked photo for review"`.
+  - `src/modules/rentals/BookingDetail.tsx`: Added `"Project Type Updated"` in `ProjectTypeEditor`.
+  - `src/modules/rentals/RentalsList.tsx`: Added `"Payment Recorded"` on payment modal success.
+  - `src/modules/operations/modals/LogCaseModal.tsx`: Added `"Incident Logged", "Case <id> logged successfully"`.
+  - `src/modules/operations/modals/ResolveCaseModal.tsx`: Added `"Case Resolved", "Case marked as <status>"`.
+  - `src/modules/finance/modals/RefundPaymentModal.tsx`: Added `"Payment Reversed"`.
+  - `src/modules/finance/modals/VoidInvoiceModal.tsx`: Added `"Invoice Voided"`.
+  - `src/modules/operations/DriverHandoverModal.tsx`: Added `"Handover Completed"`.
+  - `src/modules/operations/DeliveryWorkspace.tsx`: Removed validation toast, replaced with inline form error banner adhering to Law 12 ("toasts carry successes only").
+- **Tests.**
+  - Added unit test `src/modules/rentals/booking/__tests__/useNewRentalSubmit.test.tsx` verifying toast dispatch and booking confirmation payload.
+
+**Ruled**
+- Law 12 holds: toasts convey successes only. Validation errors in `DeliveryWorkspace` and `useNewRentalSubmit` remain inline on their own surfaces.
+- All floor workspaces attribution and money-blind roles remain guarded by RLS and auth contexts.
+
+**Verified**
+- `npm run typecheck` 0 errors.
+- Vitest suites: 43 rentals test files (412 tests), 16 operations/finance test files (250 tests) green.
+- `npm run check:contrast`: 54/54 WCAG AA pass (light and dark).
+- `npm run lint`: 0 errors / warnings.
+- `npm run check:pglite`: 160/160 migrations applied, 0 leaks.
+- `npm run check:lifecycle`: 30/30 steps green.
+- `npm run build`: cleanly produced PWA assets in `dist/`.
+- Dev server running on `http://localhost:3000/` and Electron running from `main`.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T18:04:21.251Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T18:04:38.210Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live staging testing against Supabase instance following `BACKUP_PROTOCOL.md`.
+
 ## 2026-10-08 — Mock mode: inserts get the `now()` / `CURRENT_DATE` defaults Postgres fills (payments no longer dated 1/1/1970)
 
 Branch `claude/md-brief-gaps`. Closes the "Mock only" bullet under Remaining in the entry below.

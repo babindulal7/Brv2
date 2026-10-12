@@ -729,6 +729,7 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
    */
   const [status, setStatus] = useState<ExpenseStatusDb | 'All'>('All')
   const [categoryId, setCategoryId] = useState<string>('All')
+  const [searchQuery, setSearchQuery] = useState('')
   const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
   const filtersOpen = externalFiltersOpen ?? internalFiltersOpen
   const closeFilters = onFiltersClose ?? (() => setInternalFiltersOpen(false))
@@ -781,15 +782,17 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
     const chips: Record<string, readonly string[]> = {}
     if (status !== 'All') chips['status'] = [status]
     if (categoryId !== 'All') chips['category_id'] = [categoryId]
+    const trimmed = searchQuery.trim()
     return {
       ...(Object.keys(chips).length > 0 ? { chips } : {}),
+      ...(trimmed ? { search: trimmed } : {}),
       sort: { column: 'expense_date', ascending: false },
       tiebreak: 'id',
       page: { index: page - 1, size: ROWS_PER_PAGE },
     }
-  }, [status, categoryId, page])
+  }, [status, categoryId, searchQuery, page])
 
-  const isFiltered = status !== 'All' || categoryId !== 'All'
+  const isFiltered = status !== 'All' || categoryId !== 'All' || Boolean(searchQuery.trim())
 
   /*
    * Short-circuits for a money-blind session. Sending a request you already know
@@ -818,6 +821,7 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
   const clearFilters = useCallback(() => {
     setStatus('All')
     setCategoryId('All')
+    setSearchQuery('')
     setPage(1)
   }, [])
 
@@ -883,6 +887,30 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
         embedded={embedded}
         icon="card"
         title="Expenses"
+        status={
+          money && total !== null ? (
+            <span className="badge badge-neutral" style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+              {total} {total === 1 ? 'expense' : 'expenses'}
+            </span>
+          ) : undefined
+        }
+        search={
+          money
+            ? {
+                value: searchQuery,
+                onChange: (val: string) => {
+                  setSearchQuery(val)
+                  setPage(1)
+                },
+                onClear: () => {
+                  setSearchQuery('')
+                  setPage(1)
+                },
+                placeholder: 'Search expenses by vendor, description, or #…',
+                ariaLabel: 'Search expenses',
+              }
+            : undefined
+        }
         leading={!embedded && money ? <FilterButton onClick={() => setInternalFiltersOpen((open) => !open)} controls="expense-filters" expanded={filtersOpen} activeCount={Number(categoryId !== 'All')} /> : undefined}
         description="Track operating costs and approvals."
         {...(money ? { actions: headerActions } : {})}

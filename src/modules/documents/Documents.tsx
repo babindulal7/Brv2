@@ -8,6 +8,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { Select } from '../../components/ui/Select'
 import { Card, Button, Rail } from '../../components/ui/Page'
+import { GlobalAddMenu } from '../../components/ui/creation/GlobalAddMenu'
 import { PageShell } from '../../components/ui/PageShell'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { DataTableShell } from '../../components/ui/DataTable'
@@ -467,6 +468,26 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         {docError && <ErrorBanner title="Documents could not be loaded." message={docError} onRetry={refetchDocs} />}
         <ScreenHeader
           embedded={embedded}
+          icon="file"
+          title="Documents"
+          status={
+            <span className="badge badge-neutral" style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+              {total} documents
+            </span>
+          }
+          search={{
+            value: query,
+            onChange: (val: string) => {
+              setQuery(val)
+              setPage(1)
+            },
+            onClear: () => {
+              setQuery('')
+              setPage(1)
+            },
+            placeholder: 'Search in documents…',
+            ariaLabel: 'Search documents by name, ID, type, record or client',
+          }}
           leading={
             <FilterButton
               onClick={() => setFiltersOpen(!filtersOpen)}
@@ -475,20 +496,19 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               expanded={filtersOpen}
             />
           }
-          title="Documents"
           actions={
             <>
               <Button icon="download" aria-label="Export documents" onClick={exportCsv}>
                 {phone ? '' : 'Export'}
               </Button>
-              <Button
-                icon="plus"
-                variant="primary"
-                aria-label="Create Document"
-                onClick={() => setIsCreateOpen(true)}
-              >
-                {phone ? '' : 'Create Document'}
-              </Button>
+              <GlobalAddMenu
+                module="documents"
+                onSelectAction={(action) => {
+                  if (action.id === 'document.new') {
+                    setIsCreateOpen(true)
+                  }
+                }}
+              />
             </>
           }
         />
@@ -682,24 +702,24 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         })()}
 
         {/* ── centre ────────────────────────────────────────────────────── */}
-        <Card bodyStyle={{ padding: 0 }}>
-          <ListControlRow
-            search={
-              <SearchInput
-                value={query}
-                onChange={(val) => {
-                  setQuery(val)
-                  setPage(1)
-                }}
-                onClear={() => {
-                  setQuery('')
-                  setPage(1)
-                }}
-                placeholder="Search in documents…"
-                aria-label="Search documents by name, ID, type, record or client"
-              />
-            }
-            sort={<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <Card bodyStyle={{ padding: 0 }}>
+            <ListControlRow
+              search={
+                <SearchInput
+                  value={query}
+                  onChange={(val) => {
+                    setQuery(val)
+                    setPage(1)
+                  }}
+                  onClear={() => {
+                    setQuery('')
+                    setPage(1)
+                  }}
+                  placeholder="Search in documents…"
+                  aria-label="Search documents by name, ID, type, record or client"
+                />
+              }
+              sort={<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort by
               <Select
                 value={sort}

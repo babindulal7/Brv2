@@ -14,7 +14,7 @@ afterEach(() => {
 })
 
 describe('ClientCombobox placement', () => {
-  it('tracks a smooth-scrolling field and stays between the shell shortcuts and footer on phone', async () => {
+  it.each([true, false])('tracks a smooth-scrolling field and clears phone chrome (footer: %s)', async (withFooter) => {
     vi.stubGlobal('innerWidth', 375)
     vi.stubGlobal('innerHeight', 844)
     const host = document.createElement('main')
@@ -26,6 +26,7 @@ describe('ClientCombobox placement', () => {
       if (this === host) return rect(0, 60, 375, 784)
       if (this.getAttribute('aria-label') === 'Rental sections') return rect(16, 60, 343, 58)
       if (this.getAttribute('aria-label') === 'Record actions') return rect(16, 660, 343, 126)
+      if (this.getAttribute('aria-label') === 'Main') return rect(0, 660, 375, 58)
       if (this.tagName === 'INPUT') return inputBounds
       return rect(0, 0, 0, 0)
     })
@@ -33,7 +34,7 @@ describe('ClientCombobox placement', () => {
       await act(async () => root.render(<>
         <nav aria-label="Rental sections" />
         <ClientCombobox clients={[]} selectedClientId={null} onSelect={vi.fn()} onCreateNew={vi.fn()} />
-        <div aria-label="Record actions" />
+        {withFooter ? <div aria-label="Record actions" /> : <nav aria-label="Main" style={{ position: 'fixed' }} />}
       </>))
       await act(async () => host.querySelector('input')?.focus())
       const popup = document.querySelector('[role="listbox"]')?.parentElement

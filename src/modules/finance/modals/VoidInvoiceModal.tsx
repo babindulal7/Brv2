@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { useAuth } from '../../../lib/auth'
+import { useToast } from '../../../components/ui/Toast'
 import { voidInvoice } from '../../../actions/finance/voidInvoice'
 
 interface VoidInvoiceModalProps {
@@ -22,6 +23,7 @@ export function VoidInvoiceModal({
   client,
 }: VoidInvoiceModalProps) {
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   const [reason, setReason] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -54,6 +56,7 @@ export function VoidInvoiceModal({
         },
         { userId: user.id, role: user.role },
       )
+      showSuccessToast('Invoice Voided', `${invoiceNo ?? invoiceId} has been voided`)
       onSuccess(invoiceId)
       onClose()
     } catch (err) {

@@ -21,6 +21,7 @@ export interface UseNewRentalSubmitOptions {
   dispatchContext: () => ActionContext | null
   setActionError: (msg: string | null) => void
   setConfirmedSuccess: (success: { bookingId: string; bookingNo: string } | null) => void
+  showSuccessToast?: (title: string, message?: string) => void
 
   client: ClientRecord | null | undefined
   lines: Line[]
@@ -69,6 +70,7 @@ export function useNewRentalSubmit({
   dispatchContext,
   setActionError,
   setConfirmedSuccess,
+  showSuccessToast,
   client,
   lines,
   equipmentLines,
@@ -281,6 +283,8 @@ export function useNewRentalSubmit({
         crewKeys.current = []
         transportKey.current = null
         setSaveState('saved')
+        const label = bookedNo.startsWith('BK-') || bookedNo.startsWith('Rental ') ? bookedNo : `Rental ${bookedNo}`
+        showSuccessToast?.('Booking Confirmed', `${label} is now Booked`)
         setConfirmedSuccess({ bookingId: bookedId, bookingNo: bookedNo })
       } catch (err) {
         setSaveState('error')
@@ -345,6 +349,7 @@ export function useNewRentalSubmit({
     setSaveState,
     setSavedDraftFingerprint,
     setConfirmedSuccess,
+    showSuccessToast,
   ])
 
   return {

@@ -1,7 +1,7 @@
 import { formatAd } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
+import { PageHeader, Button, KpiStrip, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
@@ -46,6 +46,7 @@ export default function RentalReports() {
   const viewport = useViewport()
   const [activeTab, setActiveTab] = useState<RentalTab>('performance')
   const [filters, setFilters] = useState<ReportFilters>({})
+  const [searchQuery, setSearchQuery] = useState('')
 
   const [perfData, setPerfData] = useState<RentalPerformanceReportData | null>(null)
   const [durationData, setDurationData] = useState<RentalDurationReportData | null>(null)
@@ -314,12 +315,67 @@ export default function RentalReports() {
     }))
   }, [durationData])
 
+  const filteredTopBookings = useMemo(() => {
+    if (!perfData?.topBookings) return []
+    if (!searchQuery.trim()) return perfData.topBookings
+    const q = searchQuery.toLowerCase().trim()
+    return perfData.topBookings.filter(
+      (b) =>
+        b.bookingNo.toLowerCase().includes(q) ||
+        b.clientName.toLowerCase().includes(q) ||
+        b.project.toLowerCase().includes(q),
+    )
+  }, [perfData?.topBookings, searchQuery])
+
+  const filteredCancelledBookings = useMemo(() => {
+    if (!cancelData?.cancelledBookings) return []
+    if (!searchQuery.trim()) return cancelData.cancelledBookings
+    const q = searchQuery.toLowerCase().trim()
+    return cancelData.cancelledBookings.filter(
+      (b) =>
+        b.bookingNo.toLowerCase().includes(q) ||
+        b.clientName.toLowerCase().includes(q) ||
+        b.project.toLowerCase().includes(q) ||
+        b.reason.toLowerCase().includes(q),
+    )
+  }, [cancelData?.cancelledBookings, searchQuery])
+
+  const handleExportCsv = () => {
+    const rows = getCsvRows()
+    const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
+    const body = rows.map((r) => r.map(cell).join(',')).join('\r\n')
+    const blob = new Blob([body], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `rentals-${activeTab}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
         icon="calendar"
         title="Rentals Reports"
         description="Comprehensive analysis of rental turnover, duration distribution, and lost quote cancellations."
+        status={
+          <span className="badge badge-neutral" style={{ textTransform: 'capitalize', fontWeight: 600 }}>
+            {activeTab}
+          </span>
+        }
+        search={{
+          value: searchQuery,
+          onChange: setSearchQuery,
+          onClear: () => setSearchQuery(''),
+          placeholder: 'Search report data…',
+          ariaLabel: 'Search report bookings and projects',
+        }}
+        actions={
+          <Button icon="download" onClick={handleExportCsv} aria-label="Export CSV report">
+            Export CSV
+          </Button>
+        }
       />
 
       {/* Shared Toolbar */}
@@ -463,7 +519,7 @@ export default function RentalReports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {perfData?.topBookings.map((b) => (
+                  {filteredTopBookings.map((b) => (
                     <tr key={b.id}>
                       <td style={td}>
                         <Link
@@ -663,7 +719,7 @@ export default function RentalReports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {cancelData?.cancelledBookings.map((cb) => (
+                  {filteredCancelledBookings.map((cb) => (
                     <tr key={cb.id}>
                       <td style={td}>
                         <Link

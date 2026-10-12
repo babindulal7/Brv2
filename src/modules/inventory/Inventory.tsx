@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, PageHeader, PageActions, KpiStrip } from '../../components/ui/Page'
+import { GlobalAddMenu } from '../../components/ui/creation/GlobalAddMenu'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
@@ -1587,20 +1588,7 @@ export default function Inventory() {
   const equipmentActions =
     tab === 'Equipment' && !isNew ? (
       <PageActions
-        primary={
-          <Button
-            icon="plus"
-            variant="primary"
-            aria-label="Add Equipment"
-            onClick={() => {
-              const p = new URLSearchParams(params)
-              p.set('tab', 'new')
-              setParams(p, { replace: true })
-            }}
-          >
-            {phone ? '' : 'Add Equipment'}
-          </Button>
-        }
+        primary={<GlobalAddMenu module="inventory" />}
         secondary={[
           <Button key="refresh" icon="refresh" onClick={refreshAll} aria-label="Refresh equipment">
             {phone ? '' : 'Refresh'}
@@ -1623,6 +1611,10 @@ export default function Inventory() {
           },
         ]}
       />
+    ) : tab === 'Bundles' && params.get('action') !== 'new' ? (
+      <PageActions
+        primary={<GlobalAddMenu module="bundles" />}
+      />
     ) : null;
 
   return (
@@ -1639,6 +1631,32 @@ export default function Inventory() {
           ),
         } : {})}
         title="Inventory"
+        status={
+          tab === 'Equipment' && !isNew && !list.loading ? (
+            <span
+              className="eyebrow-pill"
+              style={{
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: 'var(--t-meta, 13px)',
+                letterSpacing: 'normal',
+              }}
+            >
+              {list.total ?? list.rows.length} models
+            </span>
+          ) : null
+        }
+        search={
+          tab === 'Equipment' && !isNew
+            ? {
+                value: searchTerm,
+                onChange: setSearchTerm,
+                placeholder: 'Search equipment or asset code (press /)',
+                onClear: () => setSearchTerm(''),
+                ariaLabel: 'Search inventory',
+              }
+            : undefined
+        }
         description="Find equipment, check availability, and manage stock."
         actions={equipmentActions}
       />

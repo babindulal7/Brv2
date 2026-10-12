@@ -9,6 +9,7 @@ export type RentalPrimaryActionType =
   | 'reset'
   | 'close'
   | 'view'
+  | 'summary'
   | 'fulfill'
 
 export interface RentalPrimaryActionFacts {

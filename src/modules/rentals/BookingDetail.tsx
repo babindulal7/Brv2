@@ -94,6 +94,8 @@ import { LateFeePanel } from './LateFeePanel'
 import { lateFee } from '../../lib/lateFee'
 import type { LateFeeOutcome } from '../../lib/lateFee'
 import { ReturnSettlementModal, type ReturnSettlementDamageItem } from './modals/ReturnSettlementModal'
+import { RentalSummaryModal } from './modals/RentalSummaryModal'
+import { RentalMoreActions } from './actions/RentalMoreActions'
 
 /**
  * # Booking Detail — live, for ANY `:bookingNo`
@@ -213,6 +215,7 @@ function ProjectTypeEditor({
   role: ActionContext['role']
   onSaved: (projectType: string | null, projectTypeOther: string | null) => void
 }) {
+  const { showSuccessToast } = useToast()
   const [draft, setDraft] = useState(currentType ?? '')
   const [draftOther, setDraftOther] = useState(currentOther ?? '')
   const [saving, setSaving] = useState(false)
@@ -241,6 +244,7 @@ function ProjectTypeEditor({
         { userId, role },
       )
       onSaved(out.projectType, out.projectTypeOther)
+      showSuccessToast('Project Type Updated', `Updated to ${out.projectType ?? 'None / Unset'}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update project type. Your previous value has been restored.')
     } finally {
@@ -1227,6 +1231,7 @@ function BookingDetailView() {
 
   const [lateFeeOutcome, setLateFeeOutcome] = useState<LateFeeOutcome | null>(null)
   const [settlementModalOpen, setSettlementModalOpen] = useState(false)
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
 
   const lateFeeData = useMemo(() => {
     if (!booking || !canBookingMoney || totals.total <= 0) return null
@@ -2080,6 +2085,30 @@ function BookingDetailView() {
                     }}
                   />
                 )}
+                {booking && (
+                  <RentalMoreActions
+                    key="rental-more-actions"
+                    booking={{
+                      id: booking.id,
+                      bookingNo: booking.bookingNo,
+                      clientName: booking.clientName,
+                      clientId: booking.clientId,
+                      stage: booking.stage,
+                      isCancelled: booking.isCancelled,
+                      isClosed: booking.isClosed,
+                      itemCount: booking.itemCount,
+                      pickupDate: booking.pickupAtAd,
+                      returnDate: booking.returnAtAd,
+                      totalAmount: totals.total,
+                      paidAmount: totals.paid,
+                      outstandingAmount: totals.outstanding,
+                      depositRequired: booking.depositRequired,
+                    }}
+                    selectedCount={1}
+                    ariaLabel="More actions for rental"
+                    onActionCompleted={refreshBookingData}
+                  />
+                )}
               </>
             }
             secondary={[
@@ -2203,6 +2232,14 @@ function BookingDetailView() {
                       {closing ? 'Closing…' : 'Close Rental'}
                     </Button>
                   )
+                ) : primaryAction.actionType === 'summary' ? (
+                  <Button
+                    icon="eye"
+                    variant="primary"
+                    onClick={() => setShowSummaryModal(true)}
+                  >
+                    {primaryAction.label}
+                  </Button>
                 ) : primaryAction.disabled ? (
                   <Unavailable reason={primaryAction.reason || 'Action unavailable'}>
                     <Button icon={primaryAction.icon} variant="primary" disabled>
@@ -3277,6 +3314,14 @@ function BookingDetailView() {
           totalItemCount={booking.itemCount}
           itemsWithIssues={returnDamageItems}
           onConfirmSettlement={handleConfirmSettlement}
+        />
+      )}
+
+      {showSummaryModal && booking && (
+        <RentalSummaryModal
+          isOpen={showSummaryModal}
+          onClose={() => setShowSummaryModal(false)}
+          bookingNo={booking.bookingNo}
         />
       )}
     </PageShell>

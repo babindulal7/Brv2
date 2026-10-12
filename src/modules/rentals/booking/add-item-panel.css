@@ -33,6 +33,13 @@
     gap: 6px !important;
   }
 
+  .new-rental-equipment-catalogue.is-filtering .new-rental-equipment-catalogue-controls {
+    min-height: 0;
+    flex: 1 1 auto !important;
+    overflow-y: auto;
+  }
+  .new-rental-equipment-catalogue.is-filtering .new-rental-equipment-catalogue-results { display: none; }
+
   .new-rental-equipment-catalogue-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

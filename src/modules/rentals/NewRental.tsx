@@ -1,10 +1,13 @@
 import { RecordActions } from '../../components/ui/RecordWorkspace'
 import type { QuoteSnapshot } from '../../lib/queries/quoteEditor'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Rail } from '../../components/ui/Page'
+import { Card, Rail } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
+import { OverflowMenu, type OverflowMenuItem } from '../../components/ui/OverflowMenu'
+import { WorkspaceHeaderRightActions } from '../../components/shell/WorkspacePortal'
+import { useOptionalWorkspace } from '../../lib/workspaceContext'
 import { PageShell } from '../../components/ui/PageShell'
 import './rentals.css'
 import './new-rental-flow.css'
@@ -93,7 +96,7 @@ export interface NewRentalProps {
   onDone?: () => void
 }
 
-export default function NewRental({ embedded = false, onDone, editBookingId }: NewRentalProps = {}) {
+export default function NewRental({ onDone, editBookingId }: NewRentalProps = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const doExit = useCallback(() => {
@@ -108,6 +111,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     }
   }, [onDone, navigate, editBookingId, location.pathname, location.search])
   const viewport = useViewport()
+  const workspace = useOptionalWorkspace()
   const isDesktop = viewport === 'desktop'
   const isPhone = viewport === 'phone'
   const online = useNetwork()
@@ -665,6 +669,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     dispatchContext,
     setActionError,
     setConfirmedSuccess,
+    showSuccessToast,
     client,
     lines,
     equipmentLines,
@@ -748,6 +753,34 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   )
 
 
+  // Header and fallback action bars invoke the same existing save/confirm guards.
+  // Moving controls does not change when a booking can be confirmed or saved.
+  const handlePrimaryAction = () => {
+    if (editBookingId) { void saveQuote(); return }
+    setValidationAttempted(true)
+    if (!confirmBlocked) { void confirmBooking(); return }
+    const firstAction = blockingNotices[0]?.action
+    if (firstAction) runNoticeAction(firstAction)
+    else jumpToSection('rail-booking-summary')
+  }
+  const handleCancelAction = () => {
+    if (editBookingId) {
+      if (!quoteDirty) doExit()
+      else setExitPrompt('unsaved-edits')
+    } else handleExit()
+  }
+  const actionBusy = saveState === 'saving'
+  const actionLabel = editBookingId ? 'Save changes' : 'Confirm Booking'
+  const secondaryHeaderActions: OverflowMenuItem[] = [
+    ...(!editBookingId && !isDesktop ? [{
+      label: 'Save draft', icon: 'file' as const,
+      onClick: () => { if (!actionBusy) void saveDraft() },
+      ...(actionBusy ? { unavailable: 'Saving is in progress' } : {}),
+    }] : []),
+    { label: 'Review booking', icon: 'checklist', onClick: () => jumpToSection('rail-booking-summary') },
+    { label: editBookingId ? 'Cancel editing' : 'Back to Rentals', icon: 'chevron_left', onClick: handleCancelAction, ...(actionBusy ? { unavailable: 'Wait until saving finishes' } : {}) },
+  ]
+
   if (draftLoading || quoteLoading) {
     return (
       <div style={{ padding: 'var(--sp-xl)', maxWidth: 1000, margin: '40px auto' }}>
@@ -783,38 +816,42 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     <PageShell
       width="full"
       className="new-rental-shell"
-      header={
-        <PageHeader
-          breadcrumb={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <Link
-                to="/rentals"
-                onClick={(e) => {
-                  if (embedded) {
-                    e.preventDefault()
-                    handleExit()
-                  }
-                }}
-                style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}
-              >
-                <Icon name="chevron_left" size={14} />
-                Rentals
-              </Link>
-            </div>
-          }
-          title={editBookingId ? `Edit ${draftBookingNo ?? 'booking'}` : draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
-
-        />
-      }
     >
+      {/* The existing fixed-height app header owns the page title and actions.
+          No nested PageHeader or second action/footer bar in the real shell. */}
+      {workspace && (
+        <WorkspaceHeaderRightActions>
+          <div className="new-rental-header-actions" role="group" aria-label="New rental actions">
+            {!editBookingId && isDesktop && (
+              <Button variant="outline" disabled={actionBusy} onClick={() => void saveDraft()}>
+                Save draft
+              </Button>
+            )}
+            <OverflowMenu items={secondaryHeaderActions} ariaLabel="More rental actions" />
+            <Button
+              variant="primary"
+              className="new-rental-header-primary"
+              disabled={actionBusy || Boolean(editBookingId && !quoteDirty)}
+              aria-label={actionBusy ? 'Saving booking' : actionLabel}
+              title={actionLabel}
+              onClick={handlePrimaryAction}
+            >
+              <Icon name="check" size={17} />
+              <span>{actionBusy ? 'Saving…' : actionLabel}</span>
+            </Button>
+          </div>
+        </WorkspaceHeaderRightActions>
+      )}
       {/* RULING 2026-10-08: direct section access on one continuous form. */}
       <nav className="new-rental-jumpbar" aria-label="Rental sections">
         <button type="button" onClick={() => jumpToSection('section-0')}><Icon name="user" size={17} />Client &amp; dates</button>
         <button type="button" onClick={() => jumpToSection('section-2')}><Icon name="box" size={17} />Equipment</button>
         <button type="button" onClick={() => { setOpen((prev) => prev.map((v, i) => i === 3 || i === 4 || v)); jumpToSection('section-3') }}><Icon name="truck" size={17} />Crew &amp; delivery</button>
         {canBookingMoney && <button type="button" onClick={() => jumpToSection('section-5')}><Icon name="receipt" size={17} />Pricing</button>}
-        <button type="button" onClick={() => jumpToSection('rail-booking-summary')}><Icon name="check" size={17} />Review</button>
-        <span>* Required to confirm</span>
+        <button type="button" onClick={() => jumpToSection('rail-booking-summary')} aria-label={`Review booking${blockingNotices.length ? `, ${blockingNotices.length} outstanding checks` : ''}`}><Icon name="check" size={17} />Review{blockingNotices.length > 0 && !editBookingId ? ` (${blockingNotices.length})` : ''}</button>
+        <span className="new-rental-jumpbar__meta" role="status">
+          {actionBusy ? 'Saving…' : saveState === 'error' ? 'Not saved' : draftBookingNo ? `Draft #${draftBookingNo}${draftHasUnsavedChanges ? ' · Unsaved changes' : ' · Saved'}` : '* Required to confirm'}
+        </span>
       </nav>
       {localDraftOffer && !editBookingId && (
         <div
@@ -1102,31 +1139,23 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         </div>
       )}
 
-      <RecordActions
-        busy={saveState === 'saving'}
-        dirty={editBookingId ? quoteDirty : true}
-        statusText={saveState === 'error' ? 'Not saved' : editBookingId ? undefined : draftHasUnsavedChanges ? 'Unsaved changes' : draftId ? 'Draft saved' : 'New booking'}
-        label={editBookingId ? 'Save changes' : 'Confirm Booking'}
-        onSave={() => {
-          if (editBookingId) { void saveQuote(); return }
-          setValidationAttempted(true)
-          if (!confirmBlocked) { void confirmBooking(); return }
-          const firstAction = blockingNotices[0]?.action
-          if (firstAction) runNoticeAction(firstAction)
-          else jumpToSection('rail-booking-summary')
-        }}
-        onCancel={() => {
-          if (editBookingId) {
-            if (!quoteDirty) doExit()
-            else setExitPrompt('unsaved-edits')
-          } else handleExit()
-        }}
-        extra={<>
-          {canBookingMoney && <div className="new-rental-footer-total"><span>Rental total</span><strong>{formatMoney(pricing.rentalTotalPaisa)}</strong></div>}
-          {isPhone && <Button variant="ghost" aria-label="Review rental summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Summary</Button>}
-          {!editBookingId && <Button variant="outline" onClick={() => void saveDraft()} disabled={saveState === 'saving'}>Save draft</Button>}
-        </>}
-      />
+      {/* Isolated previews without the application shell keep their local actions.
+          In the real app there is exactly one action cluster, in the top header. */}
+      {!workspace && (
+        <RecordActions
+          busy={actionBusy}
+          dirty={editBookingId ? quoteDirty : true}
+          statusText={saveState === 'error' ? 'Not saved' : editBookingId ? undefined : draftHasUnsavedChanges ? 'Unsaved changes' : draftId ? 'Draft saved' : 'New booking'}
+          label={actionLabel}
+          onSave={handlePrimaryAction}
+          onCancel={handleCancelAction}
+          extra={<>
+            {canBookingMoney && <div className="new-rental-footer-total"><span>Rental total</span><strong>{formatMoney(pricing.rentalTotalPaisa)}</strong></div>}
+            {isPhone && <Button variant="ghost" aria-label="Review rental summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Summary</Button>}
+            {!editBookingId && <Button variant="outline" onClick={() => void saveDraft()} disabled={actionBusy}>Save draft</Button>}
+          </>}
+        />
+      )}
       {/* ── Disclosures & Workflow Modals ── */}
       <BookingModals
         client={client}

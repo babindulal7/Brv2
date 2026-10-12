@@ -694,7 +694,30 @@ export default function OperationsQueues() {
       />
       <div style={{ gridColumn: '1 / -1' }}>
         <PageHeader
-          title="Operation"
+          title="Operations"
+          module="operations"
+          status={
+            selected ? (
+              <span
+                className="eyebrow-pill"
+                style={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: 'var(--t-meta, 13px)',
+                  letterSpacing: 'normal',
+                }}
+              >
+                {selected}
+              </span>
+            ) : null
+          }
+          search={{
+            value: searchInput,
+            onChange: setSearchInput,
+            onClear: () => setSearchInput(''),
+            placeholder: 'Search ID, client, project… (press /)',
+            ariaLabel: 'Search operations',
+          }}
           actions={
             <PageActions
               secondary={[
@@ -715,9 +738,6 @@ export default function OperationsQueues() {
                   Sub-Rentals
                 </Button>,
               ]}
-              /* `lastFetchedAt` moves only on a successful read. The local
-                 stamp this replaced moved whenever loading ended, so a failed
-                 refresh read "Just now" over rows that were not refreshed. */
               extra={<DataAgeBadge loadedAt={list.lastFetchedAt} onRefresh={refreshAll} loading={list.loading} />}
             />
           }

@@ -11,6 +11,7 @@ import { captureError } from '../../lib/monitoring'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { useToast } from '../../components/ui/Toast'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { STATUS, STATUS_ICON } from '../../lib/status'
 import { BOOKING_STATUS, statusToken } from '../../lib/workflow'
@@ -295,6 +296,7 @@ export default function EvidenceWorkspace() {
   const place = floorPlacements(desktop, phone)
   /** The one identity a dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
+  const { showSuccessToast } = useToast()
 
   /* ── the read — fetchFloorBooking, same cancellation rule as PackingWorkspace ── */
   const [floor, setFloor] = useState<FloorBooking | null>(null)
@@ -994,6 +996,9 @@ export default function EvidenceWorkspace() {
                               .then((m) =>
                                 m.reviewEvidence({ evidenceId: current.id, action: 'review' }, { userId: user.id, role: user.role }),
                               )
+                              .then(() => {
+                                showSuccessToast('Evidence Reviewed', 'Marked photo for review')
+                              })
                               .catch((err: unknown) => {
                                 captureError(err, { where: 'EvidenceWorkspace.review' })
                                 setDispatchError(err instanceof Error ? err.message : String(err))

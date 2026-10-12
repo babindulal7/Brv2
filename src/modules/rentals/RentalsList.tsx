@@ -4,9 +4,13 @@ import { recordExport } from '../../lib/exportAudit'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
-import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
+import { FooterNote } from '../../components/ui/Page'
+import { RentalSummaryModal } from './modals/RentalSummaryModal'
+import { WorkspaceHeaderRightActions, WorkspaceHeaderSearch } from '../../components/shell/WorkspacePortal'
+import { SearchInput } from '../../components/ui/SearchInput'
+import { OverflowMenu } from '../../components/ui/OverflowMenu'
 import { Button } from '../../components/ui/Button'
+import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { PageBody } from '../../components/ui/PageBody'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
@@ -31,7 +35,6 @@ import {
   canWriteBookingDesk,
   canPerformOperations,
   canRecordPayment,
-  canCloseRental,
   canPublishTeamViews,
   type Role as SystemRole,
 } from '../../lib/rbac'
@@ -82,6 +85,7 @@ import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
 import { captureError } from '../../lib/monitoring'
 import { TouchTarget } from '../../components/ui/TouchTarget'
 import BookingOperationsMenu from './BookingOperationsMenu'
+import { useToast } from '../../components/ui/Toast'
 import './rentals.css'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 /**
@@ -513,101 +517,6 @@ function MenuPortal({
  *  took the 44px `--tap` floor: Open Booking + 4 `OPERATIONS` = 5 × 44, plus 13 divider and 12 padding. */
 const OPS_MENU_H = 245
 
-interface PrimaryActionConfig {
-  label: string
-  icon: IconName
-  variant: 'primary' | 'secondary' | 'outline'
-  onClick: (e: React.MouseEvent) => void
-  disabled?: boolean
-  tooltip?: string
-}
-
-function getPrimaryAction(
-  row: RentalListRow,
-  openOperations: (bookingNo: string, status: BookingStatus, job: 'Pack' | 'Handover' | 'Return' | 'Reset') => void,
-  navigate: (path: string) => void,
-  canClose: boolean = false,
-): PrimaryActionConfig | null {
-  if (row.isCancelled) {
-    return null
-  }
-
-  const statusStr = String(row.status)
-
-  if (statusStr === 'Draft') {
-    return {
-      label: 'Edit Draft',
-      icon: 'edit',
-      variant: 'outline',
-      onClick: () => navigate(`/rentals?action=new&draft=${row.id}`),
-    }
-  }
-
-  if (statusStr === 'Quote') {
-    return {
-      label: 'Open Quote',
-      icon: 'file',
-      variant: 'outline',
-      onClick: () => navigate(`/rentals/${row.bookingNo}`),
-    }
-  }
-
-  if (statusStr === 'Booked') {
-    return {
-      label: 'Pack Kit',
-      icon: 'box',
-      variant: 'primary',
-      onClick: () => openOperations(row.bookingNo, row.status, 'Pack'),
-    }
-  }
-
-  if (statusStr === 'Packed') {
-    return {
-      label: 'Handover',
-      icon: 'truck',
-      variant: 'primary',
-      onClick: () => openOperations(row.bookingNo, row.status, 'Handover'),
-    }
-  }
-
-  if (statusStr === 'On Rent') {
-    return {
-      label: 'Check-In',
-      icon: 'return_arrow',
-      variant: 'primary',
-      onClick: () => openOperations(row.bookingNo, row.status, 'Return'),
-    }
-  }
-
-  if (statusStr === 'Returned') {
-    if (canClose) {
-      return {
-        label: 'Close Rental',
-        icon: 'check',
-        variant: 'primary',
-        onClick: () => navigate(`/rentals/${row.bookingNo}`),
-      }
-    }
-    return {
-      label: 'Reset & QC',
-      icon: 'refresh',
-      variant: 'primary',
-      onClick: () => openOperations(row.bookingNo, row.status, 'Reset'),
-    }
-  }
-
-  if (statusStr === 'Closed') {
-    return {
-      label: 'Dossier',
-      icon: 'external_link',
-      variant: 'outline',
-      onClick: () => navigate(`/rentals/${row.bookingNo}`),
-    }
-  }
-
-  return null
-}
-
 function RowOperations({
   row,
   onCancel,
@@ -617,15 +526,11 @@ function RowOperations({
   onCancel?: ((row: RentalListRow) => void) | undefined
   onInspect?: ((row: RentalListRow) => void) | undefined
 }) {
-  const navigate = useNavigate()
-  const { user } = useAuth()
   const { openOperations } = useOperationsWorkspace()
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const ref = useDismiss(open, () => setOpen(false), menuRef)
-  const canClose = user ? canCloseRental(user.role) : false
-  const primary = getPrimaryAction(row, openOperations, navigate, canClose)
 
   /**
    * The table scrolls horizontally, and CSS resolves the *other* axis to `auto`
@@ -645,30 +550,6 @@ function RowOperations({
 
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-      {primary && (
-        <Button
-          type="button"
-          size="sm"
-          variant={primary.variant}
-          onClick={primary.onClick}
-          disabled={primary.disabled}
-          title={primary.tooltip || primary.label}
-          icon={primary.icon}
-          style={{
-            position: 'relative',
-            height: 28,
-            minHeight: 28,
-            padding: '3px 9px',
-            fontSize: 'var(--t-meta, 12px)',
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <TouchTarget />
-          <span>{primary.label}</span>
-        </Button>
-      )}
-
       <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
         <button
           type="button"
@@ -980,6 +861,8 @@ export default function RentalsList() {
   const [fastReturnOpen, setFastReturnOpen] = useState(false)
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const { showSuccessToast } = useToast()
   const bulkProcessing = false
 
   /**
@@ -1674,6 +1557,10 @@ export default function RentalsList() {
     void fetchAvailableInvoices()
   }, [paymentModalOpen, fetchAvailableInvoices])
 
+  const [summaryBookingNo, setSummaryBookingNo] = useState<string | null>(null)
+  const singleSelectedId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null
+  const selectedHeaderRental = singleSelectedId ? list.rows.find((r) => r.id === singleSelectedId) ?? null : null
+
   const countedTitle = total === null ? 'Rentals' : `${total} ${total === 1 ? 'Rental' : 'Rentals'} found`
 
   if (isNew) {
@@ -1698,66 +1585,221 @@ export default function RentalsList() {
 
   return (
     <PageShell className="rentals-v2">
-      <PageHeader
-        leading={
+      {/* Search portal into the shell's original fixed-height header */}
+      <WorkspaceHeaderSearch>
+        <SearchInput
+          value={f.filters.search ?? ''}
+          onChange={(val) => f.setSearch(val)}
+          onClear={() => f.setSearch('')}
+          autoFocusShortcut={true}
+          shortcutHint="Ctrl+K"
+          aria-label="Search rentals"
+          placeholder="Search rentals (Ctrl+K or /)…"
+          wrapperStyle={{ width: '100%', minWidth: 0 }}
+        />
+      </WorkspaceHeaderSearch>
+
+      {/* Action portal into the shell's original fixed-height header */}
+      <WorkspaceHeaderRightActions>
+        <span className="rentals-header-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {/* Mobile search toggle: opens an overlay, does NOT grow the header */}
+          <button
+            type="button"
+            className="rentals-header-mobile-search-btn"
+            onClick={() => setMobileSearchOpen((o) => !o)}
+            aria-label="Toggle rentals search"
+            aria-expanded={mobileSearchOpen}
+          >
+            <Icon name="search" size={16} />
+          </button>
+
           <FilterButton
             onClick={() => setFiltersOpen((open) => !open)}
             activeCount={f.activeCount}
             controls="rentals-filters"
             expanded={filtersOpen}
+            inHeader={false}
           />
-        }
-        title="Rentals"
-        description="Manage bookings, pickups, returns, and the next action."
-        actions={
-          <PageActions
-            secondary={[
-              canOperate && (
-                <Button
-                  key="fast-return"
-                  variant="secondary"
-                  icon="return_arrow"
-                  onClick={() => setFastReturnOpen(true)}
-                  title="Fast Return check-in"
-                >
-                  Fast Return
-                </Button>
-              ),
-              canRecord && (
-                <Button
-                  key="record-payment"
-                  variant="secondary"
-                  icon="invoice"
-                  onClick={() => setPaymentModalOpen(true)}
-                  title="Record payment against invoice"
-                >
-                  Record Payment
-                </Button>
-              ),
-            ].filter(Boolean)}
-            overflow={[
+
+          {/* When exactly 1 rental is selected, expose its operations menu in the header */}
+          {selectedHeaderRental && canOperate && (
+            <BookingOperationsMenu
+              bookingNo={selectedHeaderRental.bookingNo}
+              bookingStatus={selectedHeaderRental.status as BookingStatus}
+            />
+          )}
+
+          {/* Secondary actions collapse into More (⋯); only primary stays visible on smaller screens */}
+          {canOperate && (
+            <Button
+              className="rentals-header-desktop-action"
+              variant="secondary"
+              size="sm"
+              icon="refresh"
+              onClick={() => setFastReturnOpen(true)}
+            >
+              Fast Return
+            </Button>
+          )}
+
+          {canRecord && (
+            <Button
+              className="rentals-header-desktop-action"
+              variant="secondary"
+              size="sm"
+              icon="card"
+              onClick={() => setPaymentModalOpen(true)}
+            >
+              Record Payment
+            </Button>
+          )}
+
+          <OverflowMenu
+            ariaLabel="More rentals actions"
+            items={[
+              ...(selectedHeaderRental
+                ? [
+                    {
+                      label: `Open #${selectedHeaderRental.bookingNo}`,
+                      icon: 'chevron_right' as const,
+                      onClick: () => navigate(`/rentals/${selectedHeaderRental.bookingNo}`),
+                    },
+                  ]
+                : []),
+              ...(canOperate
+                ? [
+                    {
+                      label: 'Fast Return',
+                      icon: 'refresh' as const,
+                      onClick: () => setFastReturnOpen(true),
+                    },
+                  ]
+                : []),
+              ...(canRecord
+                ? [
+                    {
+                      label: 'Record Payment',
+                      icon: 'card' as const,
+                      onClick: () => setPaymentModalOpen(true),
+                    },
+                  ]
+                : []),
+              ...(selectedHeaderRental
+                ? [
+                    {
+                      label: 'Open Booking View',
+                      icon: 'folder' as const,
+                      onClick: () => navigate(`/rentals/${selectedHeaderRental.bookingNo}?view=booking`),
+                    },
+                    {
+                      label: 'Open Quote View',
+                      icon: 'file' as const,
+                      onClick: () => navigate(`/rentals/${selectedHeaderRental.bookingNo}?view=quote`),
+                    },
+                    ...(money
+                      ? [
+                          {
+                            label: 'Find Invoices',
+                            icon: 'invoice' as const,
+                            onClick: () => navigate(`/finance/invoices?search=${encodeURIComponent(selectedHeaderRental.bookingNo)}`),
+                          },
+                        ]
+                      : []),
+                    ...(role === 'Owner' || role === 'Admin' || role === 'Manager'
+                      ? [
+                          {
+                            label: 'Audit Log',
+                            icon: 'checklist' as const,
+                            onClick: () => navigate(`/audit?recordId=${encodeURIComponent(selectedHeaderRental.id)}`),
+                          },
+                        ]
+                      : []),
+                    ...(canWriteDesk && !selectedHeaderRental.isCancelled && !selectedHeaderRental.isClosed
+                      ? [
+                          {
+                            label: 'Cancel Booking',
+                            icon: 'alert_triangle' as const,
+                            onClick: () => setCancellingRental(selectedHeaderRental),
+                          },
+                        ]
+                      : []),
+                  ]
+                : []),
+              {
+                label: 'Duplicate Rental',
+                icon: 'copy' as const,
+                onClick: () => {},
+                unavailable: 'Duplication is not available for this record',
+              },
               {
                 label: 'Productions Hub',
-                icon: 'video',
-                onClick: () => navigate('/rentals/productions'),
+                icon: 'queues' as const,
+                onClick: () => navigate('/crew/productions'),
               },
               {
                 label: 'Scan Barcode',
-                icon: 'search',
+                icon: 'barcode' as const,
                 onClick: () => setBarcodeModalOpen(true),
               },
               {
                 label: 'Refresh',
-                icon: 'refresh',
+                icon: 'refresh' as const,
                 onClick: refreshAll,
               },
             ]}
-            /* PLAN.md Phase 9 — how old the list on screen is (from main's
-               Phase 9 work). The time of the last SUCCESSFUL read. */
-            extra={<DataAgeBadge loadedAt={list.lastFetchedAt} onRefresh={refreshAll} loading={list.loading} />}
           />
-        }
-      />
+
+          {canWriteDesk && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon="plus"
+              onClick={() => navigate('/rentals/new')}
+            >
+              Add
+            </Button>
+          )}
+
+          {/* Data freshness badge: visible only on 1920px+ viewports to protect header width */}
+          <span className="rentals-header-data-age">
+            <DataAgeBadge
+              loadedAt={list.lastFetchedAt}
+              onRefresh={refreshAll}
+              loading={list.loading}
+            />
+          </span>
+        </span>
+      </WorkspaceHeaderRightActions>
+
+      {/* Mobile search overlay — drops below the header when toggled, does not expand header */}
+      {mobileSearchOpen && (
+        <div className="rentals-mobile-search-overlay" role="region" aria-label="Mobile rentals search">
+          <SearchInput
+            value={f.filters.search ?? ''}
+            onChange={(val) => f.setSearch(val)}
+            onClear={() => {
+              f.setSearch('')
+              setMobileSearchOpen(false)
+            }}
+            aria-label="Search rentals"
+            placeholder="Search rentals…"
+            wrapperStyle={{ width: '100%' }}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setMobileSearchOpen(false)
+            }}
+          />
+          <button
+            type="button"
+            className="rentals-mobile-search-close"
+            onClick={() => setMobileSearchOpen(false)}
+            aria-label="Close search"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
+
       <BooqableRentalFilterDrawer
         id="rentals-filters"
         open={filtersOpen}
@@ -1780,10 +1822,6 @@ export default function RentalsList() {
 
       {/* 5-view operational bar + Sub-Rental + active facet chip */}
       <FilterBar
-        search={f.filters.search ?? ''}
-        onSearchChange={(val) => f.setSearch(val)}
-        searchPlaceholder="Search booking, project, or type"
-        searchAriaLabel="Search rentals"
         activeCount={f.activeCount}
         onClearAll={clearFilters}
         filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}
@@ -1869,7 +1907,11 @@ export default function RentalsList() {
               />
               <span data-view-label>{viewItem.label}</span>
               <span className="figure" style={{ color: 'var(--muted)' }} aria-label={`${viewItem.label} count`}>
-                {viewCounts.loading || viewCounts.error ? '—' : viewCounts.rows.find((row) => row.id === viewItem.id)?.count ?? '—'}
+                {(() => {
+                  if (viewCounts.loading || viewCounts.error) return '—'
+                  const c = viewCounts.rows.find((row) => row.id === viewItem.id)?.count
+                  return typeof c === 'number' && !Number.isNaN(c) ? c : '—'
+                })()}
               </span>
             </button>
           )
@@ -2577,9 +2619,15 @@ export default function RentalsList() {
         actions={inspectingRental ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <BookingOperationsMenu bookingNo={inspectingRental.bookingNo} bookingStatus={inspectingRental.status} unavailable={inspectingRental.isCancelled ? 'Cancelled rentals cannot run operations.' : null} />
-            <Link to={`/rentals/${inspectingRental.bookingNo}`} className="ui-button ui-button--secondary" onClick={() => setInspectingRental(null)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setInspectingRental(null)
+                navigate(`/rentals/${inspectingRental.bookingNo}`)
+              }}
+            >
               Open rental
-            </Link>
+            </Button>
           </div>
         ) : undefined}
       >
@@ -2674,9 +2722,16 @@ export default function RentalsList() {
           onSuccess={() => {
             setPaymentModalOpen(false)
             refreshAll()
+            showSuccessToast('Payment Recorded', 'Payment recorded successfully')
           }}
         />
       )}
+
+      <RentalSummaryModal
+        isOpen={Boolean(summaryBookingNo)}
+        onClose={() => setSummaryBookingNo(null)}
+        bookingNo={summaryBookingNo ?? ''}
+      />
 
       <FooterNote
         extra={[

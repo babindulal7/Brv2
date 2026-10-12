@@ -1287,6 +1287,7 @@ export default function Finance() {
         } : {})}
         icon="card"
         title="Finance"
+        module={tab === 'Expenses' ? 'expenses' : 'payments'}
         {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : {})}
       />
 

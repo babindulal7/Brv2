@@ -566,13 +566,16 @@ export function useNewRentalDraft({
         return
       }
       void cancelDraft({ id: draftId, reason: reason ?? '' }, ctx)
-        .then(() => handleExit())
+        .then(() => {
+          showSuccessToast('Draft Cancelled', `Draft ${draftBookingNo ? `#${draftBookingNo}` : ''} has been cancelled`.trim())
+          handleExit()
+        })
         .catch((err: unknown) => {
           console.error('cancel booking failed:', err)
           setActionError(`Not cancelled — ${err instanceof Error ? err.message : String(err)}`)
         })
     },
-    [dispatchContext, draftId, handleExit, setActionError],
+    [dispatchContext, draftId, draftBookingNo, handleExit, setActionError, showSuccessToast],
   )
 
   return {
