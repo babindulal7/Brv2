@@ -1,5 +1,39 @@
 # Progress Log
 
+## 2026-10-09 — New Rental redesign completed and verified
+
+**Did**
+- Reorganized New Rental into a full-width client/date setup row, equipment workspace, optional crew/delivery sections, pricing, and a clearer review summary. Added sticky section shortcuts and one responsive action footer.
+- Kept client history inside search and booking dates orange. Put discount/tax controls before the charge breakdown, with the refundable deposit separate. Essential sections stay open; optional sections preserve entered values when collapsed.
+- Fixed client dropdown bounds, catalogue recentering and height around the shell/footer, phone filter disclosure, and custom-charge form focus. Confirm now takes the user to the first actual blocker; keyboard shortcuts respect saving and editing state.
+
+**Ruled**
+- Recorded the user's authorized visual and placement changes in `RULINGS-2026-10-09.md`. Existing pricing, permissions, and booking policies remain unchanged.
+
+**Verified**
+- Typecheck, scoped ESLint, `lint:shell` (620 files), and production build passed. Theme contrast: 54/54 checks passed.
+- New Rental, booking components, calendar, and Tier 1 regression selection: 149/149 tests across 22 files passed. After the final catalogue adjustments, typecheck and both catalogue suites passed again (6/6 tests, including two new inline/popover search regression cases). The cached full-suite count below is from its stated earlier date, not a full-suite rerun for this change.
+- Local database gates: `check:pglite` rebuilt 160/160 migrations with 0 failures; `check:lifecycle` passed 30/30 checks. No migration was written or applied to live Supabase.
+- Browser verification on the isolated mock preview: 1304×892 desktop and 375×844 phone, expanded/collapsed navigation, light/dark themes, client popup placement, catalogue filters, item selection, custom-charge form, section jumps, and blocked confirmation. Catalogue and popup bounds clear the footer; no horizontal overflow on the phone layout. Returning from phone filters to search reveals the results before keyboard selection. No booking was saved or created.
+- Verification logs and screenshots: `artifacts/new-rental-redesign-2026-10-08/`. The New Rental test and shell-lint issues mentioned in earlier entries are resolved by this verification.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-08T19:04:32.536Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-08T19:04:33.387Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining implementation work for this New Rental redesign. Live booking creation was not exercised; browser checks used the isolated mock preview at `http://127.0.0.1:3008/rentals?action=new`.
+- Existing product decisions and unrelated app-wide work remain tracked in `PLAN.md`; this entry does not certify those areas.
+
 ## 2026-10-08 — Add Equipment checked against its spec; assists built; sr-only fixed app-wide
 
 **Did**
