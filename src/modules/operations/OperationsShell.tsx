@@ -9,6 +9,7 @@ import { JOB_ORDER, BOOKING_STATUS, JOBS, type BookingStatus, type JobName } fro
 import { stepWriteGate, stepDotState } from '../../lib/operationsShell'
 import { fetchFloorBooking, type FloorBooking } from '../../lib/queries/bookings'
 import { DomainEvents, EVENT_TYPES } from '../../events/eventBus'
+import './operationsShell.css'
 
 const PackingWorkspace = lazy(() => import('../rentals/PackingWorkspace'))
 const HandoverWorkspace = lazy(() => import('../rentals/HandoverWorkspace'))
@@ -275,14 +276,7 @@ export default function OperationsShell({
             }}
           >
             <div
-              style={{
-                width: '100%',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
+              className="operations-shell__actions"
             >
               <Button
                 variant="secondary"
@@ -296,7 +290,7 @@ export default function OperationsShell({
                 variant="primary"
                 onClick={() => actions?.complete()}
                 disabled={isCurrentJobCompleted || !actions?.canComplete || actions?.dispatching}
-                style={{ minHeight: 'var(--tap)' }}
+                style={{ minHeight: 56, whiteSpace: 'normal' }}
               >
                 {rightLabel}
               </Button>
@@ -306,14 +300,7 @@ export default function OperationsShell({
       >
         <nav
           aria-label="Operation stage"
-          style={{
-            display: 'flex',
-            gap: 8,
-            overflowX: 'auto',
-            paddingBottom: 12,
-            marginBottom: 16,
-            borderBottom: '1px solid var(--border)',
-          }}
+          className="operations-shell__stages"
         >
           {JOB_ORDER.map((candidate) => {
             const gate = stepWriteGate(candidate, liveStatus)
@@ -350,6 +337,9 @@ export default function OperationsShell({
                 icon={isCompleted ? 'check' : isBlocked ? 'lock' : STEP_ICON[candidate]}
                 style={{
                   minHeight: 'var(--tap)',
+                  minWidth: 0,
+                  whiteSpace: 'normal',
+                  padding: '10px 12px',
                   opacity: isBlocked ? 0.6 : 1,
                 }}
               >

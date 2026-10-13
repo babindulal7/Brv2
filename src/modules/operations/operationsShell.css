@@ -1,0 +1,24 @@
+/* RULING 2026-10-13: keep every stage label readable and the active stage visible
+   on phones; preserve all existing stage gates and navigation callbacks. */
+.operations-shell__stages {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.operations-shell__stages .ui-button__label { min-width: 0; overflow-wrap: anywhere; }
+.operations-shell__actions {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .operations-shell__stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .operations-shell__actions { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+}

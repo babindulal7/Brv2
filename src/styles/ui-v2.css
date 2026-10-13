@@ -29,13 +29,13 @@
 .ui-button { transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
 .ui-button:active:not(:disabled) { filter: brightness(0.96); }
 /* Button.tsx sets resting fills inline; hover must override them as a pair. */
-.ui-button--primary:hover:not(:disabled) { background: var(--hover-button) !important; box-shadow: var(--shadow-primary-glow), var(--specular-rim); }
+.ui-button--primary:hover:not(:disabled) { background: var(--hover-button) !important; color: var(--btn-primary-fg) !important; box-shadow: var(--shadow-primary-glow), var(--specular-rim); }
 .ui-button--link:hover:not(:disabled) { text-decoration: underline; }
 .ui-button--link:active:not(:disabled) { transform: none; opacity: 0.7; }
 .ui-button--secondary:hover:not(:disabled),
 .ui-button--outline:hover:not(:disabled),
 .ui-button--ghost:hover:not(:disabled),
-.ui-button--tertiary:hover:not(:disabled) { background: var(--hover-card) !important; border-color: var(--border2) !important; }
+.ui-button--tertiary:hover:not(:disabled) { background: var(--hover-card) !important; border-color: var(--input-border) !important; }
 .ui-button:focus-visible { outline: 2px solid var(--input-focus); outline-offset: 2px; }
 .overflow-menu__item:hover:not(:disabled) { background: var(--hover-card) !important; }
 .overflow-menu__item:focus-visible { outline: 2px solid var(--input-focus); outline-offset: -2px; background: var(--hover-card) !important; }

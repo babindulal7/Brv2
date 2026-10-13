@@ -273,7 +273,7 @@ model**. Nothing is stored: `product_units_service_v` derives it at read time.
 
 | Capability | Roles | Notes | Code |
 |---|---|---|---|
-| `client.create` | C+ · **Warehouse (walk-in, Commercial section not rendered)** | his ruling 7 Sep | ✓ |
+| `client.create` | C+ · **Warehouse (walk-in, Commercial section not rendered)** | his ruling 7 Sep; CSV imports require C+ (creation ∩ full client-contact access, §4.5); Warehouse keeps walk-in intake only | ✓ |
 | `client.update` | C+ · Accounts (payment terms, VAT profile only) | | ✓ |
 | `client.block` / `client.unblock` | **Owner · Admin · Manager** | reason from list, audited; existing bookings continue | ✓ |
 | `client.merge` | M+ | redirect record, sums balances, reversible 30 days, blocked with open booking/case | ✓ |

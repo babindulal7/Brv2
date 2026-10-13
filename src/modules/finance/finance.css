@@ -441,20 +441,21 @@
   min-height: 44px;
   padding: 0 18px;
   border-radius: var(--r-btn, 8px);
-  background: var(--btn-secondary-bg);
+  background: var(--card);
   color: var(--text);
   font-weight: 700;
   font-size: var(--t-meta, 13px);
   text-decoration: none;
-  border: 1px solid var(--btn-secondary-border);
+  border: 1px solid var(--input-border);
   cursor: pointer;
-  transition: background-color var(--dur-fast, 120ms) var(--ease);
+  transition: all var(--dur-fast, 120ms) var(--ease);
+  box-shadow: var(--shadow-xs);
 }
 
 .finance-whatsapp-btn:hover {
   background: var(--hover-card);
+  border-color: var(--input-border);
 }
-
 
 .finance-whatsapp-btn:focus-visible {
   outline: 2px solid var(--input-focus);

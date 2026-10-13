@@ -192,7 +192,7 @@
   --btn-primary-bg: #2456d6;
   --btn-primary-fg: #ffffff;
   --btn-secondary-bg: transparent;
-  --btn-secondary-border: #dbe5f0;
+  --btn-secondary-border: var(--input-border);
   --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
@@ -340,7 +340,7 @@
   --btn-primary-bg: #386af7;
   --btn-primary-fg: #ffffff;
   --btn-secondary-bg: transparent;
-  --btn-secondary-border: #263849;
+  --btn-secondary-border: var(--input-border);
   --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
@@ -1464,6 +1464,25 @@ p {
 
 .ui-button {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Persistent creation action in desktop and tablet sidebar (light/dark blue,
+   high-contrast yellow by its own accessibility palette). No extra nav row. */
+.app-navigation .app-nav__new-rental {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-xs);
+}
+
+.app-navigation .app-nav__new-rental:hover {
+  background: var(--hover-button);
+  color: var(--btn-primary-fg);
+}
+
+.app-navigation .app-nav__new-rental:focus-visible {
+  outline: 2px solid var(--input-border-focus, var(--input-focus));
+  outline-offset: 2px;
 }
 
 @media (hover: hover) and (pointer: fine) {

@@ -1,6 +1,119 @@
 # Progress Log
 
-## 2026-10-13 — App reorganization step 1 (cleanups + two Law 6 fixes)
+## 2026-10-13 — Higher-contrast button boundaries and persistent blue New Rental action
+
+**Did**
+- Implemented UI contrast and control boundary improvements across shared buttons, sidebar navigation, and finance links:
+  - `src/components/shell/Sidebar.tsx`: Distinctly styled `/rentals/new` as the primary sidebar action via `.app-nav__new-rental`, rendering persistent solid primary blue background (`--btn-primary-bg`), white icon and label, bold font weight (700), and custom hover/focus handling in both expanded and collapsed rail views.
+  - `src/styles/theme.css`: Added theme-aware `.app-navigation .app-nav__new-rental` rules (with `--hover-button` hover and keyboard focus outline); strengthened secondary button borders (`--btn-secondary-border: var(--input-border)`) in light and dark themes.
+  - `src/styles/ui-v2.css`: Guaranteed primary button hover pairs background and text (`--hover-button` and `color: var(--btn-primary-fg) !important`); ensured tertiary button hover preserves `border-color: var(--input-border) !important`.
+  - `src/components/ui/Button.tsx`: Swapped `border: '1px solid var(--border)'` to `border: '1px solid var(--input-border)'` for `outline` and `tertiary` variants, ensuring control boundaries pass the 3:1 non-text contrast threshold against card and canvas surfaces.
+  - `src/modules/finance/finance.css`: Restyled `.finance-whatsapp-btn` using `--card`, `--input-border`, `--shadow-xs`, and focus ring.
+
+**Ruled**
+- Zero database migrations, API changes, or business logic alterations. No deployment to live Supabase (N-5 hold).
+- High-contrast accessibility theme preserves its yellow/black scheme (not forced blue).
+- Touch target floors (Law 15, >=44px) and money-blindness gates (Law 6) strictly maintained.
+
+**Verified**
+- `npm run check:contrast`: 82/82 pass (0 failures).
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0 (0 warnings).
+- `npx vitest run src/components/ui/__tests__/buttonConsistency.test.tsx`: 5/5 pass.
+- `npm run check:pglite`: 160/160 migrations applied, 0 failures.
+- `npm run check:lifecycle`: 30/30 green.
+- `npm test`: 347 test files passed, 4,405 tests passed.
+- `npm run build`: successful production build (34.62s) with PWA service worker.
+- `npm run lint:progress`: exit 0.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 53 / 53 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 52 | 50 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-13T13:31:48.507Z). Suite: 4329/4329 passed (recorded 2026-10-13T07:46:29.1524909Z).
+Gates read from .lifecycle-result.json, written 2026-10-13T13:32:03.077Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Manual cross-browser visual spot-check at 375px, 820px, and 1440px in light, dark, and high-contrast modes.
+- Production deployment and production verification remain pending.
+
+## 2026-10-13 — Smart Intel verification completed
+
+**Did**
+- Completed the five accepted card improvements: all item lines and authorized totals in Overview, notes confined to Notes, honest missing-packing data, client blockers and workflow guidance first, and complete payment histories. Full implementation details remain in the Smart Intel complete lists and decision guidance entry below.
+
+**Ruled**
+- The preview remains informational and opens existing workflows. It adds no transition authority or commercial policy. No migration was WRITTEN or APPLIED; live application and PRODUCTION-VERIFIED status remain pending.
+
+**Verified**
+- Typecheck; full suite 340 files / 4,329 tests; focused Smart Intel suites 34/34; local check:pglite 160/160; check:lifecycle 30/30; lint; contrast 54/54 at the verification run; production build and PWA service-worker generation; completion counter.
+- Tests cover full lists, ledger pagination and summaries, Notes-only mounting, role visibility, confirmed client-block priority and missing packing evidence. The shared checkout received other concurrent merges; the Smart Intel implementation remains present.
+- Live browser inspection remains unverified: Computer Use ended because it could not determine the browser URL confidently enough to enforce its policy. No fallback browser input was performed.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 53 / 53 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 52 | 50 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-13T12:08:05.478Z). Suite: 4329/4329 passed (recorded 2026-10-13T07:46:29.1524909Z).
+Gates read from .lifecycle-result.json, written 2026-10-13T12:08:25.689Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Drive the updated cards at desktop, tablet and phone widths with live records once browser control is restored.
+- Production deployment and production verification remain pending. No live Supabase migration was applied.
+
+## 2026-10-13 — Finance workspace phone header de-crowding (<768px)
+
+**Did**
+- Refactored `src/modules/finance/Finance.tsx` to adopt standard `PageActions` container in `headerActions` instead of rendering 4 sibling buttons directly in `PageHeader`.
+- On phone (<768px):
+  - Primary action renders compact "Payment" (Record Payment) or "Invoice" (Create Invoice) with prominent primary button and >=44px touch target.
+  - Secondary actions (`Create Invoice`, `Export invoices`) and table `Filters` collapse into the `OverflowMenu` (More ⋯) button.
+  - Suppressed leading `FilterButton` on phone (`leading={!phone ? ... : undefined}`), freeing the 64px header zone so the page title ("Finance") remains unclipped and uncompressed.
+  - Reserved `BsAdDate` for desktop/tablet only (`!phone ? <BsAdDate ... /> : undefined`), keeping the phone bar clear.
+- Added phone header de-crowding unit tests in `src/modules/finance/__tests__/Finance.restricted.test.tsx`.
+
+**Ruled**
+- Follows the phone header de-crowding pattern established in `Calendar.tsx` and `Inventory.tsx`.
+- Law 15 (>=44px touch targets) and Law 6 (money blindness gates preserved via `money`, `canTakePayment`, `canIssueInvoice`).
+
+**Verified**
+- `npm run typecheck` (`tsc --noEmit`): exit 0.
+- `npx vitest run src/modules/finance/`: 11 test files, 158/158 tests passed.
+- `npm run check:pglite`: 160/160 migrations applied, 0 failed.
+- `npm run check:lifecycle`: 30/30 passed.
+- `npm run check:contrast`: 82/82 passed.
+- `npm run build`: `tsc --noEmit && vite build` exit 0.
+- `npm run lint`: exit 0.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 53 / 53 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 52 | 50 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-13T12:08:05.478Z). Suite: 4329/4329 passed (recorded 2026-10-13T07:46:29.1524909Z).
+Gates read from .lifecycle-result.json, written 2026-10-13T12:08:25.689Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Continue App reorganization and responsive polish.
+
+
 
 **Did**
 - `/admin/audit-settings` → `/admin/audit`, `/finance/closing` → `/finance?tab=closing` (duplicate mounts became redirects). Late Fee and Coupons & Promos added to `MONEY_ROUTES` and guarded in `ToolsLanding`. Out-of-date notes in `nav.ts`/`App.tsx` corrected; unused `TABS` export removed from `data/membership.ts`. Branch `claude/reorg-step1` from `main` (independent of the glass branch).
@@ -122,7 +235,7 @@ Counted by `npm run completion`, not typed.
 - No migration was WRITTEN or APPLIED for this change. The existing migration chain was locally VERIFIED; live migration application and PRODUCTION-VERIFIED status remain pending Babin's process.
 
 **Verified**
-- Typecheck; full suite 340 files / 4,329 tests; focused Smart Intel suites 34/34; local check:pglite 160/160, zero view/RPC leaks and zero unpinned definer functions; check:lifecycle 30/30; lint; contrast 54/54; completion counter. Build result pending.
+- Typecheck; full suite 340 files / 4,329 tests; focused Smart Intel suites 34/34; local check:pglite 160/160, zero view/RPC leaks and zero unpinned definer functions; check:lifecycle 30/30; lint; contrast 54/54; completion counter; production build completed, including PWA service-worker generation (recorded in .intel-smarter-build.log).
 - Tests exercise twelve rental lines, nine rendered payments, a 102-payment paginated ledger and its integer-paisa summary, management/operations note omission, later-page read failure, Notes-only editor mounting, confirmed client-block priority, unknown packing and financial payload/DOM omission.
 - Browser inspection could not be completed. Browser automation timed out twice; the supported Windows fallback reconnected, then Computer Use stopped it because the current browser URL could not be determined confidently enough to enforce policy. No browser input was performed through that fallback.
 

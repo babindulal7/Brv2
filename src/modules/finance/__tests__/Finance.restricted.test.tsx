@@ -512,3 +512,28 @@ describe('Finance — no invented figure survives', () => {
     }
   })
 })
+
+describe('Finance — phone header de-crowding (<768px)', () => {
+  it('collapses secondary actions into More menu and shows Payment on phone', async () => {
+    Object.defineProperty(window, 'innerWidth', { value: 375, configurable: true, writable: true })
+    window.dispatchEvent(new Event('resize'))
+    const c = await mount()
+
+    // Primary action on phone is compact "Payment"
+    const paymentBtn = byText(c, /^Payment$/)
+    expect(paymentBtn).toBeDefined()
+    expect(paymentBtn?.getAttribute('aria-label')).toBe('Record Payment')
+
+    // On phone, secondary actions (Create Invoice, Export) are NOT in the header row
+    expect(byText(c, /^Create Invoice$/)).toBeUndefined()
+    expect(byText(c, /^Export$/)).toBeUndefined()
+
+    // More actions menu button exists and has 44px hit target
+    const moreBtn = c.querySelector('button[aria-haspopup="menu"][aria-label="More actions"]')
+    expect(moreBtn).not.toBeNull()
+
+    // Reset innerWidth for other tests
+    Object.defineProperty(window, 'innerWidth', { value: 1280, configurable: true, writable: true })
+    window.dispatchEvent(new Event('resize'))
+  })
+})

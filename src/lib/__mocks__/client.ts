@@ -26,6 +26,7 @@ import { buildStore, clientDirectory, VIEW_OF } from './corpus'
 import { TIME_DEFAULTS } from './columnDefaults'
 import { PROJECT_TYPES } from '../projectTypes'
 import { MOCK_LOGINS } from '../devQuickLogins'
+import { parseBookingNoSearch } from '../format'
 
 const OVERLAY_KEY = 'babin.mock.overlay.v1'
 const SESSION_KEY = 'babin.mock.session.v1'
@@ -133,6 +134,14 @@ for (const { table, id, patch } of overlay.updates) {
 for (const { table, id } of overlay.deletes) {
   const t = store[table]
   if (t) store[table] = t.filter((r) => r['id'] !== id)
+}
+
+// RULING 2026-10-13: replay pre-R-10 mock records under their canonical number
+// without resetting the local overlay or changing IDs, lines, or references.
+for (const booking of store['bookings'] ?? []) {
+  if (typeof booking['booking_no'] === 'string') {
+    booking['booking_no'] = parseBookingNoSearch(booking['booking_no'])
+  }
 }
 
 /** Views are computed on read so they always reflect the latest base rows. */
@@ -337,30 +346,31 @@ const SEQ_PREFIX: Record<string, string> = {
  * Sequences whose identifiers are constrained by a database CHECK, and the
  * pattern each must satisfy.
  *
- * ⛔ Every identifier this function minted used to carry a year segment —
- * `B-2026-0001`. **That is rejected by the live database.** `0055` ruled
- * `bookings_booking_no_format` to `^B-[0-9]+$` and `clients_client_code_format`
- * to `^C-[0-9]+$`, and both are applied (all 121 live bookings conform).
- * `B-2026-0001` fails the booking pattern on the hyphen.
- *
- * That did not matter while the mock was a display fixture. It matters now that
- * the local store is the source of truth and the stated plan is to rebuild the
- * same data in Supabase later: every booking and client created locally would
- * have been rejected on the way in, discovered only at migration time with real
- * operating data behind it.
- *
- * Ruled sequences mint the bare `PREFIX-N` form. Everything else keeps the
- * year segment, because nothing constrains those and `INV-2026-0001` is the
- * form the invoice screens already render.
+ * Migration 0085 supersedes 0055 for bookings: bare digits, with `#` added
+ * only for display. Clients retain the `C-N` form. Other document sequences
+ * retain their existing local format; this repair does not renumber them.
  */
 const RULED_FORMAT: Record<string, RegExp> = {
-  booking: /^B-[0-9]+$/,
-  BK: /^B-[0-9]+$/,
+  booking: /^[0-9]+$/,
+  BK: /^[0-9]+$/,
   client: /^C-[0-9]+$/,
   CL: /^C-[0-9]+$/,
 }
 
 function nextDocumentNumber(key: string): string {
+  // 0085/R-10 supersedes 0055 for bookings. Both local aliases share one
+  // monotonic counter and skip numbers already present in the local corpus.
+  if (key === 'booking' || key === 'BK') {
+    const highest = (store['bookings'] ?? []).reduce((max, row) => {
+      const value = row['booking_no']
+      return typeof value === 'string' && /^\d+$/.test(value) ? Math.max(max, Number(value)) : max
+    }, 0)
+    const next = Math.max(highest, overlay.seq['booking'] ?? 0, overlay.seq['BK'] ?? 0) + 1
+    overlay.seq['booking'] = next
+    overlay.seq['BK'] = next
+    saveOverlay(overlay)
+    return String(next)
+  }
   const next = (overlay.seq[key] ?? 0) + 1
   overlay.seq[key] = next
   saveOverlay(overlay)
@@ -450,7 +460,9 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     }
   }
 
-  const bookingNo = (payload['booking_no'] as string | undefined) || nextDocumentNumber('booking')
+  const bookingNo = payload['booking_no']
+    ? parseBookingNoSearch(String(payload['booking_no']))
+    : nextDocumentNumber('booking')
   const bookingId = crypto.randomUUID()
   const now = new Date().toISOString()
 

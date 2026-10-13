@@ -191,6 +191,8 @@ describe('Task 5 — Operations popup navigation and state', () => {
 
     expect(leftBtn).toBeDefined()
     expect(confirmBtn).toBeDefined()
+    expect(confirmBtn?.style.minHeight).toBe('56px')
+    expect(container.querySelectorAll('nav[aria-label="Operation stage"] button')).toHaveLength(4)
   })
 
   it('Cleaning & Reset shows ← Return & Inspection and Confirm Reset (no & Next)', async () => {

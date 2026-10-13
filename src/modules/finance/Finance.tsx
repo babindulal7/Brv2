@@ -3,7 +3,7 @@ import { recordExport } from '../../lib/exportAudit'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
-import { Card, PageHeader, Button, KpiStrip, Rail } from '../../components/ui/Page'
+import { Card, PageHeader, PageActions, Button, KpiStrip, Rail } from '../../components/ui/Page'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { ListControlRow } from '../../components/ui/ListWorkspace'
 import { PageShell } from '../../components/ui/PageShell'
@@ -1163,37 +1163,69 @@ export default function Finance() {
   )
 
   const headerActions = (
-    <>
-      <BsAdDate date={dayAd} />
-      {/* Launcher 1 of 2 money launchers. Hidden, not disabled, like its three
-          siblings — a greyed button still says an invoice can be raised here.
-          `canIssueInvoice` is `rbac.canIssueInvoice` (R-05: Owner · Admin ·
-          Manager · Accounts), the same predicate `actions/core.ts` resolves
-          `invoice.create` through; its TODO(decision) is closed. */}
-      {canIssueInvoice && (
-        <Button icon="plus" variant="secondary" aria-label="Create Invoice" onClick={() => setShowCreateInvoice(true)}>
-          {phone ? '' : 'Create Invoice'}
-        </Button>
-      )}
-      {/* Launcher 2 of 2. Export stays on the page's money gate alone — it
-          writes nothing and reads only rows this session already has. */}
-      {canTakePayment && (
-        <Button
-          icon="dollar"
-          variant="primary"
-          aria-label="Record Payment"
-          onClick={() => {
-            setSelectedInvoiceForRecord('')
-            setShowRecordPayment(true)
-          }}
-        >
-          {phone ? '' : 'Record Payment'}
-        </Button>
-      )}
-      <Button icon="download" aria-label="Export invoices" onClick={exportCsv}>
-        {phone ? '' : 'Export'}
-      </Button>
-    </>
+    <PageActions
+      extra={!phone ? <BsAdDate date={dayAd} /> : undefined}
+      primary={
+        canTakePayment ? (
+          <Button
+            icon="dollar"
+            variant="primary"
+            aria-label="Record Payment"
+            onClick={() => {
+              setSelectedInvoiceForRecord('')
+              setShowRecordPayment(true)
+            }}
+          >
+            {phone ? 'Payment' : 'Record Payment'}
+          </Button>
+        ) : canIssueInvoice ? (
+          <Button
+            icon="plus"
+            variant="secondary"
+            aria-label="Create Invoice"
+            onClick={() => setShowCreateInvoice(true)}
+          >
+            {phone ? 'Invoice' : 'Create Invoice'}
+          </Button>
+        ) : undefined
+      }
+      // RULING 2026-10-13: on a phone, Create Invoice and Export live in More so the title and Payment keep the header.
+      secondary={phone ? [] : [
+        canTakePayment && canIssueInvoice ? (
+          <Button
+            key="create-invoice"
+            icon="plus"
+            variant="secondary"
+            aria-label="Create Invoice"
+            onClick={() => setShowCreateInvoice(true)}
+          >
+            Create Invoice
+          </Button>
+        ) : null,
+        <Button key="export" icon="download" aria-label="Export invoices" onClick={exportCsv}>
+          Export
+        </Button>,
+      ].filter(Boolean)}
+      overflow={[
+        ...(phone ? [
+          ...(canTakePayment && canIssueInvoice ? [{
+            label: 'Create Invoice',
+            icon: 'plus' as const,
+            onClick: () => setShowCreateInvoice(true),
+          }] : []),
+          {
+            label: 'Export invoices',
+            icon: 'download' as const,
+            onClick: exportCsv,
+          },
+          ...(tab === 'Invoices' ? [{
+            label: invoiceFilterCount > 0 ? `Filters (${invoiceFilterCount})` : 'Filters',
+            icon: 'filter' as const,
+            onClick: () => setInvoiceFiltersOpen(true),
+          }] : []),
+        ] : []),
+      ]}
+    />
   )
 
   /* Shared input dressing for the rail's controls — the same recipe the
@@ -1279,14 +1311,14 @@ export default function Finance() {
           duplication the re-host was done to remove. */}
       <PageHeader
         {...(tab === 'Invoices' ? {
-          leading: (
+          leading: !phone ? (
             <FilterButton
               onClick={() => setInvoiceFiltersOpen((open) => !open)}
               activeCount={invoiceFilterCount}
               controls="finance-invoice-filters"
               expanded={invoiceFiltersOpen}
             />
-          ),
+          ) : undefined,
           ...(money ? {
             search: {
               value: railSearch,

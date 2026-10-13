@@ -1,16 +1,22 @@
-node_modules
-dist
-dist-ssr
+node_modules/
+dist/
+dist-ssr/
+build/
+.next/
+.cache/
 *.local
 .env
-.env.local
-.env.staging
-.env.production
-.env.*.local
+.env.*
+!.env.example
+!.env.mock
+!.env.mock.example
 
 .DS_Store
 *.log
 npm-debug.log*
+*.pem
+*.p12
+*.key
 
 .vscode/*
 !.vscode/extensions.json

@@ -52,7 +52,7 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
       return {
         background: 'transparent',
         color: 'var(--text2)',
-        border: '1px solid var(--border)',
+        border: '1px solid var(--input-border)',
       }
     case 'ghost':
       return {
@@ -72,7 +72,7 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
       return {
         background: 'var(--card2)',
         color: 'var(--text)',
-        border: '1px solid var(--border)',
+        border: '1px solid var(--input-border)',
       }
     case 'danger':
       return {

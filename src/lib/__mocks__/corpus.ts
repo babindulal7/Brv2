@@ -27,6 +27,7 @@
 
 import { buildCorpus, seedUuid, INVOICE_ISSUED_STATUS } from '../seed'
 import { toRupees, type Paisa } from '../money'
+import { parseBookingNoSearch } from '../format'
 import type { Row, Store } from './engine'
 import { DOCUMENTS } from '../../data/documents'
 
@@ -315,7 +316,8 @@ export function buildStore(options?: BuildStoreOptions): Store {
     bookings.push({
       id: bId,
       client_uuid: seedUuid(`booking:${b.bookingNo}`),
-      booking_no: b.bookingNo,
+      // R-10: store the bare number; preserve fixture keys/UUIDs for all joins.
+      booking_no: parseBookingNoSearch(b.bookingNo),
       client_id: clientId,
       project: b.spec.project,
       stage,

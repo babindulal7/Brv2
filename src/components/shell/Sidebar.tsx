@@ -401,6 +401,8 @@ function NavList({
             )}
             {group.sections.map((s) => {
               const on = s.to === activeTo
+              // Keep the one creation action visually distinct from ordinary navigation.
+              const isNewRental = s.to === '/rentals/new'
               return (
                 <div
                   key={s.to}
@@ -413,6 +415,7 @@ function NavList({
                 >
                   <Link
                     to={s.to}
+                    className={isNewRental ? 'app-nav__new-rental' : undefined}
                     aria-current={on ? 'page' : undefined}
                     /* No native `title`: the rail renders one custom tooltip
                        (RailTooltip, portaled). A title here would fire the
@@ -423,12 +426,12 @@ function NavList({
                       if (rail) {
                         scheduleShow(e.currentTarget, s.label)
                       }
-                      if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                      if (!on && !isNewRental) e.currentTarget.style.background = 'var(--hover-sidebar)'
                     }}
                     onMouseLeave={(e) => {
                       if (rail) scheduleHide()
                       else setHint(null)
-                      if (!on) e.currentTarget.style.background = 'transparent'
+                      if (!on && !isNewRental) e.currentTarget.style.background = 'transparent'
                     }}
                     onPointerDown={(e) => {
                       if (!rail || e.pointerType === 'mouse') return
@@ -449,12 +452,12 @@ function NavList({
                     onBlur={(e) => {
                       if (rail) scheduleHide()
                       else setHint(null)
-                      if (rail && !on) e.currentTarget.style.background = 'transparent'
+                      if (rail && !on && !isNewRental) e.currentTarget.style.background = 'transparent'
                     }}
                     onFocus={(e) => {
                       if (rail) {
                         scheduleShow(e.currentTarget, s.label)
-                        if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                        if (!on && !isNewRental) e.currentTarget.style.background = 'var(--hover-sidebar)'
                       }
                     }}
                     style={{
@@ -470,17 +473,17 @@ function NavList({
                       borderRadius: 'var(--r-btn)',
                       textDecoration: 'none',
                       fontSize: 'var(--t-ui)',
-                      fontWeight: on ? 600 : 500,
-                      color: on ? 'var(--text)' : 'var(--text2)',
-                      background: on ? 'var(--nav-active-bg)' : 'transparent',
-                      boxShadow: on ? 'var(--specular-rim), 0 1px 2px rgba(0, 0, 0, 0.04)' : undefined,
+                      fontWeight: isNewRental ? 700 : on ? 600 : 500,
+                      color: isNewRental ? undefined : on ? 'var(--text)' : 'var(--text2)',
+                      background: isNewRental ? undefined : on ? 'var(--nav-active-bg)' : 'transparent',
+                      boxShadow: isNewRental ? undefined : on ? 'var(--specular-rim), 0 1px 2px rgba(0, 0, 0, 0.04)' : undefined,
                       position: 'relative',
                       cursor: 'pointer',
                       transition:
                         'background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
                     }}
                   >
-                    {on && (
+                    {on && !isNewRental && (
                       <span
                         aria-hidden
                         style={{
@@ -498,7 +501,7 @@ function NavList({
                     <Icon
                       name={s.icon}
                       size={rail ? 20 : 16}
-                      style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
+                      style={{ color: isNewRental ? 'inherit' : on ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
                     />
                     {!rail && (
                       <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
