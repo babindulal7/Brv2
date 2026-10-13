@@ -16,22 +16,24 @@
 - Browser pane, mock Owner, `localhost:3500` (this worktree, HMR): Settings "Light" while on Obsidian → `glass-light`, `data-theme=light`, `data-style=glass`, `--card rgba(255,255,255,.85)`, `--surface #fff`, booking ink `#985014`, Light+Glass both `aria-pressed`. Sidebar sequence dark, glass, light, glass, dark, light, glass → `glass`, `dark`, `light`, `glass-light`, `glass`, `glass-light`, `light`, with the pressed set matching each time. Frosted survives reload, and the boot frame paints the frosted canvas. Today's More menu in frosted is `rgba(255,255,255,.85)` + `blur(24px)`; sidebar blurred; no horizontal scroll. `/rentals/B-864/return` in frosted: floor `--card #ffffff`, 0 blurred elements. 375×812: Settings picker ends at 339px, 44px hit areas, no horizontal scroll; Today renders frosted. Reduced-transparency rule present for both bases (CSSOM; the media query itself not emulated). No console errors.
 - Not done: `prefers-reduced-transparency` not emulated live; not seen on the real warehouse tablet (floor screens stay solid either way).
 
+- **After merging `main` at `91a2b42`** (merge `39645f1`): booking-date token now `main`'s `var(--text)` (row 9 rewritten — main and the 7 Oct ruling disagree, Babin to rule); `check:contrast` follows `var()` for booking ink. `tsc` 0; vitest 346 files, 4399/4399; `vite build` exit 0; `lint:shell` clean; `check:contrast` 82/82. Browser (mock Owner, `localhost:3500`): Obsidian and frosted render over main's new header (blue Add `rgb(56,106,247)`), picker Light+Glass / Dark+Glass pressed correctly, no console errors.
+
 ### Completion
 | Dimension | Counts | Now | Δ |
 |---|---|---|---|
-| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Backend | actions implemented / total | 53 / 53 (100%) | +1 |
 | Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
 | DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
 | Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
 | Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
 | Overall | mean of five | ≈ 99% | +0 |
-Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-13T09:55:17.733Z). Suite: 4329/4329 passed (recorded 2026-10-13T07:46:29.1524909Z).
 Gates read from .lifecycle-result.json, written 2026-10-12T20:38:59.536Z.
 Counted by `npm run completion`, not typed.
 
 ### Remaining
 - If Light → Glass should still jump straight to Obsidian, flip row 11 (revert noted there).
-- Booking-date colour, row 9: still waiting on Babin's word.
+- Booking-date colour, row 9: `main` (c628d54) made them plain without a ruling; the 7 Oct ruling says orange. Babin to rule; glass follows `main` until then.
 - The rest of the glass entry's Remaining is unchanged (orange header Add buttons, Unsplash photos on `/inventory/warehouses`, mockup page layouts). The "Glass light twin" item is now done.
 
 ## 2026-10-13 — Glass theme (Obsidian Glass hybrid)
