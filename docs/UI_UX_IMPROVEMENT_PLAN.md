@@ -17,10 +17,10 @@ Keep the existing semantic tokens, Outfit/Source Sans/JetBrains fonts, Tabler ic
 
 | Step | Scope | State / evidence required |
 |---|---|---|
-| 1 | Shared shell, search, primary actions, More | First patch locally verified 12 Oct; Today phone search and narrow control group under verification 13 Oct. |
+| 1 | Shared shell, search, primary actions, More | First patch locally verified 12 Oct; Today phone search, Clear/Escape focus, Refresh and More verified 13 Oct. The 768px title truncation remains open. |
 | 2 | Rentals list selection, pagination, New Rental and Booking Detail | Existing work needs the full acceptance matrix; consolidate selected-row actions without losing callbacks. |
 | 3 | Pack, Handover, Return, Inspection, Cleaning/Reset | Check every persisted status, valid next action, prohibited action, exceptions, and safe test-database writes/reload. |
-| 4 | Today and Calendar | Today layout stability already covered; responsive search/date/actions under review. Reconcile counts, business day, date ranges and calendar availability. |
+| 4 | Today and Calendar | Today responsive pass verified in local mock at 320/390/768/1024/1280/1440px; Today quick filter preserves the layout. Calendar and remaining status/data reconciliation still need acceptance. |
 | 5 | Inventory, Bundles, Clients, Membership | Match form/navigation patterns; create/edit/retire and duplicate/hold/history states with permission checks. |
 | 6 | Finance, Payments, Expenses, Documents | Validate immutable money flows, error feedback, double-submit prevention, print/export and money-blind roles. |
 | 7 | Crew, Delivery, Reports, Settings, Tools | Verify assignment/status transitions, saved settings, report reconciliation, useful empty/error states and every enabled action. |
@@ -39,4 +39,10 @@ For each page record: loading, populated, empty, filtered-empty, error/retry, re
 
 ## Continuation
 
-The previous goal turn made verified progress (shell ownership, navigation-loop fix and acceptance evidence). This turn continues implementation and creates the missing app-wide step plan. Untested modules remain open; no full-app completion claim is made.
+13 October: Today now keeps its date control with the movement queues, puts Operations and Refresh in More, and provides contextual phone search. Narrow cards separate pickup/return dates, wrap client names, and retain 56px primary actions. Data freshness stays visible on phones.
+
+Saved screenshots and interaction measurements: `artifacts/today-responsive-2026-10-13/`. Search narrowed 24 mock returns to two Gandaki matches; Clear restored 24 and retained input focus; Escape returned focus to Search Today. Refresh closed its menu and refreshed the visible data timestamp. Tomorrow followed by the date picker's Today shortcut restored Today and closed the calendar while preserving the 64px header.
+
+The six checked widths had no document horizontal overflow. Light screenshots cover 320/768/1024/1440px; dark screenshots cover 390/1280px. This is Chromium viewport emulation, not physical iPad Safari or native 125% zoom. At 768px the shared header truncates Today to Tod…; retain this as an open header issue. The mock corpus exercised empty pickups and overdue returns, not every booking status or role.
+
+Typecheck, source lint, 21 focused tests, a 4,296-test full run, 160 local migrations, 30 lifecycle checks, 54 contrast pairs, shell lint and production build passed for this patch before later concurrent source edits. A separate mock build supplied the saved screenshots. These results do not certify unrelated changes made afterward. Untested modules remain open; no full-app completion claim is made.

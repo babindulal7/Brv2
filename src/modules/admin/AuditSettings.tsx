@@ -5,6 +5,7 @@ import { DataTableShell } from '../../components/ui/DataTable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
+import { useViewport } from '../../lib/device'
 import { canManageSettings } from '../../lib/rbac'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import {
@@ -254,6 +255,7 @@ function MiniLine({ d, tone }: { d: { yTicks: string[]; labels: string[]; points
  * of collapsing to a 44px handle on the warehouse tablet.
  */
 export default function AuditSettings() {
+  const viewport = useViewport()
   const { user } = useAuth()
   /** Phase 2.7 — the same tier Settings edits under. The role set lives in `rbac.ts`. */
   const mayManage = canManageSettings(user?.role ?? 'Client')
@@ -299,9 +301,20 @@ export default function AuditSettings() {
 
       <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <KpiStrip items={KPIS} columns={6} />
+          <KpiStrip items={KPIS} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 6} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.05fr) minmax(0,1.25fr)', gap: 'var(--sp-md)' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                viewport === 'phone'
+                  ? 'minmax(0,1fr)'
+                  : viewport === 'tablet'
+                    ? 'repeat(2, minmax(0,1fr))'
+                    : 'minmax(0,1fr) minmax(0,1.05fr) minmax(0,1.25fr)',
+              gap: 'var(--sp-md)',
+            }}
+          >
             <Card title="Audit Configuration">
               <div
                 style={{
@@ -401,7 +414,7 @@ export default function AuditSettings() {
                 </span>
               }
             >
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: viewport === 'phone' ? 'repeat(2, minmax(0,1fr))' : 'repeat(3, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
                 {CATEGORIES.map((c, i) => (
                   <div
                     key={c.name}
@@ -479,7 +492,18 @@ export default function AuditSettings() {
             </Card>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                viewport === 'phone'
+                  ? 'minmax(0,1fr)'
+                  : viewport === 'tablet'
+                    ? 'repeat(2, minmax(0,1fr))'
+                    : 'minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr)',
+              gap: 'var(--sp-md)',
+            }}
+          >
             <Card
               title="Audit Rules"
               action={
@@ -591,7 +615,18 @@ export default function AuditSettings() {
           </div>
 
           <Card title="Audit Analytics (This Month)">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  viewport === 'phone'
+                    ? 'repeat(1, minmax(0,1fr))'
+                    : viewport === 'tablet'
+                      ? 'repeat(2, minmax(0,1fr))'
+                      : 'repeat(6, minmax(0,1fr))',
+                gap: 'var(--sp-md)',
+              }}
+            >
               <div style={{ minWidth: 0 }}>
                 <div style={sub}>Events by Module</div>
                 <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{TOTAL_EVENTS}</div>

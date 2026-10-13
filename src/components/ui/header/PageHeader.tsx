@@ -1,3 +1,4 @@
+import { UnsavedChangesIndicator } from './UnsavedChangesIndicator'
 /**
  * src/components/ui/header/PageHeader.tsx — Babin Rentals OS
  *
@@ -490,17 +491,7 @@ export function PageHeader({
                 {!ws && description && <InfoTooltip content={description} size={16} />}
                 {status}
                 {hasDirty && (
-                  <span className="universal-page-header__dirty-indicator" title="Unsaved modifications">
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        backgroundColor: '#d97706',
-                      }}
-                    />
-                    Unsaved changes
-                  </span>
+                  <UnsavedChangesIndicator />
                 )}
               </div>
             </div>

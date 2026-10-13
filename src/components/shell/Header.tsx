@@ -22,6 +22,7 @@ import {
 import { AddDropdownButton } from '../ui/header/PageHeader'
 import { GlobalAddMenu } from '../ui/creation/GlobalAddMenu'
 import { MobileHeaderSearch } from './MobileHeaderSearch'
+import { UnsavedChangesIndicator } from '../ui/header/UnsavedChangesIndicator'
 import './shell.css'
 
 export interface Crumb {
@@ -409,18 +410,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
 
           {/* Unsaved changes dirty state indicator */}
           {hasDirty && (
-            <span
-              title="Unsaved changes"
-              aria-label="Unsaved changes"
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                background: 'var(--amber-text, #f59e0b)',
-                flexShrink: 0,
-                display: 'inline-block',
-              }}
-            />
+            <UnsavedChangesIndicator compact />
           )}
 
           {/* Page Info Tooltip */}
@@ -603,7 +593,8 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               className="header-sync-context"
               aria-hidden={isAbnormalSync ? undefined : true}
               style={{
-                display: 'flex',
+                // RULING 2026-10-13: tablets reclaim the healthy sync placeholder for the page title/search.
+                display: isTablet && !isAbnormalSync ? 'none' : 'flex',
                 alignItems: 'center',
                 gap: 8,
                 flexShrink: 0,

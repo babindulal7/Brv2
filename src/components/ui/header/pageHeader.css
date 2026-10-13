@@ -102,9 +102,17 @@
   letter-spacing: 0.05em;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(245, 158, 11, 0.15);
-  color: #d97706;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--st-progress-bg);
+  color: var(--st-progress-fg);
+  border: 1px solid transparent;
+}
+
+.universal-page-header__dirty-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 /* Zone 2: Center Zone (Search & Quick Filters) */

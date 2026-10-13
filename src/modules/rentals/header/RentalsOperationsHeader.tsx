@@ -1,3 +1,4 @@
+import { UnsavedChangesIndicator } from '../../../components/ui/header/UnsavedChangesIndicator'
 /**
  * src/modules/rentals/header/RentalsOperationsHeader.tsx — Babin Rentals OS
  *
@@ -599,17 +600,7 @@ export function RentalsOperationsHeader({
                     </span>
                   )}
                   {isDirty && (
-                    <span className="universal-page-header__dirty-indicator" title="Unsaved modifications">
-                      <span
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          backgroundColor: '#d97706',
-                        }}
-                      />
-                      Unsaved changes
-                    </span>
+                    <UnsavedChangesIndicator />
                   )}
                 </div>
               </div>
@@ -634,17 +625,7 @@ export function RentalsOperationsHeader({
                     {totalCount} {totalCount === 1 ? 'booking' : 'bookings'}
                   </span>
                   {isDirty && (
-                    <span className="universal-page-header__dirty-indicator" title="Unsaved modifications">
-                      <span
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          backgroundColor: '#d97706',
-                        }}
-                      />
-                      Unsaved changes
-                    </span>
+                    <UnsavedChangesIndicator />
                   )}
                 </div>
                 <div style={{ fontSize: 'var(--t-meta, 13px)', color: 'var(--muted)' }}>

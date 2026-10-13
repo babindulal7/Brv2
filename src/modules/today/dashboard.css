@@ -92,9 +92,7 @@
 /* ─── Unified Master Dispatch Date Control ────────────────────────────────── */
 .dashboard-master-date-control {
   position: relative;
-  /* The dispatch calendar drops over the movement panels below, which are
-     positioned with their own z-index — without this the popup can paint
-     under them. */
+  /* The calendar is portaled; its trigger stays below shell search overlays. */
   z-index: auto;
   display: inline-flex;
   align-items: center;
@@ -2785,9 +2783,8 @@
    first card below the fold. The heading stays for screen readers: it names the
    section the list belongs to. */
 @media (max-width: 767px) {
-  .dashboard-workbar__intro {
-    display: none;
-  }
+  .dashboard-workbar__intro { justify-content: flex-end; }
+  .dashboard-workbar__intro p { display: none; }
 
   .movement-panel__header {
     position: absolute;
