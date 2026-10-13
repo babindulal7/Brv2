@@ -35,7 +35,7 @@ vi.mock('../../../lib/auth', () => ({
     logout: vi.fn(),
   }),
 }))
-vi.mock('../../../lib/theme', () => ({ useTheme: () => ({ theme: 'dark', setMode: () => {} }) }))
+vi.mock('../../../lib/theme', () => ({ useTheme: () => ({ theme: 'dark', glass: false, setMode: () => {}, choose: () => {} }) }))
 vi.mock('../../../lib/syncContext', () => ({ useSync: () => syncMockState }))
 vi.mock('../../../lib/collapse', () => ({ useCollapsed: () => [collapsedPref, () => {}] }))
 

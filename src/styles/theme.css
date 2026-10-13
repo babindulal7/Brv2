@@ -1604,3 +1604,141 @@ p {
     transform: none;
   }
 }
+
+/* ── RULING 2026-10-13 — "Glass" theme: the Obsidian Glass hybrid ───────────
+   Babin chose (13 Oct, option A): Obsidian Glass chrome + cards, Black Titanium
+   solid tables/inputs, blue as the ONLY accent. Status hues are untouched —
+   every --st-* / --success / --warn / --danger value is inherited from the
+   dark block above, so this layer cannot change what a status means.
+
+   It is a STYLE LAYER on the dark theme, not a fourth palette: lib/theme.tsx
+   resolves mode 'glass' to data-theme='dark' and stamps data-style='glass', so
+   every `theme === 'dark'` branch in the app still holds.
+
+   Kept from v4.2 §4: tint floor 0.85 (text over a moving backdrop must stay
+   verifiable at 4.5:1), tables solid, [data-floor] kill-switch (it redefines
+   --card/--surface-card on <main> and so still wins on floor screens), and the
+   reduced-transparency / more-contrast kill-switch (re-declared below because
+   this selector out-ranks the one in that block).
+
+   Revert = delete from this comment to the end of the file, and the 'glass'
+   additions in lib/theme.tsx, index.html, Settings.tsx, sections/shared.tsx
+   and Sidebar.tsx.
+
+   13 Oct, later: Glass is now a FINISH on either base — Light + Glass is the
+   frosted twin below. `check:contrast` gates both by compositing. */
+:root[data-theme='dark'][data-style='glass'] {
+  --app: #05080e;
+  --bg: #05080e;
+  --bg0: #030509;
+
+  /* Black Titanium — the SOLID surfaces (tables, inputs, menus) */
+  --surface: #121722;
+  --surface-2: #181f2c;
+  --inset: #0c1018;
+  --inset2: #10151f;
+  --modal: #131924;
+  --dropdown: #131924;
+
+  /* Obsidian Glass — translucent cards and chrome, floor 0.85 */
+  --glass-tint: 0.85;
+  --card: rgba(18, 24, 36, 0.85);
+  --card2: rgba(26, 33, 48, 0.85);
+  --surface-card: rgba(18, 24, 36, 0.85);
+  --surface-card-hover: rgba(26, 33, 48, 0.88);
+  --sidebar: rgba(8, 12, 19, 0.85);
+
+  --border: rgba(255, 255, 255, 0.12);
+  --specular-rim: 0 1px 0 rgba(255, 255, 255, 0.07) inset;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 12px 32px rgba(0, 0, 0, 0.42);
+}
+
+/* ── RULING 2026-10-13 — Glass on Light ("frosted") ─────────────────────────
+   The same finish on the light base (mode 'glass-light' → data-theme='light' +
+   data-style='glass'). Porcelain solid surfaces are simply Light's own — tables,
+   inputs and menus stay #fff, so nothing is redeclared for them. Frosted white
+   cards and chrome at the same 0.85 floor; status hues, primary and the orange
+   booking-date ink are inherited from the light block unchanged.
+
+   On a light canvas a glow DARKENS what sits on it (the opposite of Obsidian),
+   so the blue is kept faint enough that muted text on the bare canvas still
+   clears 4.5:1. `check:contrast` composites every layer and fails the gate if
+   it does not. The white bloom only lightens, so it cannot cost contrast.
+   Revert = delete this palette and its body rule, and 'glass-light' in
+   lib/theme.tsx and index.html. */
+:root[data-theme='light'][data-style='glass'] {
+  --app: #e4ebf5;
+  --bg: #e4ebf5;
+  --bg0: #dae3ef;
+
+  --glass-tint: 0.85;
+  --card: rgba(255, 255, 255, 0.85);
+  --card2: rgba(237, 243, 250, 0.85);
+  --surface-card: rgba(255, 255, 255, 0.85);
+  --surface-card-hover: rgba(238, 244, 251, 0.9);
+  --sidebar: rgba(255, 255, 255, 0.85);
+
+  --specular-rim: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.85) inset, 0 10px 28px rgba(15, 23, 42, 0.09);
+}
+
+/* The glow the glass refracts. Blue only — no violet, no amber (13 Oct: amber
+   would read as the orange On Rent / yellow Packed status). Fixed so it does
+   not scroll with long lists. */
+:root[data-theme='dark'][data-style='glass'] body {
+  background-image:
+    radial-gradient(110% 85% at 68% -12%, rgba(47, 125, 255, 0.40), transparent 62%),
+    radial-gradient(95% 90% at 8% 112%, rgba(47, 125, 255, 0.32), transparent 64%),
+    radial-gradient(55% 60% at 100% 75%, rgba(96, 120, 170, 0.18), transparent 65%);
+  background-attachment: fixed;
+}
+:root[data-theme='light'][data-style='glass'] body {
+  background-image:
+    radial-gradient(110% 85% at 68% -12%, rgba(108, 155, 255, 0.18), transparent 62%),
+    radial-gradient(95% 90% at 8% 112%, rgba(108, 155, 255, 0.16), transparent 64%),
+    radial-gradient(60% 60% at 100% 72%, rgba(255, 255, 255, 0.75), transparent 65%);
+  background-attachment: fixed;
+}
+
+/* Everything below is the finish itself, shared by both bases. */
+
+/* Chrome: the sidebar is the one shell surface with no blur of its own. */
+:root[data-style='glass'] .app-navigation {
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+
+/* Cards pick up the hairline rim the glass needs to read as an edge. --w08 is
+   white on dark and slate on light, so the one rule fits both. */
+:root[data-style='glass'] .card {
+  border: 1px solid var(--w08);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+
+/* Floating layers (menus, listboxes, popovers, dialogs, tooltips) paint with
+   the same translucent var(--card) as panels, but they sit OVER text, so
+   without blur the page reads through them (13 Oct bug: Today's "24 coming
+   back" showed through the More menu). Blur makes them true glass. Selected by
+   role so no component changes; the kill-switches below still remove it. */
+:root[data-style='glass'] :is([role='menu'], [role='listbox'], [role='dialog'], [role='alertdialog'], [role='tooltip'], .global-add-menu) {
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root[data-theme='dark'][data-style='glass'],
+  :root[data-theme='light'][data-style='glass'] {
+    --card: var(--surface);
+    --card2: var(--surface-2);
+    --surface-card: var(--surface);
+    --surface-card-hover: var(--surface-2);
+    --sidebar: var(--surface);
+  }
+  /* Theme-scoped on purpose: a bare :root[data-style='glass'] body would lose
+     to the two glow rules above on specificity and leave the glow on. */
+  :root[data-theme='dark'][data-style='glass'] body,
+  :root[data-theme='light'][data-style='glass'] body {
+    background-image: none;
+  }
+}

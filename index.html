@@ -169,8 +169,16 @@
         // or a first-time visitor gets one painted frame of the wrong theme
         // before React corrects it. 'system' is still honoured for anyone who
         // chose it explicitly; the per-user toggle persists either way.
+        // RULING 2026-10-13: 'glass' paints as dark + the glass style layer;
+        // 'high-contrast' is honoured here too (it fell through to 'light').
+        // 'glass-light' paints as light + the same glass layer (frosted).
+        if (mode === 'glass' || mode === 'glass-light') document.documentElement.setAttribute('data-style', 'glass')
         var resolved =
-          mode === 'dark' || mode === 'light'
+          mode === 'glass'
+            ? 'dark'
+            : mode === 'glass-light'
+            ? 'light'
+            : mode === 'dark' || mode === 'light' || mode === 'high-contrast'
             ? mode
             : mode === 'system'
               ? window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches

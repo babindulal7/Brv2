@@ -98,7 +98,7 @@ interface SidebarProps {
  * theme either.
  */
 export default function Sidebar({ active }: SidebarProps) {
-  const { theme, setMode } = useTheme()
+  const { theme, glass, choose } = useTheme()
   const { user } = useAuth()
   const viewport = useViewport()
   /* Persisted independently of any one rail — this is the app shell, not a
@@ -195,7 +195,7 @@ export default function Sidebar({ active }: SidebarProps) {
         {rail ? (
           <button
             type="button"
-            onClick={() => setMode(theme === 'dark' ? 'light' : 'dark')}
+            onClick={() => choose(theme === 'dark' ? 'light' : 'dark')}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             style={{
@@ -214,14 +214,16 @@ export default function Sidebar({ active }: SidebarProps) {
             <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={15} />
           </button>
         ) : (
-          <div role="group" aria-label="Theme" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            {(['dark', 'light'] as const).map((m) => {
-              const on = theme === m
+          <div role="group" aria-label="Theme" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+            {(['dark', 'light', 'glass'] as const).map((m) => {
+              // RULING 2026-10-13: Glass is a finish on either base, so it can
+              // be pressed alongside Light or Dark.
+              const on = m === 'glass' ? glass : theme === m
               return (
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setMode(m)}
+                  onClick={() => choose(m)}
                   aria-pressed={on}
                   style={{
                     display: 'inline-flex',
@@ -240,7 +242,7 @@ export default function Sidebar({ active }: SidebarProps) {
                     textTransform: 'capitalize',
                   }}
                 >
-                  <Icon name={m === 'dark' ? 'moon' : 'sun'} size={14} />
+                  <Icon name={m === 'glass' ? 'sparkles' : m === 'dark' ? 'moon' : 'sun'} size={14} />
                   {m}
                 </button>
               )

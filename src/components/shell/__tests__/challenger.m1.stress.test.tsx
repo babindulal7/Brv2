@@ -33,7 +33,7 @@ vi.mock('../../../lib/auth', () => ({
 }))
 
 vi.mock('../../../lib/theme', () => ({
-  useTheme: () => ({ theme: 'dark', setMode: vi.fn() }),
+  useTheme: () => ({ theme: 'dark', glass: false, setMode: vi.fn(), choose: vi.fn() }),
 }))
 
 vi.mock('../../../lib/collapse', () => ({

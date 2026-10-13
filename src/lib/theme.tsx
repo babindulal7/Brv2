@@ -1,20 +1,36 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { readLocal, writeLocal, onMediaChange } from './safeStorage'
 
-export type ThemeMode = 'system' | 'dark' | 'light' | 'high-contrast'
+/* RULING 2026-10-13: 'glass' = the Obsidian Glass hybrid (dark theme + glass
+   style layer). Resolves to 'dark' so every `theme === 'dark'` branch keeps
+   working; the look lives only in theme.css under [data-style='glass'].
+   Revert = remove 'glass' here and the [data-style='glass'] blocks in theme.css.
+   RULING 2026-10-13: 'glass-light' = the same glass finish on the light theme
+   (frosted). Resolves to 'light'. Revert = remove 'glass-light' here, in
+   index.html, and the [data-theme='light'][data-style='glass'] blocks. */
+export type ThemeMode = 'system' | 'dark' | 'light' | 'high-contrast' | 'glass' | 'glass-light'
 export type ResolvedTheme = 'dark' | 'light' | 'high-contrast'
+/* RULING 2026-10-13: the three buttons every theme picker shows. Light and Dark
+   pick the base and KEEP the glass finish; Glass turns the finish on or off on
+   the current base. So Light + Glass = frosted, Dark + Glass = Obsidian. */
+export type ThemeChoice = 'light' | 'dark' | 'glass'
 
 interface ThemeCtx {
   mode: ThemeMode
   theme: ResolvedTheme
+  /** The glass finish is on (either base). */
+  glass: boolean
   setMode: (mode: ThemeMode) => void
+  choose: (choice: ThemeChoice) => void
   toggle: () => void
 }
 
 const Ctx = createContext<ThemeCtx>({
   mode: 'system',
   theme: 'light',
+  glass: false,
   setMode: () => {},
+  choose: () => {},
   toggle: () => {},
 })
 
@@ -40,7 +56,7 @@ export function ThemeProvider({ children, initial = 'light' }: { children: React
        "Block All Cookies". Unguarded, a preference lookup blanked the whole app
        on Apple devices. See `safeStorage.ts`. */
     const saved = readLocal(KEY) as ThemeMode | null
-    return saved === 'dark' || saved === 'light' || saved === 'high-contrast' || saved === 'system' ? saved : 'light'
+    return saved === 'dark' || saved === 'light' || saved === 'high-contrast' || saved === 'glass' || saved === 'glass-light' || saved === 'system' ? saved : 'light'
   })
 
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => {
@@ -58,29 +74,44 @@ export function ThemeProvider({ children, initial = 'light' }: { children: React
     )
   }, [])
 
-  const theme: ResolvedTheme = mode === 'system' ? systemTheme : mode
+  const glass = mode === 'glass' || mode === 'glass-light'
+  const theme: ResolvedTheme =
+    mode === 'system' ? systemTheme : mode === 'glass' ? 'dark' : mode === 'glass-light' ? 'light' : mode
 
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme
+    if (glass) document.documentElement.dataset['style'] = 'glass'
+    else delete document.documentElement.dataset['style']
     /* A device that cannot remember the theme still gets the theme. */
     writeLocal(KEY, mode)
-  }, [mode, theme])
+  }, [mode, theme, glass])
 
   const setMode = (newMode: ThemeMode) => {
     setModeState(newMode)
   }
 
+  const choose = (choice: ThemeChoice) => {
+    if (choice === 'glass') {
+      setModeState(glass ? (theme === 'light' ? 'light' : 'dark') : theme === 'light' ? 'glass-light' : 'glass')
+    } else if (choice === 'light') {
+      setModeState(glass ? 'glass-light' : 'light')
+    } else {
+      setModeState(glass ? 'glass' : 'dark')
+    }
+  }
+
   const toggle = () => {
     setModeState((m) => {
       const current = m === 'system' ? systemTheme : m
-      if (current === 'light') return 'dark'
-      if (current === 'dark') return 'high-contrast'
+      if (current === 'light' || current === 'glass-light') return 'dark'
+      if (current === 'dark') return 'glass'
+      if (current === 'glass') return 'high-contrast'
       return 'light'
     })
   }
 
   return (
-    <Ctx.Provider value={{ mode, theme, setMode, toggle }}>
+    <Ctx.Provider value={{ mode, theme, glass, setMode, choose, toggle }}>
       {children}
     </Ctx.Provider>
   )
