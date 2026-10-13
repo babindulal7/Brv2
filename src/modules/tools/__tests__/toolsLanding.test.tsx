@@ -43,13 +43,13 @@ const { default: ToolsLanding } = await import('../ToolsLanding')
 let container: HTMLDivElement
 let root: Root
 
-async function mount() {
+async function mount(path = '/tools') {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
     root.render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <ToolsLanding />
       </MemoryRouter>,
     )
@@ -113,6 +113,44 @@ describe('Tools landing — Law 6', () => {
     }
     /* afterEach unmounts once more — mount a fresh tree for it to tear down. */
     await mount()
+  })
+
+  /*
+   * RULING 2026-10-13: Late Fee (fees in NPR) and Coupons & Promos (discount
+   * amounts; `rental.discount` is C+ and money-blind for the floor) are money
+   * too. Before this, the tab strip hid Late Fee but the page still rendered it
+   * for a typed `?tab=latefee`, Coupons was open to every role and printed the
+   * discount in rupees, and both Overview cards stayed up for the floor.
+   */
+  it('omits Late Fee and Coupons — cards and tabs — for a money-blind role', async () => {
+    money = false
+    await mount()
+    expect(hrefs()).not.toContain('/tools/latefee')
+    expect(hrefs()).not.toContain('/tools/coupons')
+    expect(container.textContent).not.toContain('Late Fee')
+    expect(container.textContent).not.toContain('Coupons')
+  })
+
+  it('renders neither for a money-blind role even when the tab is typed into the URL', async () => {
+    money = false
+    for (const tab of ['latefee', 'coupons']) {
+      await mount(`/tools?tab=${tab}`)
+      expect(container.textContent, `?tab=${tab} rendered for the floor`).not.toContain('Late fee estimate')
+      expect(container.textContent, `?tab=${tab} rendered for the floor`).not.toMatch(/Rs\s?[\d,]/)
+      expect(container.textContent).not.toContain('Voucher')
+      await act(async () => root.unmount())
+      container.remove()
+    }
+    await mount()
+  })
+
+  it('still shows Late Fee and Coupons to a role that may see money', async () => {
+    await mount('/tools?tab=latefee')
+    expect(container.textContent).toContain('Late fee estimate')
+    await act(async () => root.unmount())
+    container.remove()
+    await mount()
+    expect(hrefs()).toEqual(expect.arrayContaining(['/tools/latefee', '/tools/coupons']))
   })
 })
 

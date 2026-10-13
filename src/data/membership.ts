@@ -13,8 +13,9 @@ import type { MembershipTier } from './clients'
  *     render's avatars is violet, which Foundation §4.2 bans outright.
  */
 
-export const TABS = ['Clients', 'Membership', 'Referral', 'Credit'] as const
-export type MembershipTab = (typeof TABS)[number]
+/* RULING 2026-10-13: the `TABS` / `MembershipTab` exports that sat here were
+   unused — `modules/clients/Membership.tsx` keeps its own strip, and the Clients
+   page shows Directory · Membership. Removed so there is one spelling, not two. */
 
 /* ── members ───────────────────────────────────────────────────────────── */
 

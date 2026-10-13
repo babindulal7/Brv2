@@ -154,10 +154,11 @@ export default function ToolsLanding() {
       ? [
           { key: 'depreciation' as const, label: 'Depreciation', icon: 'chart' as const, money: true },
           { key: 'pricing' as const, label: 'Pricing', icon: 'dollar' as const, money: true },
-          { key: 'latefee' as const, label: 'Late Fee', icon: 'timer' as const },
+          { key: 'latefee' as const, label: 'Late Fee', icon: 'timer' as const, money: true },
+          // RULING 2026-10-13: discounts are money (MONEY_ROUTES '/tools/coupons').
+          { key: 'coupons' as const, label: 'Coupons & Promos', icon: 'receipt' as const, money: true },
         ]
       : []),
-    { key: 'coupons' as const, label: 'Coupons & Promos', icon: 'receipt' as const },
     { key: 'qr' as const, label: 'QR & Barcodes', icon: 'barcode' as const },
     { key: 'cinematography', label: 'Cinematography Suite', icon: 'camera' },
   ]
@@ -321,8 +322,10 @@ export default function ToolsLanding() {
 
       {activeTab === 'depreciation' && money && <DepreciationCalculator embedded />}
       {activeTab === 'pricing' && money && <PricingCalculator embedded />}
-      {activeTab === 'latefee' && <LateFeeCalculator />}
-      {activeTab === 'coupons' && <CouponsManager />}
+      {/* RULING 2026-10-13: guarded like the two above — the tab strip hid Late
+          Fee, but a typed `?tab=latefee` still rendered it for the floor. */}
+      {activeTab === 'latefee' && money && <LateFeeCalculator />}
+      {activeTab === 'coupons' && money && <CouponsManager />}
       {activeTab === 'qr' && <QrGenerator />}
       {activeTab === 'cinematography' && <CineTools embedded />}
 

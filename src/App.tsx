@@ -71,7 +71,6 @@ const PurchaseRequests  = lazy(() => import('./modules/inventory/PurchaseRequest
 const Calendar          = lazy(() => import('./modules/calendar/Calendar'))
 const OperationsQueues  = lazy(() => import('./modules/operations/OperationsQueues'))
 const Finance           = lazy(() => import('./modules/finance/Finance'))
-const DailyClosing      = lazy(() => import('./modules/finance/DailyClosing'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
 const ToolsLanding      = lazy(() => import('./modules/tools/ToolsLanding'))
 const Clients           = lazy(() => import('./modules/clients/Clients'))
@@ -491,19 +490,12 @@ export default function App() {
             for a money-blind role without `MONEY_ROUTES` gaining an entry. The
             screen spreads `financeRestriction()` too: the guard is a route table,
             that one is the query's own contract. */}
-        {/* §5.4. Money surface by prefix — `isMoneySurface('/finance/closing')`
-            matches on `/finance`, so the Shell guard already refuses a typed
-            URL for a money-blind role; the screen carries its own Law 6 guard
-            too, because a route table and a screen answer different questions. */}
-        <Route
-          path="/finance/closing"
-          element={
-            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Daily Closing' }]}>
-              <DailyClosing />
-            </Shell>
-          }
-        />
-
+        {/* RULING 2026-10-13: one screen, one address. Finance's Closing tab
+            renders DailyClosing in place (`?tab=closing`), so this second,
+            standalone mount went the way of its five siblings below. Still a
+            money surface by the `/finance` prefix. Revert = restore the Shell +
+            <DailyClosing /> route. */}
+        <Route path="/finance/closing" element={<Navigate to="/finance?tab=closing" replace />} />
         <Route path="/finance/invoices" element={<Navigate to="/finance?tab=invoices" replace />} />
         <Route path="/finance/payments" element={<Navigate to="/finance?tab=payments" replace />} />
         <Route path="/finance/expenses" element={<Navigate to="/finance?tab=expenses" replace />} />
@@ -747,19 +739,17 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/admin/audit-settings"
-          element={
-            <Shell crumbs={[{ label: 'Admin', to: '/settings?tab=system' }, { label: 'Audit Settings' }]}>
-              <AuditSettings />
-            </Shell>
-          }
-        />
+        {/* RULING 2026-10-13: one screen, one address. This mounted the same
+            AuditSettings under a second crumb trail, and nothing linked to it
+            (flagged by the Sep audits, survived the 15 Aug consolidation). Law 3:
+            the URL still resolves. Revert = restore the Shell + <AuditSettings />. */}
+        <Route path="/admin/audit-settings" element={<Navigate to="/admin/audit" replace />} />
 
         {/* ── Tools — nav item 10, `10_TOOLS.md` ──────────────────────────
-            Six cards plus the cinematography suite kept by Rulings §6: two
-            calculators (§10.2, §10.3), four admin screens (§10.4–§10.7), and
-            the suite at its ruled path below. */}
+            One page, tabs by `?tab=`: Overview, Depreciation, Pricing, Late Fee,
+            Coupons & Promos, QR & Barcodes and the cinematography suite (kept by
+            Rulings §6). The four admin screens §10.4–§10.7 once listed here moved
+            to Settings ▸ System on 15 Aug; they mount at `/admin/*` below. */}
         <Route
           path="/tools"
           element={
@@ -812,8 +802,8 @@ export default function App() {
             settles where it lives: `/tools/cinematography`. `11_SETTINGS.md`'s
             eight sections include no Tools, so `/settings/tools` had no home in
             either spec. Law 3 — nothing is deleted, so the old path still
-            resolves as a `replace` redirect, the same treatment the four
-            `/admin/*` URLs get above. */}
+            resolves as a `replace` redirect, the same treatment the four old
+            `/tools/*` admin URLs get at the top of this file. */}
         <Route path="/tools/cinematography" element={<Navigate to="/tools?tab=cinematography" replace />} />
         <Route path="/settings/tools" element={<Navigate to="/tools?tab=cinematography" replace />} />
 

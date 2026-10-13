@@ -1,5 +1,34 @@
 # Progress Log
 
+## 2026-10-13 — App reorganization step 1 (cleanups + two Law 6 fixes)
+
+**Did**
+- `/admin/audit-settings` → `/admin/audit`, `/finance/closing` → `/finance?tab=closing` (duplicate mounts became redirects). Late Fee and Coupons & Promos added to `MONEY_ROUTES` and guarded in `ToolsLanding`. Out-of-date notes in `nav.ts`/`App.tsx` corrected; unused `TABS` export removed from `data/membership.ts`. Branch `claude/reorg-step1` from `main` (independent of the glass branch).
+
+**Ruled**
+- `RULINGS-2026-10-13.md` § "App reorganization — step 1", rows R1–R4, each with a revert.
+
+**Verified**
+- `tsc --noEmit` exit 0. Tools/nav/money tests 4 files, 68/68 (new Law 6 tests failed before the fix, pass after). Browser (mock, `localhost:3500`): as Owner, both redirects land correctly (Closing tab active with content). As Warehouse, Tools shows Overview · QR & Barcodes · Cinematography Suite only; typed `?tab=latefee` / `?tab=coupons` render no calculator and no rupee figure; cinematography still renders.
+- Full gates, same branch: vitest 338 files, 4312/4312; `vite build` exit 0; `lint:shell` 650 clean; `check:contrast` 54/54; `lint:progress` OK.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 52 | 50 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T20:38:59.536Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Before merging into `main`: bring this branch up to `c628d54` (expect PROGRESS/RULINGS doc conflicts only).
+- Steps 2–4 of the reorganization plan (phone More sheet, Rentals extras, sub-rentals, Timesheet entry, Promotions/policies/Tools) — wait for the Desktop session to commit.
+
 ## 2026-10-13 — Smarter application header on every page
 
 **Did**

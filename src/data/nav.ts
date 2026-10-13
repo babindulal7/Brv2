@@ -126,15 +126,18 @@ export function permittedAllNav(role: SystemRole | undefined): NavSection[] {
  *    floor as well. The report screens each omit their own figures via
  *    `useCanViewMoney()`; this makes the module itself unreachable rather than
  *    reachable-but-hollowed.
- *  - `/admin` — likewise not in `NAV`; `/admin/*` now redirects into `/tools/*`.
+ *  - `/admin` — likewise not in `NAV`. The admin screens live at `/admin/*`
+ *    (Settings ▸ System, 15 Aug); the old `/tools/*` admin URLs redirect there.
  *  - `/tools/pricing`, `/tools/depreciation` — **the two calculators, not Tools
- *    itself.** Tools is nav item 10 and `10_TOOLS.md` restricts none of its four
- *    admin cards, so `/tools` stays in the nav for every role. Its two
- *    calculators are money screens by their own spec (§10.2 "purchase date ·
- *    price … opening │ dep │ WDV", §10.3 "rate / discount chips / VAT"), so they
- *    are listed one level down. Putting `/tools` here instead would hide Audit
- *    Log, Activity Log, Numbering and Backup & Restore from the floor, which no
- *    spec asks for.
+ *    itself.** Tools is nav item 10 and also holds tabs with no money in them
+ *    (QR & Barcodes, the cinematography suite), so `/tools` stays in the nav
+ *    for every role. Its two calculators are money screens by their own spec
+ *    (§10.2 "purchase date · price … opening │ dep │ WDV", §10.3 "rate /
+ *    discount chips / VAT"), so they are listed one level down. Putting
+ *    `/tools` here instead would hide those money-free tabs from the floor,
+ *    which no spec asks for.
+ *    (RULING 2026-10-13: note corrected — it described the 15 Aug admin move
+ *    backwards. No entry changed.)
  */
 export const MONEY_ROUTES: readonly string[] = [
   '/finance',
@@ -142,6 +145,12 @@ export const MONEY_ROUTES: readonly string[] = [
   '/admin',
   '/tools/pricing',
   '/tools/depreciation',
+  /* RULING 2026-10-13: Late Fee prints fees in NPR and Coupons & Promos prints
+     discount amounts (`rental.discount` is C+, money-blind for the floor). The
+     floor kept both Overview cards and could type either tab. Stricter wins
+     (B-1). Revert = drop these two lines and the `money` guards in ToolsLanding. */
+  '/tools/latefee',
+  '/tools/coupons',
 ]
 
 /** True when `path` is inside a money surface. Prefix match on a path segment. */
@@ -343,19 +352,15 @@ export function bottomBarSlots(role: SystemRole | undefined): BottomBarSlot[] {
 }
 
 /**
- * What the phone **More** sheet lists, in `NAV` order.
+ * What the phone **More** sheet lists, in `NAV` order — the eight destinations
+ * the five-slot bar (Today · Rentals · Scan · Inventory · More) cannot hold:
+ * New Rental · Operation · Calendar · Crew Assist · Clients · Finance · Tools ·
+ * Settings. The sheet itself adds a "Scan equipment" row above these.
  *
- * The wireframe says: *"Nav items 1, 3, 5, 6, 9, 10, 11 live under More."*
- * That is New Rental · Operation · Calendar · Crew Assist · Finance · Tools ·
- * Settings — seven of the eight items the five-slot bar cannot hold.
-/**
- * What the phone **More** sheet lists.
- *
- * Phone 5-slot bar holds Dashboard, Rentals, Scan, Inventory, More.
- * Destinations outside the bar live under More:
- * Calendar · Operations · Clients · Crew Assist · Finance · Tools · Settings
- *
- * New Rental is removed — global creation lives under Header Create ▾.
+ * New Rental is still listed here even though the header's Create ▾ also
+ * offers it (an earlier note here said it was removed; it never was). Whether
+ * to drop it is a visible change, tracked as reorganization step 2.
+ * RULING 2026-10-13: note corrected to match the list; no entry changed.
  */
 export const MORE_ROUTES: readonly string[] = [
   '/rentals/new',
@@ -385,22 +390,24 @@ export function moreNav(role: SystemRole | undefined): NavSection[] {
  *
  * ## What this is, and what it is not
  *
- * **It is the specs' ruling, written down. No page reads it yet.** The rendered
- * strips still come from each module's own constant, and two of them have not
- * been brought to the updated specs:
+ * **It is the specs' ruling, written down.** Finance renders its strip from it
+ * (`modules/finance/Finance.tsx`, `FINANCE_TABS`); the other pages still keep
+ * their own constant. Measured in the running app, 13 Oct 2026:
  *
- * | route | rendered today | source | matches the spec? |
- * |---|---|---|---|
- * | `/inventory` | Inventory · Bundles · Sub Rental · Maintenance · Cases | `data/inventory.ts:96` → `modules/inventory/Inventory.tsx` | **no** — 5 tabs, and `07_INVENTORY.md` drops Sub-Rental and Cases and renames the first to Equipment |
- * | `/clients` | Clients · Membership · Referral · Credit | `data/membership.ts:16` → `modules/clients/Membership.tsx` | **no** — `08_CLIENTS.md` says "Directory only — no tabs" |
- * | `/settings` | see `data/settings.ts:81` | `modules/settings/Settings.tsx` | not ruled on here |
+ * | route | rendered today | matches the spec? |
+ * |---|---|---|
+ * | `/finance` | Dashboard · Invoices · Payments · Expenses · Documents · Closing · Reports, each at `?tab=` | **yes** — read from here |
+ * | `/inventory` | Equipment · Bundles · Stock Check · Maintenance | **yes** — Sub-Rental and Cases left the strip |
+ * | `/clients` | Directory · Membership | **yes in shape** — two tabs as ruled; the first is labelled "Directory" on screen |
+ * | `/rentals` | no tabs (Table · Cards · Timeline is a view switch) | **yes** |
+ * | `/settings` | Business · People · Branches · System | not ruled on here |
  *
- * So the name is `SPEC_TABS`, not `TABS`: a reader who finds it must not take it
- * for the thing on screen. Re-pointing the modules at it is page work, not shell
- * work — those tabs are whole subscreens (`modules/operations/SubRental.tsx`,
- * `modules/operations/CasesWorkspace.tsx`) that need somewhere to go before the
- * tab that reaches them is deleted, and `PLAN.md`'s module batches own that.
- * Until then this constant is the record of what those batches owe.
+ * So the name is still `SPEC_TABS`, not `TABS`: for every page but Finance it is
+ * the record, not the source. Sub-Rental and Cases kept their screens
+ * (`modules/operations/SubRental.tsx`, `modules/operations/CasesWorkspace.tsx`),
+ * now reached from Operations and the Inventory routes rather than as tabs.
+ * RULING 2026-10-13: table brought up to date (it still described the
+ * Aug strips); no entry changed.
  */
 export const SPEC_TABS: Record<string, string[]> = {
   /* `04_RENTALS.md` line 3 — "Bookings only. Productions removed. Sub-Rental is
@@ -441,8 +448,12 @@ export const SPEC_TABS: Record<string, string[]> = {
  * **Where each Finance tab actually goes.**
  */
 export const FINANCE_TAB_ROUTES: Readonly<Record<string, string | null>> = {
-  /* Both are the Finance page itself — `Finance.tsx` switches between them in
-     local state rather than by URL. */
+  /* Both are the Finance page itself. `Finance.tsx` keys every tab off `?tab=`
+     (Dashboard is the bare URL, Invoices is `?tab=invoices`), so each tab has
+     its own address; the paths here and below are the older entry points, and
+     every `/finance/<tab>` (Closing included, since 13 Oct) redirects to
+     `/finance?tab=<tab>` in App.tsx.
+     RULING 2026-10-13: note corrected (it said "local state, not by URL"). */
   Dashboard: '/finance',
   Invoices: '/finance',
   /* §9.3 — `modules/finance/Payments.tsx`, added 12 Aug 2026. The receipt
