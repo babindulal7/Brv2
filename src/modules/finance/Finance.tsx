@@ -1969,57 +1969,32 @@ function RowActions({
   onVoid: () => void
   onExportPdf?: () => void
 }) {
-  const base = phone
-    ? {
-        display: 'inline-flex' as const,
-        alignItems: 'center' as const,
-        justifyContent: 'center' as const,
-        minHeight: 44,
-        height: 44,
-        flex: '1 1 88px',
-        padding: '0 12px',
-        border: '1px solid var(--border)',
-        background: 'var(--card)',
-        borderRadius: 'var(--r-btn)',
-        fontSize: 'var(--t-meta)',
-        cursor: 'pointer' as const,
-      }
-    : {
-        display: 'inline-flex' as const,
-        alignItems: 'center' as const,
-        justifyContent: 'center' as const,
-        minHeight: 32,
-        border: '1px solid var(--border)',
-        background: 'var(--card)',
-        padding: '4px 10px',
-        borderRadius: 'var(--r-btn)',
-        fontSize: 'var(--t-meta)',
-        cursor: 'pointer' as const,
-      }
+  const layout = phone ? { flex: '1 1 88px' } : undefined
 
   return (
     <>
       {/* Each action checks both session capability and the invoice's real state. */}
       {canPay && !row.isVoid && row.outstandingAmount > 0 && (
-        <button type="button" onClick={onPay} className="finance-action-btn is-primary" style={{ ...base, color: 'var(--nav-active-accent)', fontWeight: 600 }}>
+        <Button type="button" variant="primary" size="sm" onClick={onPay} style={layout}>
           + Pay
-        </button>
+        </Button>
       )}
       {canVoid && !row.isVoid && row.status !== 'Paid' && row.paidAmount === 0 && (
-        <button type="button" onClick={onVoid} className="finance-action-btn is-danger" style={{ ...base, color: 'var(--danger)', fontWeight: 500 }}>
+        <Button type="button" variant="danger" size="sm" onClick={onVoid} style={layout}>
           Void
-        </button>
+        </Button>
       )}
       {onExportPdf && (
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={onExportPdf}
           aria-label={`Export PDF for ${row.invoiceNo || 'invoice'}`}
-          className="finance-action-btn"
-          style={{ ...base, color: 'var(--text)', fontWeight: 500 }}
+          style={layout}
         >
           PDF
-        </button>
+        </Button>
       )}
     </>
   )

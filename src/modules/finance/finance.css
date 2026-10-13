@@ -225,50 +225,7 @@
 }
 
 /* ── Action Buttons ─────────────────────────────────────────────────────── */
-.finance-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: var(--r-btn, 8px);
-  border: 1px solid var(--border);
-  background: var(--card);
-  font-size: var(--t-meta, 13px);
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all var(--dur-fast, 120ms) var(--ease);
-  color: var(--text);
-}
-
-.finance-action-btn:hover {
-  background: var(--hover-card, var(--card2));
-  border-color: var(--border2, var(--border));
-  transform: translateY(-1px);
-}
-
-.finance-action-btn.is-primary {
-  background: var(--nav-active-accent);
-  border-color: var(--nav-active-accent);
-  color: var(--on-accent, #fff);
-  font-weight: 600;
-}
-
-.finance-action-btn.is-primary:hover {
-  filter: brightness(1.08);
-}
-
-.finance-action-btn.is-danger {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
-}
-
-.finance-action-btn.is-danger:hover {
-  background: var(--st-danger-bg);
-  border-color: var(--danger);
-}
+/* Invoice row actions use the shared Button component. */
 
 /* ── Chart & Collections Visuals ────────────────────────────────────────── */
 .finance-daily-bar {
@@ -484,20 +441,24 @@
   min-height: 44px;
   padding: 0 18px;
   border-radius: var(--r-btn, 8px);
-  background: #25D366;
-  color: #ffffff;
+  background: var(--btn-secondary-bg);
+  color: var(--text);
   font-weight: 700;
   font-size: var(--t-meta, 13px);
   text-decoration: none;
-  border: none;
+  border: 1px solid var(--btn-secondary-border);
   cursor: pointer;
-  transition: all var(--dur-fast, 120ms) var(--ease);
-  box-shadow: 0 1px 3px rgba(37, 211, 102, 0.3);
+  transition: background-color var(--dur-fast, 120ms) var(--ease);
 }
 
 .finance-whatsapp-btn:hover {
-  background: #20bd5a;
-  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
-  transform: translateY(-1px);
+  background: var(--hover-card);
 }
 
+
+.finance-whatsapp-btn:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
+[data-floor='true'] .finance-whatsapp-btn { min-height: 48px; }

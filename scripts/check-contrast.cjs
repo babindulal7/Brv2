@@ -15,6 +15,7 @@ function block(sel){
    this gate parses the shipped file, so it must track the shipped shape. */
 const D=block(":root[data-theme='dark'] {")
 const L=block(":root,\n:root[data-theme='light'] {")
+const H=block(":root[data-theme='high-contrast'] {")
 
 function srgb(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4)}
 function lum(x){const h=x.replace('#','')
@@ -80,7 +81,17 @@ for(const [theme,T] of [['DARK ',D],['LIGHT',L]]){
   chk(theme,T,'ready-text / surface','--ready-text','--surface',4.5)
   // primary button ink
   chk(theme,T,'btn-primary fg/bg','--btn-primary-fg','--btn-primary-bg',4.5)
+  // Shared primary hover and the neutral WhatsApp link read these exact tokens.
+  chk(theme,T,'btn-primary fg/hover','--btn-primary-fg','--hover-button',4.5)
+  chk(theme,T,'WhatsApp ink / card','--text','--card',4.5)
+  chk(theme,T,'WhatsApp ink / hover','--text','--hover-card',4.5)
   console.log('')
 }
+for(const [label,fg,bg] of [
+  ['btn-primary fg/bg','--btn-primary-fg','--btn-primary-bg'],
+  ['btn-primary fg/hover','--btn-primary-fg','--hover-button'],
+  ['WhatsApp ink / card','--text','--card'],
+  ['WhatsApp ink / hover','--text','--hover-card'],
+]) chk('HIGH ',H,label,fg,bg,4.5)
 console.log(`${n-fails}/${n} pass, ${fails} FAIL`)
 process.exit(fails?1:0)

@@ -192,12 +192,12 @@ export function DeliveryWorkspace() {
             <div className="delivery-kpi-card delivery-kpi-card--transit">
               <div className="delivery-kpi-top">
                 <span className="delivery-kpi-label">In Transit</span>
-                <span className="delivery-kpi-icon" style={{ color: 'var(--gold)' }}>
+                <span className="delivery-kpi-icon" style={{ color: 'var(--warn-text)' }}>
                   <Icon name="truck" size={16} />
                 </span>
               </div>
               <div>
-                <div className="delivery-kpi-val" style={{ color: 'var(--gold)' }}>{inTransitCount}</div>
+                <div className="delivery-kpi-val" style={{ color: 'var(--warn-text)' }}>{inTransitCount}</div>
                 <div className="delivery-kpi-sub">Active on road</div>
               </div>
             </div>
@@ -231,12 +231,12 @@ export function DeliveryWorkspace() {
             <div className="delivery-kpi-card delivery-kpi-card--delivered">
               <div className="delivery-kpi-top">
                 <span className="delivery-kpi-label">Delivered</span>
-                <span className="delivery-kpi-icon" style={{ color: 'var(--green)' }}>
+                <span className="delivery-kpi-icon" style={{ color: 'var(--success-text)' }}>
                   <Icon name="check" size={16} />
                 </span>
               </div>
               <div>
-                <div className="delivery-kpi-val" style={{ color: 'var(--green)' }}>{deliveredCount}</div>
+                <div className="delivery-kpi-val" style={{ color: 'var(--success-text)' }}>{deliveredCount}</div>
                 <div className="delivery-kpi-sub">Completed handovers</div>
               </div>
             </div>
@@ -428,7 +428,7 @@ export function DeliveryWorkspace() {
                                   <strong>Driver:</strong> {d.driverName} {d.vehiclePlate ? `(${d.vehiclePlate})` : ''}
                                 </div>
                               ) : (
-                                <div style={{ color: 'var(--gold)', marginTop: 2 }}>
+                                <div style={{ color: 'var(--warn-text)', marginTop: 2 }}>
                                   <em>Rider Unassigned</em>
                                 </div>
                               )}
@@ -449,8 +449,9 @@ export function DeliveryWorkspace() {
                               {d.status === 'Ready' && (
                                 <Button
                                   variant="primary"
+                                  data-primary-verb
                                   size="sm"
-                                  style={{ width: '100%', background: 'var(--gold)', borderColor: 'var(--gold)', color: '#000' }}
+                                  style={{ width: '100%' }}
                                   onClick={() => handleStartTransit(d)}
                                 >
                                   Dispatch Now
@@ -459,8 +460,9 @@ export function DeliveryWorkspace() {
                               {d.status === 'In Transit' && (
                                 <Button
                                   variant="primary"
+                                  data-primary-verb
                                   size="sm"
-                                  style={{ width: '100%', background: 'var(--green)', borderColor: 'var(--green)', color: '#fff' }}
+                                  style={{ width: '100%' }}
                                   onClick={() => handleOpenDeliver(d)}
                                 >
                                   Confirm Delivered ✓
@@ -576,25 +578,13 @@ export function DeliveryWorkspace() {
                                 )}
                               </div>
                             ) : (
-                              <button
+                              <Button
                                 type="button"
+                                variant="secondary"
                                 onClick={() => handleOpenAssign(d)}
-                                style={{
-                                  minHeight: 'var(--tap, 44px)',
-                                  padding: '5px 10px',
-                                  borderRadius: 'var(--r-btn)',
-                                  fontSize: '11.5px',
-                                  fontWeight: 600,
-                                  background: 'rgba(255, 179, 0, 0.12)',
-                                  color: 'var(--gold)',
-                                  border: '1px dashed var(--gold)',
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                }}
                               >
                                 + Assign Rider
-                              </button>
+                              </Button>
                             )}
                           </td>
 
@@ -671,8 +661,8 @@ export function DeliveryWorkspace() {
                               {d.status === 'Ready' && (
                                 <Button
                                   variant="primary"
+                                  data-primary-verb
                                   size="sm"
-                                  style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#000' }}
                                   onClick={() => handleStartTransit(d)}
                                 >
                                   Dispatch
@@ -682,8 +672,8 @@ export function DeliveryWorkspace() {
                               {d.status === 'In Transit' && (
                                 <Button
                                   variant="primary"
+                                  data-primary-verb
                                   size="sm"
-                                  style={{ background: 'var(--green)', borderColor: 'var(--green)', color: '#fff' }}
                                   onClick={() => handleOpenDeliver(d)}
                                 >
                                   Delivered ✓
