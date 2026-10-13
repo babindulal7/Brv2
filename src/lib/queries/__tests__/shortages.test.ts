@@ -78,4 +78,19 @@ describe('readShortageInputs (C7)', () => {
     db.responses['inventory_reservations'] = { error: { message: 'boom' }, data: [] }
     await expect(readShortageInputs()).rejects.toThrow(/live reservations.*boom/)
   })
+
+  it('refuses an unreadable serial hold instead of treating it as free stock', async () => {
+    db.responses['inventory_reservations'] = {
+      error: null, data: [{ product_id: null, asset_id: 'missing-unit', qty: 1, booking_id: 'b', period: RANGE, bookings: null }],
+    }
+    db.responses['product_units_v'] = { error: null, data: [] }
+    await expect(readShortageInputs()).rejects.toThrow('could not be matched')
+  })
+
+  it('refuses a malformed held period instead of omitting it from the shortage count', async () => {
+    db.responses['inventory_reservations'] = {
+      error: null, data: [{ product_id: 'p1', asset_id: null, qty: 1, booking_id: 'b', period: 'bad-range', bookings: null }],
+    }
+    await expect(readShortageInputs()).rejects.toThrow('could not be matched')
+  })
 })

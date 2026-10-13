@@ -61,7 +61,10 @@ describe('Shortages section (C7)', () => {
     expect(container.textContent).toContain('Sony FX3')
     expect(container.textContent).toContain('EQ000001')
     const links = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'))
-    expect(links).toEqual(['/rentals/1001', '/rentals/1002'])
+    expect(links).toContain('/inventory/p1')
+    expect(links.some(link => link?.startsWith('/calendar?d='))).toBe(true)
+    expect(links).toContain('/rentals/1001')
+    expect(links).toContain('/rentals/1002')
     const cells = [...container.querySelectorAll('tbody td')].map((td) => td.textContent?.trim())
     expect(cells.slice(1, 4)).toEqual(['1', '2', '1']) // in stock, needed at peak, short by
   })

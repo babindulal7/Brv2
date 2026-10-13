@@ -60,7 +60,7 @@ export async function readShortageInputs(): Promise<ShortageInputs> {
   for (const row of reservations) {
     const productId = row.product_id ?? (row.asset_id === null ? null : (productOfAsset.get(row.asset_id) ?? null))
     const window = parseTstzRange(row.period)
-    if (productId === null || window === null) continue
+    if (productId === null || window === null) throw new Error('A live reservation could not be matched to its product or dates. Refresh shortages before relying on this list.')
     const booking = Array.isArray(row.bookings) ? row.bookings[0] : row.bookings
     const list = holdsByProduct.get(productId) ?? []
     list.push({
