@@ -13,10 +13,12 @@
 - Full gates, same branch: vitest 338 files, 4312/4312; `vite build` exit 0; `lint:shell` 650 clean; `check:contrast` 54/54; `lint:progress` OK.
 - After merging `main` at `91a2b42` (merge `5b66436`, doc conflicts only, resolved as main + this entry): `tsc` 0; vitest 345 files, 4395/4395; `vite build` exit 0; `lint:shell` clean; `check:contrast` 64/64.
 
+- **Landed with the glass theme:** `main` fast-forwarded to glass (`a09db74`), then merged here (`73b54f6`, doc conflicts only). Combined: `tsc` 0; vitest 346 files, 4402/4402; `vite build` exit 0; `lint:shell` clean; `check:contrast` 82/82.
+
 ### Completion
 | Dimension | Counts | Now | Δ |
 |---|---|---|---|
-| Backend | actions implemented / total | 53 / 53 (100%) | +1 |
+| Backend | actions implemented / total | 53 / 53 (100%) | +0 |
 | Real data | DB-only · mixed · seed · none / 52 | 50 · 0 · 0 · 2 |  |
 | DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
 | Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
@@ -27,7 +29,7 @@ Gates read from .lifecycle-result.json, written 2026-10-12T20:38:59.536Z.
 Counted by `npm run completion`, not typed.
 
 ### Remaining
-- Up to date with `main` at `91a2b42`; fast-forward of `main` waits for the go-ahead (the Desktop checkout owns `main`).
+- On `main` (fast-forward, 13 Oct). Step 2 shrank: New Rental stays in the phone More sheet (nav item 1, locked eleven); Rentals header extras wait for `RentalsOperationsHeader.tsx` to be free.
 - Steps 2–4 of the reorganization plan (phone More sheet, Rentals extras, sub-rentals, Timesheet entry, Promotions/policies/Tools) — wait for the Desktop session to commit.
 
 
