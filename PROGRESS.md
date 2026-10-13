@@ -11,6 +11,7 @@
 **Verified**
 - `tsc --noEmit` exit 0. Tools/nav/money tests 4 files, 68/68 (new Law 6 tests failed before the fix, pass after). Browser (mock, `localhost:3500`): as Owner, both redirects land correctly (Closing tab active with content). As Warehouse, Tools shows Overview · QR & Barcodes · Cinematography Suite only; typed `?tab=latefee` / `?tab=coupons` render no calculator and no rupee figure; cinematography still renders.
 - Full gates, same branch: vitest 338 files, 4312/4312; `vite build` exit 0; `lint:shell` 650 clean; `check:contrast` 54/54; `lint:progress` OK.
+- After merging `main` at `91a2b42` (merge `5b66436`, doc conflicts only, resolved as main + this entry): `tsc` 0; vitest 345 files, 4395/4395; `vite build` exit 0; `lint:shell` clean; `check:contrast` 64/64.
 
 ### Completion
 | Dimension | Counts | Now | Δ |
@@ -26,7 +27,7 @@ Gates read from .lifecycle-result.json, written 2026-10-12T20:38:59.536Z.
 Counted by `npm run completion`, not typed.
 
 ### Remaining
-- Before merging into `main`: bring this branch up to `c628d54` (expect PROGRESS/RULINGS doc conflicts only).
+- Up to date with `main` at `91a2b42`; fast-forward of `main` waits for the go-ahead (the Desktop checkout owns `main`).
 - Steps 2–4 of the reorganization plan (phone More sheet, Rentals extras, sub-rentals, Timesheet entry, Promotions/policies/Tools) — wait for the Desktop session to commit.
 
 
