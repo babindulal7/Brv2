@@ -84,3 +84,7 @@ files.zip
 
 # local data backups (contain client PII)
 backups/
+
+# Scratch pages/configs and mock build bundles saved alongside artifacts — regenerable, not history.
+/tmp/
+artifacts/**/mock-dist/
