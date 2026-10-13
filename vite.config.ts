@@ -143,6 +143,9 @@ export default defineConfig({
       '.pinggy.net', '.pinggy-free.link', '.pinggy.link', '.pinggy.io', '.pinggy.online',
       '.trycloudflare.com',
     ],
+    watch: {
+      ignored: ['**/__rar_*', '**/*.rartemp', '**/*.rar', '**/.tmp-*'],
+    },
   },
   preview: {
     /* `vite preview` carries its own host check (Vite >= 5.4.12), separate from

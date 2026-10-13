@@ -6,6 +6,7 @@ import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { Select } from '../../components/ui/Select'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { PageBody } from '../../components/ui/PageBody'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { Modal } from '../../components/ui/Modal'
@@ -700,7 +701,21 @@ function AddExpenseSheet({
  * so the tab strip is not sitting above a second page title, and nothing else
  * about the screen changes. Not a width branch (Law 13).
  */
-export default function Expenses({ embedded = false, filtersOpen: externalFiltersOpen, onFiltersClose }: { embedded?: boolean; filtersOpen?: boolean; onFiltersClose?: () => void }) {
+export default function Expenses({
+  embedded = false,
+  filtersOpen: externalFiltersOpen,
+  onFiltersClose,
+  searchQuery: externalSearchQuery,
+  onSearchChange,
+  onActiveFilterCountChange,
+}: {
+  embedded?: boolean
+  filtersOpen?: boolean
+  onFiltersClose?: () => void
+  searchQuery?: string
+  onSearchChange?: (q: string) => void
+  onActiveFilterCountChange?: (count: number) => void
+}) {
   const { user } = useAuth()
   /** The one money gate. Mirrors `auth_can_view_money()` — Law 6. */
   const money = useCanViewMoney()
@@ -728,7 +743,19 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
    */
   const [status, setStatus] = useState<ExpenseStatusDb | 'All'>('All')
   const [categoryId, setCategoryId] = useState<string>('All')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [localSearchQuery, setLocalSearchQuery] = useState('')
+  const searchQuery = externalSearchQuery ?? localSearchQuery
+  const setSearchQuery = useCallback(
+    (q: string) => {
+      if (onSearchChange) onSearchChange(q)
+      else setLocalSearchQuery(q)
+    },
+    [onSearchChange],
+  )
+  const activeFilterCount = Number(categoryId !== 'All')
+  useEffect(() => {
+    onActiveFilterCountChange?.(activeFilterCount)
+  }, [activeFilterCount, onActiveFilterCountChange])
   const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
   const filtersOpen = externalFiltersOpen ?? internalFiltersOpen
   const closeFilters = onFiltersClose ?? (() => setInternalFiltersOpen(false))
@@ -822,7 +849,7 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
     setCategoryId('All')
     setSearchQuery('')
     setPage(1)
-  }, [])
+  }, [setSearchQuery])
 
   /* `useList` memoises `refetch`; naming it keeps the callback keyed on
      the function rather than on the whole list object, which is a fresh literal
@@ -953,6 +980,21 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
               paddingBottom: phone ? 4 : 0,
             }}
           >
+            <div style={{ flex: '1 1 220px', maxWidth: 340, minWidth: 0 }}>
+              <SearchInput
+                value={searchQuery}
+                onChange={(val) => {
+                  setSearchQuery(val)
+                  setPage(1)
+                }}
+                onClear={() => {
+                  setSearchQuery('')
+                  setPage(1)
+                }}
+                placeholder="Search vendor, description, or #…"
+                aria-label="Search expenses"
+              />
+            </div>
             {(['All', ...EXPENSE_STATUSES] as const).map((s) => {
               const on = status === s
               return (

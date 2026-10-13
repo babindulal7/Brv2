@@ -4,7 +4,7 @@
  * Packing state is per-booking, never global (§26).
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { SmartHoverTabs } from '../SmartHoverShell'
 import Icon from '../../ui/Icon'
 import type { EquipmentPreview } from '../previewTypes'
@@ -13,12 +13,14 @@ export function EquipmentHoverCard({
   preview,
   canViewFinance,
   defaultTab,
+  notesContent,
   onAction,
   onOpenRental,
 }: {
   preview: EquipmentPreview
   canViewFinance: boolean
   defaultTab: string
+  notesContent?: ReactNode
   onAction?: (id: string) => void
   onOpenRental?: (rentalNo: string) => void
 }) {
@@ -93,7 +95,7 @@ export function EquipmentHoverCard({
           )
         ) : null}
         {tab === 'notes' ? (
-          <div>
+          notesContent ?? <div>
             <ul style={{ margin: 0, padding: 0 }}>
               {preview.notes.map((n) => (
                 <li key={n.id} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>

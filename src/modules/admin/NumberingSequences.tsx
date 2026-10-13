@@ -479,7 +479,7 @@ export default function NumberingSequences() {
 
       {/* KPI counts would leak how much of a registry exists to a session RLS
           refuses, so the strip renders only past the restriction. */}
-      {!restriction.restricted && <KpiStrip items={kpis} columns={4} />}
+      {!restriction.restricted && <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />}
 
       <PageBody
         {...restriction}

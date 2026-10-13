@@ -91,6 +91,7 @@ export interface BulkActionItem {
   onClick: () => void
   disabled?: boolean
   variant?: 'default' | 'danger' | 'primary'
+  title?: string
 }
 
 export interface FloatingBulkActionBarProps {
@@ -179,51 +180,18 @@ export function FloatingBulkActionBar({
           const isPrimary = act.variant === 'primary'
           const isDanger = act.variant === 'danger'
           return (
-            <button
+            <Button
               key={act.id}
               type="button"
-              className="press tap"
+              variant={isPrimary ? 'primary' : isDanger ? 'danger' : 'secondary'}
+              size="sm"
               onClick={act.onClick}
               disabled={act.disabled}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                minHeight: 44,
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: isPrimary
-                  ? '1px solid transparent'
-                  : isDanger
-                    ? '1px solid var(--danger-border, #f87171)'
-                    : '1px solid var(--border)',
-                background: isPrimary
-                  ? 'var(--primary)'
-                  : isDanger
-                    ? 'var(--danger-bg, #fef2f2)'
-                    : 'transparent',
-                color: isPrimary
-                  ? 'var(--on-brand)'
-                  : isDanger
-                    ? 'var(--danger, #dc2626)'
-                    : 'var(--text)',
-                fontFamily: 'inherit',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: act.disabled ? 'not-allowed' : 'pointer',
-                opacity: act.disabled ? 0.45 : 1,
-                whiteSpace: 'nowrap',
-              }}
+              icon={act.icon}
+              title={act.title}
             >
-              <Icon
-                name={act.icon}
-                size={14}
-                style={{
-                  color: isPrimary ? 'var(--on-brand)' : isDanger ? 'var(--danger, #dc2626)' : 'var(--muted)',
-                }}
-              />
-              <span>{act.label}</span>
-            </button>
+              {act.label}
+            </Button>
           )
         })}
 

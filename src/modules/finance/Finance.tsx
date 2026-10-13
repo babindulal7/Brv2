@@ -622,6 +622,12 @@ export default function Finance() {
   const [dateTo, setDateTo] = useState('')
   const [invoiceFiltersOpen, setInvoiceFiltersOpen] = useState(false)
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false)
+  const [expenseSearch, setExpenseSearch] = useState('')
+  const [expenseFilterCount, setExpenseFilterCount] = useState(0)
+  const [documentFiltersOpen, setDocumentFiltersOpen] = useState(false)
+  const [documentSearch, setDocumentSearch] = useState('')
+  const [documentFilterCount, setDocumentFilterCount] = useState(0)
+  const [reportSearch, setReportSearch] = useState('')
   const [page, setPage] = useState(1)
 
   /**
@@ -1281,8 +1287,55 @@ export default function Finance() {
               expanded={invoiceFiltersOpen}
             />
           ),
+          ...(money ? {
+            search: {
+              value: railSearch,
+              onChange: setRailSearch,
+              onClear: () => setRailSearch(''),
+              placeholder: 'Search invoice or credit-note no… (press /)',
+              ariaLabel: 'Search invoices by invoice or credit-note number',
+            },
+          } : {}),
         } : money && tab === 'Expenses' ? {
-          leading: <FilterButton onClick={() => setExpenseFiltersOpen((open) => !open)} controls="expense-filters" expanded={expenseFiltersOpen} />,
+          leading: (
+            <FilterButton
+              onClick={() => setExpenseFiltersOpen((open) => !open)}
+              activeCount={expenseFilterCount}
+              controls="expense-filters"
+              expanded={expenseFiltersOpen}
+            />
+          ),
+          search: {
+            value: expenseSearch,
+            onChange: setExpenseSearch,
+            onClear: () => setExpenseSearch(''),
+            placeholder: 'Search expense no, vendor, or description… (press /)',
+            ariaLabel: 'Search expenses by expense number, vendor, or description',
+          },
+        } : tab === 'Documents' ? {
+          leading: (
+            <FilterButton
+              onClick={() => setDocumentFiltersOpen((open) => !open)}
+              activeCount={documentFilterCount}
+              controls="documents-filters"
+              expanded={documentFiltersOpen}
+            />
+          ),
+          search: {
+            value: documentSearch,
+            onChange: setDocumentSearch,
+            onClear: () => setDocumentSearch(''),
+            placeholder: 'Search in documents… (press /)',
+            ariaLabel: 'Search documents by name, ID, type, record or client',
+          },
+        } : money && tab === 'Reports' ? {
+          search: {
+            value: reportSearch,
+            onChange: setReportSearch,
+            onClear: () => setReportSearch(''),
+            placeholder: 'Find a report… (press /)',
+            ariaLabel: 'Find a report by name or group',
+          },
         } : {})}
         icon="card"
         title="Finance"
@@ -1307,6 +1360,7 @@ export default function Finance() {
           onChange={(next) => {
             if (next !== 'Invoices') setInvoiceFiltersOpen(false)
             if (next !== 'Expenses') setExpenseFiltersOpen(false)
+            if (next !== 'Documents') setDocumentFiltersOpen(false)
             setTab(next)
           }}
         />
@@ -1325,10 +1379,28 @@ export default function Finance() {
         restricted state twice, once from this page and once from theirs.
       */}
       {tab === 'Payments' && <Payments embedded />}
-      {tab === 'Expenses' && <Expenses embedded filtersOpen={expenseFiltersOpen} onFiltersClose={() => setExpenseFiltersOpen(false)} />}
+      {tab === 'Expenses' && (
+        <Expenses
+          embedded
+          filtersOpen={expenseFiltersOpen}
+          onFiltersClose={() => setExpenseFiltersOpen(false)}
+          searchQuery={expenseSearch}
+          onSearchChange={setExpenseSearch}
+          onActiveFilterCountChange={setExpenseFilterCount}
+        />
+      )}
       {tab === 'Closing' && <DailyClosing embedded />}
-      {tab === 'Documents' && <Documents embedded />}
-      {tab === 'Reports' && <ReportCatalog />}
+      {tab === 'Documents' && (
+        <Documents
+          embedded
+          filtersOpen={documentFiltersOpen}
+          onFiltersClose={() => setDocumentFiltersOpen(false)}
+          searchQuery={documentSearch}
+          onSearchChange={setDocumentSearch}
+          onActiveFilterCountChange={setDocumentFilterCount}
+        />
+      )}
+      {tab === 'Reports' && <ReportCatalog searchQuery={reportSearch} onSearchChange={setReportSearch} />}
 
       {/*
         THE gate. `restricted` outranks every other state in `PageBody`, so a
@@ -1897,57 +1969,32 @@ function RowActions({
   onVoid: () => void
   onExportPdf?: () => void
 }) {
-  const base = phone
-    ? {
-        display: 'inline-flex' as const,
-        alignItems: 'center' as const,
-        justifyContent: 'center' as const,
-        minHeight: 44,
-        height: 44,
-        flex: '1 1 88px',
-        padding: '0 12px',
-        border: '1px solid var(--border)',
-        background: 'var(--card)',
-        borderRadius: 'var(--r-btn)',
-        fontSize: 'var(--t-meta)',
-        cursor: 'pointer' as const,
-      }
-    : {
-        display: 'inline-flex' as const,
-        alignItems: 'center' as const,
-        justifyContent: 'center' as const,
-        minHeight: 32,
-        border: '1px solid var(--border)',
-        background: 'var(--card)',
-        padding: '4px 10px',
-        borderRadius: 'var(--r-btn)',
-        fontSize: 'var(--t-meta)',
-        cursor: 'pointer' as const,
-      }
+  const layout = phone ? { flex: '1 1 88px' } : undefined
 
   return (
     <>
       {/* Each action checks both session capability and the invoice's real state. */}
       {canPay && !row.isVoid && row.outstandingAmount > 0 && (
-        <button type="button" onClick={onPay} className="finance-action-btn is-primary" style={{ ...base, color: 'var(--nav-active-accent)', fontWeight: 600 }}>
+        <Button type="button" variant="primary" size="sm" onClick={onPay} style={layout}>
           + Pay
-        </button>
+        </Button>
       )}
       {canVoid && !row.isVoid && row.status !== 'Paid' && row.paidAmount === 0 && (
-        <button type="button" onClick={onVoid} className="finance-action-btn is-danger" style={{ ...base, color: 'var(--danger)', fontWeight: 500 }}>
+        <Button type="button" variant="danger" size="sm" onClick={onVoid} style={layout}>
           Void
-        </button>
+        </Button>
       )}
       {onExportPdf && (
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={onExportPdf}
           aria-label={`Export PDF for ${row.invoiceNo || 'invoice'}`}
-          className="finance-action-btn"
-          style={{ ...base, color: 'var(--text)', fontWeight: 500 }}
+          style={layout}
         >
           PDF
-        </button>
+        </Button>
       )}
     </>
   )

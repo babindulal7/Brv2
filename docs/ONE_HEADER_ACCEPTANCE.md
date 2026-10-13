@@ -38,6 +38,15 @@ Screenshots, measurements and gate logs: `artifacts/one-header-2026-10-12/`.
 1. Consolidate selected-row operations into the common page action registry without losing working callbacks.
 2. Resolve pagination placement page by page before changing the unused toolbar pagination prop.
 3. Follow the requested page order: New Rental/Detail; floor lifecycle; Today; Calendar; Inventory/Bundles; Clients; Finance; Documents; Crew/Delivery; Reports/Settings/Tools. Existing implementations are not automatically accepted by this shell pass.
-4. Review Today and other legacy action clusters at narrow widths, including contextual phone search. This first pass does not certify those clusters.
+4. Today contextual phone search and actions received a scoped follow-up on 13 October (see below). Other legacy action clusters still need review; the shared title truncates at 768px.
 5. Native browser 100%/125% zoom and the full requested role matrix, persistent writes/reload, double-submit guards and menu interactions for every module.
 6. Staging clone migration state, JWT/PostgREST permission checks, anon exposure, conflicts, invoices and audit integrity. No live migration or wipe is authorized by this work.
+
+## Today follow-up — 13 October 2026
+
+- Phone search uses the page's actual query; Clear stays open/focused, Escape preserves the query and returns focus to the trigger. More holds Operations and Refresh movements.
+- Dispatch date sits beside the queues. Tomorrow → date picker → Today restored the selected day without switching the dashboard layout. Refresh updated the visible freshness timestamp and closed More.
+- Cards wrap client names and separate pickup/return dates below 1280px; floor primary actions measure 56px. Phone freshness remains visible.
+- Local mock Owner screenshots at 320, 390, 768, 1024, 1280 and 1440px; no document horizontal overflow and 64px headers. At 320px all visible header controls measured at least 44px. Light and dark were inspected across this set, not every theme/width permutation.
+- Evidence: `artifacts/today-responsive-2026-10-13/browser-measurements.json` and adjacent screenshots/logs. The 768px Today title truncation remains open. Physical Safari, native zoom, full role/status matrix and persistence are not certified.
+- Patch gates passed: typecheck, lint, 21 focused tests, 4,296 full-suite tests, PGlite 160/160, lifecycle 30/30, contrast 54/54, shell lint and production build. Later concurrent workspace edits are outside that full-suite run; the screenshot preview is a separate successful mock build.

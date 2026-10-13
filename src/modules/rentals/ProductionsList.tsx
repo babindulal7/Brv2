@@ -31,11 +31,14 @@ import {
 } from '../../lib/queries/productions'
 
 const chipStyle = (active: boolean): React.CSSProperties => ({
+  minHeight: 'var(--tap, 44px)',
   padding: '6px 14px',
   borderRadius: '9px',
   fontSize: '12px',
   fontWeight: 600,
   cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
   border: active ? '1px solid rgba(47, 125, 255, 0.4)' : '1px solid var(--border)',
   background: active ? 'rgba(47, 125, 255, 0.14)' : 'transparent',
   color: active ? 'var(--info)' : 'var(--text3)',
@@ -44,12 +47,16 @@ const chipStyle = (active: boolean): React.CSSProperties => ({
 
 const stepperStepStyle = (isCurrent: boolean, isPast: boolean): React.CSSProperties => ({
   flex: 1,
+  minHeight: '36px',
   textAlign: 'center',
   padding: '6px 4px',
   borderRadius: '7px',
   fontSize: '11px',
   fontWeight: 600,
   cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   background: isCurrent ? 'var(--info)' : isPast ? 'rgba(46, 204, 143, 0.14)' : 'var(--surface)',
   color: isCurrent ? '#fff' : isPast ? 'var(--green)' : 'var(--text3)',
   border: isCurrent ? '1px solid var(--info)' : isPast ? '1px solid rgba(46, 204, 143, 0.3)' : '1px solid var(--border)',
@@ -146,13 +153,17 @@ export default function ProductionsList() {
     { label: 'Active Productions', value: String(stats.totalCount), icon: 'video' as const, accent: 'primary' },
     { label: 'Shooting Now', value: String(stats.inShootCount), icon: 'camera', accent: 'success' },
     { label: 'Pre-Production', value: String(stats.preProdCount), icon: 'timer', accent: 'progress' },
-    {
-      label: 'Total Production Budget',
-      value: canViewMoney ? formatMoney(rupees(stats.totalBudget)) : '•••',
-      icon: 'card',
-      accent: 'primary',
-      definition: 'Estimated equipment & services value across all active projects.',
-    },
+    ...(canViewMoney
+      ? [
+          {
+            label: 'Total Production Budget',
+            value: formatMoney(rupees(stats.totalBudget)),
+            icon: 'card' as const,
+            accent: 'primary' as const,
+            definition: 'Estimated equipment & services value across all active projects.',
+          },
+        ]
+      : []),
   ], [stats, canViewMoney])
 
   return (
@@ -161,6 +172,11 @@ export default function ProductionsList() {
         <PageHeader
           title="Productions Hub"
           description="High-level project rollups, shoot schedules, and equipment/crew packages."
+          search={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search title, client, director… (press /)',
+          }}
           actions={
             <PageActions
               primary={
@@ -175,7 +191,7 @@ export default function ProductionsList() {
       }
     >
       {/* KPI strip */}
-      <KpiStrip items={kpis} columns={isPhone ? 2 : 4} />
+      <KpiStrip items={kpis} columns={isPhone ? 2 : (canViewMoney ? 4 : 3)} />
 
       {/* Filter and search bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', margin: 'var(--sp-md) 0' }}>
@@ -183,6 +199,8 @@ export default function ProductionsList() {
           {(['All', ...PROD_PHASES] as const).map((ph) => (
             <button
               key={ph}
+              type="button"
+              aria-pressed={phaseFilter === ph}
               style={chipStyle(phaseFilter === ph)}
               onClick={() => setPhaseFilter(ph)}
             >
@@ -224,14 +242,16 @@ export default function ProductionsList() {
                 {/* Lifecycle Stepper */}
                 <div style={{ display: 'flex', gap: '4px', margin: '4px 0' }}>
                   {PROD_PHASES.map((p, idx) => (
-                    <div
+                    <button
                       key={p}
+                      type="button"
+                      aria-pressed={idx === currentPhaseIdx}
                       style={stepperStepStyle(idx === currentPhaseIdx, idx < currentPhaseIdx)}
                       onClick={() => handlePhaseChange(prod.id, p)}
                       title={`Click to set stage to ${p}`}
                     >
                       {p}
-                    </div>
+                    </button>
                   ))}
                 </div>
 
@@ -243,11 +263,13 @@ export default function ProductionsList() {
                     <div style={{ color: 'var(--text3)', fontSize: '11px' }}>{prod.location}</div>
                   </div>
                   <div>
-                    <div style={{ color: 'var(--text3)', fontSize: '11px' }}>Gear & Budget</div>
+                    <div style={{ color: 'var(--text3)', fontSize: '11px' }}>{canViewMoney ? 'Gear & Budget' : 'Gear'}</div>
                     <div style={{ fontWeight: 500, color: 'var(--text)' }}>{prod.gearCount} items</div>
-                    <div style={{ color: 'var(--text2)', fontWeight: 600 }}>
-                      {canViewMoney ? formatMoney(rupees(prod.budgetNpr)) : '•••'}
-                    </div>
+                    {canViewMoney && (
+                      <div style={{ color: 'var(--text2)', fontWeight: 600 }}>
+                        {formatMoney(rupees(prod.budgetNpr))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -298,6 +320,8 @@ export default function ProductionsList() {
                 {PROD_PHASES.map((p) => (
                   <button
                     key={p}
+                    type="button"
+                    aria-pressed={p === selectedProd.phase}
                     style={stepperStepStyle(p === selectedProd.phase, PROD_PHASES.indexOf(p) < PROD_PHASES.indexOf(selectedProd.phase))}
                     onClick={() => handlePhaseChange(selectedProd.id, p)}
                   >
@@ -313,7 +337,9 @@ export default function ProductionsList() {
               <div><strong>Dates:</strong> {selectedProd.dates}</div>
               <div><strong>Location:</strong> {selectedProd.location}</div>
               <div><strong>Total Gear:</strong> {selectedProd.gearCount} items</div>
-              <div><strong>Budget:</strong> {canViewMoney ? formatMoney(rupees(selectedProd.budgetNpr)) : '•••'}</div>
+              {canViewMoney && (
+                <div><strong>Budget:</strong> {formatMoney(rupees(selectedProd.budgetNpr))}</div>
+              )}
             </div>
 
             <div>
@@ -420,7 +446,7 @@ export default function ProductionsList() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: canViewMoney ? '1fr 1fr' : '1fr', gap: '10px' }}>
               <div>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Gear Items Count</label>
                 <input
@@ -430,15 +456,17 @@ export default function ProductionsList() {
                   style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', marginTop: '4px' }}
                 />
               </div>
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Estimated Budget (NPR)</label>
-                <input
-                  type="number"
-                  value={newBudget}
-                  onChange={(e) => setNewBudget(e.target.value)}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', marginTop: '4px' }}
-                />
-              </div>
+              {canViewMoney && (
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)' }}>Estimated Budget (NPR)</label>
+                  <input
+                    type="number"
+                    value={newBudget}
+                    onChange={(e) => setNewBudget(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', marginTop: '4px' }}
+                  />
+                </div>
+              )}
             </div>
 
             <div>

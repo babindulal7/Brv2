@@ -686,12 +686,14 @@ export default function OperationsQueues() {
         }}
       >
       {/* Renders in the global header beside the page name (FilterButton's default). */}
-      <FilterButton
-        onClick={() => setShowMoreFilters((open) => !open)}
-        activeCount={operationFilterCount}
-        controls="operations-filters"
-        expanded={showMoreFilters}
-      />
+      {selected !== 'Cases' && (
+        <FilterButton
+          onClick={() => setShowMoreFilters((open) => !open)}
+          activeCount={operationFilterCount}
+          controls="operations-filters"
+          expanded={showMoreFilters}
+        />
+      )}
       <div style={{ gridColumn: '1 / -1' }}>
         <PageHeader
           title="Operations"
@@ -711,13 +713,23 @@ export default function OperationsQueues() {
               </span>
             ) : null
           }
-          search={{
-            value: searchInput,
-            onChange: setSearchInput,
-            onClear: () => setSearchInput(''),
-            placeholder: 'Search ID, client, project… (press /)',
-            ariaLabel: 'Search operations',
-          }}
+          search={
+            selected === 'Cases'
+              ? {
+                  value: params.get('q') ?? '',
+                  onChange: (val) => patch({ q: val || null }),
+                  onClear: () => patch({ q: null }),
+                  placeholder: 'Search case ID, title, client… (press /)',
+                  ariaLabel: 'Search cases by ID, title, or client',
+                }
+              : {
+                  value: searchInput,
+                  onChange: setSearchInput,
+                  onClear: () => setSearchInput(''),
+                  placeholder: 'Search ID, client, project… (press /)',
+                  ariaLabel: 'Search operations',
+                }
+          }
           actions={
             <PageActions
               secondary={[
@@ -936,7 +948,18 @@ export default function OperationsQueues() {
                           </Button>
                         </td>
                         <td style={{ ...td, width: 44 }}>
-                          <Link to={`/rentals/${job.bookingNo}`} aria-label={`More for booking ${job.bookingNo}`} style={{ color: 'var(--muted)', display: 'inline-flex', alignItems: 'center' }}>
+                          <Link
+                            to={`/rentals/${job.bookingNo}`}
+                            aria-label={`More for booking ${job.bookingNo}`}
+                            style={{
+                              color: 'var(--muted)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minWidth: 44,
+                              minHeight: 44,
+                            }}
+                          >
                             <Icon name="chevron_right" size={18} />
                           </Link>
                         </td>
@@ -950,16 +973,18 @@ export default function OperationsQueues() {
               </DataTableShell>
             )}
           </PageBody>
-          <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
-            <Pagination
-              page={currentPage + 1}
-              total={visibleJobs.length}
-              pageSize={pageSize}
-              pageSizeOptions={[25, 50, 100]}
-              onPageChange={(nextPage) => setPage(nextPage - 1)}
-              onPageSizeChange={setPageSize}
-            />
-          </div>
+          {visibleJobs.length > 0 && (
+            <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+              <Pagination
+                page={currentPage + 1}
+                total={visibleJobs.length}
+                pageSize={pageSize}
+                pageSizeOptions={[25, 50, 100]}
+                onPageChange={(nextPage) => setPage(nextPage - 1)}
+                onPageSizeChange={setPageSize}
+              />
+            </div>
+          )}
         </Card>
       )}
       </div>

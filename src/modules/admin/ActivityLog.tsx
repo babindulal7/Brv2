@@ -120,7 +120,7 @@ export default function ActivityLog() {
         description="Who did what, where — newest first. Usage, not state changes; those live in the Audit Log."
       />
 
-      <KpiStrip items={kpis} columns={4} />
+      <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
       <div
         role="search"

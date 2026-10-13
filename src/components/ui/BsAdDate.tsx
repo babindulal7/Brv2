@@ -15,7 +15,7 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
   layout = 'stacked',
   showTime = false,
   className = '',
-  tone = 'default',
+  tone: _tone = 'default',
 }) => {
   if (!date) {
     return <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--t-ui)' }}>—</span>
@@ -57,8 +57,8 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
     'Bikram Sambat is unavailable for this date. Showing AD.'
   const primary = bsFormatted ?? `${adFormatted} AD`
   const primaryTitle = bsFormatted ? undefined : UNAVAILABLE
-  const primaryColor = tone === 'booking' ? 'var(--booking-date-text)' : 'var(--text)'
-  const secondaryColor = tone === 'booking' ? 'var(--booking-date-text)' : 'var(--text2)'
+  const primaryColor = 'var(--text)'
+  const secondaryColor = 'var(--text2)'
 
   const timeFormatted = showTime
     ? d.toLocaleTimeString('en-US', {
@@ -93,7 +93,7 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
         </span>
         {/* No parenthetical when BS is unavailable — the primary IS the AD date,
             and repeating it would read as two different dates. */}
-        {bsFormatted && <span style={{ fontSize: 'var(--t-meta)', color: tone === 'booking' ? secondaryColor : 'var(--muted)' }}>({adFormatted})</span>}
+        {bsFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>({adFormatted})</span>}
         {timeFormatted && <span style={{ fontSize: 'var(--t-meta)', color: secondaryColor, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{timeFormatted}</span>}
       </span>
     )

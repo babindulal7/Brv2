@@ -1,0 +1,49 @@
+{
+  "environment": "built mock preview; Owner; Chromium viewport emulation",
+  "measurements": [
+    {
+      "docWidth": 768,
+      "headerHeight": 64,
+      "width": 768
+    },
+    {
+      "docWidth": 1024,
+      "headerHeight": 64,
+      "width": 1024
+    },
+    {
+      "docWidth": 1440,
+      "headerHeight": 64,
+      "width": 1440
+    },
+    {
+      "docWidth": 1280,
+      "headerHeight": 64,
+      "width": 1280
+    },
+    {
+      "docWidth": 390,
+      "headerHeight": 64,
+      "width": 390
+    }
+  ],
+  "phone320": {
+    "width": 320,
+    "docWidth": 320,
+    "headerHeight": 64,
+    "visibleHeaderTargetsMin": 44,
+    "floorPrimaryHeight": 56
+  },
+  "interactions": {
+    "searchGandakiRows": 2,
+    "clearRows": 24,
+    "escapeFocus": "Search Today",
+    "refreshMenuClosed": true,
+    "todayQuickFilterRestored": true
+  },
+  "limitations": [
+    "768px breadcrumb visually truncates Today to Tod…",
+    "Native iPad Safari and native 125% zoom not tested",
+    "Only local mock Owner interactions; no booking writes"
+  ]
+}

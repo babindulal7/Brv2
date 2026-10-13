@@ -15,6 +15,7 @@ function block(sel){
    this gate parses the shipped file, so it must track the shipped shape. */
 const D=block(":root[data-theme='dark'] {")
 const L=block(":root,\n:root[data-theme='light'] {")
+const H=block(":root[data-theme='high-contrast'] {")
 
 function srgb(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4)}
 function lum(x){const h=x.replace('#','')
@@ -80,8 +81,18 @@ for(const [theme,T] of [['DARK ',D],['LIGHT',L]]){
   chk(theme,T,'ready-text / surface','--ready-text','--surface',4.5)
   // primary button ink
   chk(theme,T,'btn-primary fg/bg','--btn-primary-fg','--btn-primary-bg',4.5)
+  // Shared primary hover and the neutral WhatsApp link read these exact tokens.
+  chk(theme,T,'btn-primary fg/hover','--btn-primary-fg','--hover-button',4.5)
+  chk(theme,T,'WhatsApp ink / card','--text','--card',4.5)
+  chk(theme,T,'WhatsApp ink / hover','--text','--hover-card',4.5)
   console.log('')
 }
+for(const [label,fg,bg] of [
+  ['btn-primary fg/bg','--btn-primary-fg','--btn-primary-bg'],
+  ['btn-primary fg/hover','--btn-primary-fg','--hover-button'],
+  ['WhatsApp ink / card','--text','--card'],
+  ['WhatsApp ink / hover','--text','--hover-card'],
+]) chk('HIGH ',H,label,fg,bg,4.5)
 
 /* RULING 2026-10-13 — Glass, on both bases. Its ink sits on TRANSLUCENT cards
    over a glowing canvas, which the hex-only blocks above cannot see. Parse the
@@ -108,15 +119,23 @@ function chkWorst(theme,label,fg,bgs,need){
 for(const [theme,T,base] of [['GLASS-D',D,'dark'],['GLASS-L',L,'light']]){
   const P=raw(`:root[data-theme='${base}'][data-style='glass'] {`)
   const B=raw(`:root[data-theme='${base}'][data-style='glass'] body {`)
-  /* A glass palette may override an ink; otherwise the base theme's applies. */
-  const ink=k=>{const v=decl(P,k);return v&&/^#/.test(v)?v:T[k]}
+  /* A glass palette may override an ink; otherwise the base theme's applies.
+     `var(--x)` is followed, so an ink aliased to another token is checked as
+     the colour that actually paints (13 Oct: booking dates became var(--text)
+     on main, and the old fallback quietly measured orange instead). */
+  const baseRaw=raw(base==='dark'?":root[data-theme='dark'] {":":root,\n:root[data-theme='light'] {")
+  const ink=(k,depth=0)=>{
+    const v=decl(P,k)||decl(baseRaw,k)
+    if(v&&/^#[0-9a-fA-F]{6}$/.test(v))return v
+    const ref=v&&v.match(/^var\((--[a-z0-9-]+)\)$/)
+    if(ref&&depth<4)return ink(ref[1],depth+1)
+    return T[k]}
   const canvas=rgb(decl(P,'--app'))
   const spots=[canvas.slice(0,3),...[...B.matchAll(/rgba\([^)]*\)/g)].map(m=>over(rgb(m[0]),canvas))]
   const cards=spots.map(s=>hex(over(rgb(decl(P,'--card')),s)))
   const sides=spots.map(s=>hex(over(rgb(decl(P,'--sidebar')),s)))
   const bare=spots.map(hex)
-  /* Dark's booking-date ink is var(--warn-text); light's is its own hex. */
-  const booking=ink('--booking-date-text')||ink('--warn-text')
+  const booking=ink('--booking-date-text')
   chkWorst(theme,'text / glass card',ink('--text'),cards,4.5)
   chkWorst(theme,'text2 / glass card',ink('--text2'),cards,4.5)
   chkWorst(theme,'muted / glass card',ink('--muted'),cards,4.5)

@@ -18,6 +18,7 @@ import type { BrandKey } from '../../lib/status'
 import { price, rupees, parseMoney, formatMoney, discountGate } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   TOOLS,
   TOOL_GROUPS,
@@ -1131,6 +1132,7 @@ export interface ToolsProps {
 
 export default function Tools({ embedded = false }: ToolsProps = {}) {
   const money = useCanViewMoney()
+  const viewport = useViewport()
 
   useEffect(() => {
     void getToolsStatus()
@@ -1240,7 +1242,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
         />
       )}
 
-      <KpiStrip items={KPIS} />
+      <KpiStrip items={KPIS} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
       <div style={{ ...cardStyle, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
         <Icon name="info" size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />

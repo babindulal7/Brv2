@@ -1,3 +1,4 @@
+import { UnsavedChangesIndicator } from './UnsavedChangesIndicator'
 /**
  * src/components/ui/header/PageHeader.tsx — Babin Rentals OS
  *
@@ -170,9 +171,9 @@ export function AddDropdownButton({ action }: { action: PageActionItem }) {
           minHeight: 44,
           padding: '0 14px',
           borderRadius: 'var(--r-btn, 8px)',
-          border: '1px solid var(--accent, #e65100)',
-          background: 'var(--accent, #e65100)',
-          color: '#fff',
+          border: '1px solid transparent',
+          background: 'var(--btn-primary-bg, var(--primary, #2456d6))',
+          color: 'var(--btn-primary-fg, #fff)',
           fontWeight: 600,
           fontSize: 'var(--t-meta, 13px)',
           display: 'inline-flex',
@@ -372,7 +373,9 @@ export function PageHeader({
         className={`page-header universal-page-header page-header--in-shell ${className}`}
         style={{ display: 'none', height: 0, padding: 0, margin: 0, border: 0, overflow: 'hidden' }}
         aria-hidden="true"
-      />
+      >
+        {leading}
+      </div>
     )
   }
 
@@ -488,17 +491,7 @@ export function PageHeader({
                 {!ws && description && <InfoTooltip content={description} size={16} />}
                 {status}
                 {hasDirty && (
-                  <span className="universal-page-header__dirty-indicator" title="Unsaved modifications">
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        backgroundColor: '#d97706',
-                      }}
-                    />
-                    Unsaved changes
-                  </span>
+                  <UnsavedChangesIndicator />
                 )}
               </div>
             </div>

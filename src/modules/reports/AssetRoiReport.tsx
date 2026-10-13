@@ -7,6 +7,7 @@ import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Badge } from '../../components/ui/Badge'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   getFleetAssetRoiSummary,
   type FleetRoiSummary,
@@ -22,6 +23,7 @@ import {
  */
 export default function AssetRoiReport() {
   const canSeeMoney = useCanViewMoney()
+  const viewport = useViewport()
   const [summary, setSummary] = useState<FleetRoiSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
@@ -133,6 +135,12 @@ export default function AssetRoiReport() {
         icon="chart"
         title="Asset ROI & True Cost of Ownership"
         description="Comprehensive capital allocation performance: Net Return = Revenue - (Purchase Price + Maintenance Expense)."
+        search={{
+          value: query,
+          onChange: setQuery,
+          placeholder: 'Search by asset tag, serial, or model... (press /)',
+          ariaLabel: 'Search equipment ROI',
+        }}
       />
 
       <ReportToolbar
@@ -155,13 +163,13 @@ export default function AssetRoiReport() {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            height: 38,
-            padding: '0 12px',
-            borderRadius: 'var(--radius-sm)',
+            minHeight: 44,
+            padding: '0 14px',
+            borderRadius: 'var(--r-btn)',
             border: '1px solid var(--border)',
             background: 'var(--surface)',
             color: 'var(--text)',
-            fontSize: 'var(--t-caption)',
+            fontSize: 'var(--t-meta)',
             cursor: 'pointer',
             fontWeight: 500,
           }}
@@ -172,6 +180,7 @@ export default function AssetRoiReport() {
 
       {summary && (
         <KpiStrip
+          columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 5}
           items={[
             {
               label: 'Total Capital Invested',
@@ -212,27 +221,10 @@ export default function AssetRoiReport() {
         />
       )}
 
-      {/* Filter and search toolbar */}
+      {/* Category filter toolbar */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          type="text"
-          aria-label="Search by asset tag, serial, or model"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by asset tag, serial, or model..."
-          style={{
-            height: 38,
-            padding: '0 12px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border)',
-            background: 'var(--surface)',
-            color: 'var(--text)',
-            fontSize: 'var(--t-caption)',
-            minWidth: 260,
-          }}
-        />
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 'var(--t-caption)', color: 'var(--text2)', fontWeight: 600 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
             Category:
           </span>
           <select
@@ -240,13 +232,13 @@ export default function AssetRoiReport() {
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             style={{
-              height: 38,
-              padding: '0 10px',
-              borderRadius: 'var(--radius-sm)',
+              minHeight: 44,
+              padding: '0 12px',
+              borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',
               background: 'var(--surface)',
               color: 'var(--text)',
-              fontSize: 'var(--t-caption)',
+              fontSize: 'var(--t-meta)',
             }}
           >
             {categories.map((c) => (

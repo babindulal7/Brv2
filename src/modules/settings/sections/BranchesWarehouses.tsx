@@ -741,8 +741,8 @@ export function BranchesPane({
                   }}
                   aria-label="Filter by status"
                   style={{
-                    minHeight: 30,
-                    padding: '0 8px',
+                    minHeight: 44,
+                    padding: '0 10px',
                     borderRadius: 'var(--r-input)',
                     border: '1px solid var(--input-border)',
                     background: 'var(--input-bg)',
@@ -757,21 +757,11 @@ export function BranchesPane({
                     </option>
                   ))}
                 </select>
-                {/* 30px to line up with the search box and status select it
-                    shares the header band with — a button standing 14px taller
-                    than the two filters beside it would read as a different
-                    class of control. `tap` for the rest. It is wider than 44,
-                    so the target grows only up and down, never the 8px across
-                    into the status select. Note the band wraps below ~768: once
-                    it does, the three sit 8px apart in a column and the 44px
-                    target clears the select above by exactly 1px — it holds,
-                    but it is the seam to re-measure if either filter is ever
-                    given a target of its own. */}
                 <button
                   type="button"
                   className="tap"
                   onClick={exportCsv}
-                  style={{ ...controlStyle, minHeight: 30, fontSize: 'var(--t-th)' }}
+                  style={{ ...controlStyle, minHeight: 44, fontSize: 'var(--t-th)' }}
                 >
                   <Icon name="download" size={12} />
                   Export CSV

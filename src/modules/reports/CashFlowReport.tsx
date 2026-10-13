@@ -9,6 +9,7 @@ import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   PERIOD_START,
   PERIOD_END,
@@ -134,6 +135,7 @@ export default function CashFlowReport() {
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()
+  const viewport = useViewport()
   const [, setSummary] = useState<LiquiditySummary | null>(null)
 
   useEffect(() => {
@@ -278,7 +280,7 @@ export default function CashFlowReport() {
       </Card>
 
       <div style={{ marginTop: 'var(--sp-md)' }}>
-        <KpiStrip items={kpis} columns={5} />
+        <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 5} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>

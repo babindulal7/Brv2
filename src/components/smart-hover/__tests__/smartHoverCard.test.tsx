@@ -10,6 +10,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { placeHoverCard } from '../hooks'
 import { SmartHoverCard } from '../SmartHoverCard'
+import { RentalHoverCard } from '../cards/RentalHoverCard'
+import { summarizeRentalPayments } from '../../../lib/smartHover'
 import type { InvoicePreview, RentalPreview } from '../previewTypes'
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
@@ -36,6 +38,48 @@ describe('placeHoverCard (§76)', () => {
     const p = placeHoverCard({ top: 100, left: 1200, width: 60, height: 24 }, 360, 400, 1280, 800)
     expect(p.placement).toBe('left')
     expect(p.left).toBeGreaterThanOrEqual(16)
+  })
+})
+
+describe('rental decisions and complete tabs', () => {
+  function preview(): RentalPreview {
+    const history = Array.from({ length: 9 }, (_, index) => ({ id: `pay-${index}`, clientId: 'c1', type: 'rental_payment' as const,
+      status: 'completed' as const, method: 'cash' as const, amountPaisa: 10000, createdAt: '2026-10-13T00:00:00Z', reference: `REF-${index + 1}` }))
+    return { id: 'r1', rentalNo: 'B-1', stage: 'Booked', clientId: 'c1', clientName: 'Client', pickupAt: 'Today', returnAt: 'Tomorrow', rentalDays: 1,
+      readiness: { clientAllowed: false, equipmentReady: false, packingReady: null, paymentReady: null, depositReady: null, contractReady: null },
+      equipment: Array.from({ length: 12 }, (_, index) => ({ label: `Equipment ${index + 1}`, qty: 1 })),
+      packing: { status: 'not_started', lines: [] }, notes: [{ id: 'n1', at: 'Today', by: 'Staff', text: 'Private note' }],
+      payments: { summary: summarizeRentalPayments({ grandTotalPaisa: 1234500, transactions: history }), history },
+    }
+  }
+  it('shows all items and total, leads with client restriction, and mounts notes only in Notes', async () => {
+    const { root, container } = await mountText(<RentalHoverCard preview={preview()} canViewFinance defaultTab="overview" notesContent={<label>Note composer<textarea /></label>} />)
+    expect(container.querySelectorAll('[aria-label="Rental items"] li')).toHaveLength(12)
+    expect(container.textContent).toContain('Rs 12,345')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Client restricted')
+    expect(container.querySelector('textarea')).toBeNull()
+    expect(container.textContent).not.toContain('Private note')
+    const clickTab = async (name: string) => {
+      const button = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(tab => tab.textContent?.startsWith(name))
+      expect(button).toBeDefined()
+      await act(async () => button?.click())
+    }
+    await clickTab('Payments')
+    expect(container.querySelectorAll('li')).toHaveLength(9)
+    expect(container.textContent).toContain('REF-9')
+    await clickTab('Notes')
+    expect(container.querySelector('textarea')).not.toBeNull()
+    await clickTab('Packing')
+    expect(container.querySelector('textarea')).toBeNull()
+    expect(container.textContent).toContain('No assigned unit packing data')
+    expect(container.textContent).not.toContain('0 / 0')
+    await act(async () => root.unmount()); container.remove()
+  })
+  it('omits financial figures from the DOM for a restricted role', async () => {
+    const { root, container } = await mountText(<RentalHoverCard preview={preview()} canViewFinance={false} defaultTab="overview" />)
+    expect(container.textContent).not.toContain('Rental total')
+    expect(container.textContent).not.toMatch(/Rs\s|12,345/)
+    await act(async () => root.unmount()); container.remove()
   })
 })
 

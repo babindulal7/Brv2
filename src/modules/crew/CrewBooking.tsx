@@ -5,7 +5,6 @@ import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle, KpiStrip } from
 import { PageShell } from '../../components/ui/PageShell'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { thStyle } from '../../components/ui/TableHeaderCell'
-import { SearchInput } from '../../components/ui/SearchInput'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { Select } from '../../components/ui/Select'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -437,16 +436,6 @@ export function CrewBooking() {
               roster availability rather than assignment status. The union and its
               counts live in `data/crew.ts` so the chip and its number cannot drift. */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: phone ? 'wrap' : 'nowrap', width: phone ? '100%' : 'auto', flexShrink: 0, order: 0 }}>
-              <div style={{ flex: phone ? '1 1 100%' : '1 1 320px', width: phone ? '100%' : 320, minWidth: phone ? '100%' : 240, maxWidth: 440 }}>
-                <SearchInput
-                  placeholder="Search crew, role, production…"
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                  onClear={() => setSearchQuery('')}
-                />
-              </div>
-            </div>
             <div
               className="crew-chip-track rsp-chip-scroll"
               style={{
@@ -455,10 +444,8 @@ export function CrewBooking() {
                 gap: 'var(--sp-sm)',
                 flexWrap: 'nowrap',
                 overflowX: 'auto',
-                width: phone ? '100%' : 'auto',
-                maxWidth: phone ? '100%' : 'calc(100% - 400px)',
+                width: '100%',
                 paddingBottom: phone ? 4 : 0,
-                order: 2,
               }}
             >
               {ROSTER_CHIPS.map((label) => (
@@ -510,7 +497,7 @@ export function CrewBooking() {
                 accent: crewDays === 0 && fill.pct === 0 ? 'neutral' : 'primary',
               },
             ]}
-            columns={4}
+            columns={phone ? 2 : 4}
           />
 
           {/* Calendar + tables (left) · rail (right).

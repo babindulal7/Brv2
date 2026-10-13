@@ -21,6 +21,7 @@ import {
 import { PageBody } from '../../components/ui/PageBody'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import { captureError } from '../../lib/monitoring'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
@@ -167,7 +168,9 @@ export default function PurchaseRequests() {
   const { user } = useAuth()
   const money = useCanViewMoney()
   const online = useNetwork()
+  const viewport = useViewport()
   const [activeTab, setActiveTab] = useState<'All' | 'Draft' | 'Submitted' | 'Approved' | 'Ordered' | 'Received'>('All')
+  const [searchQuery, setSearchQuery] = useState('')
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isCreatePrOpen, setIsCreatePrOpen] = useState(false)
@@ -214,9 +217,21 @@ export default function PurchaseRequests() {
   }, [selectedPrId, requestsList])
 
   const filteredPRs = useMemo(() => {
-    if (activeTab === 'All') return requestsList
-    return requestsList.filter((pr) => pr.status === activeTab)
-  }, [activeTab, requestsList])
+    const q = searchQuery.trim().toLowerCase()
+    return requestsList.filter((pr) => {
+      if (activeTab !== 'All' && pr.status !== activeTab) return false
+      if (q) {
+        return (
+          pr.prNo.toLowerCase().includes(q) ||
+          pr.fleetItemName.toLowerCase().includes(q) ||
+          pr.category.toLowerCase().includes(q) ||
+          pr.requestedBy.toLowerCase().includes(q) ||
+          pr.reason.toLowerCase().includes(q)
+        )
+      }
+      return true
+    })
+  }, [activeTab, searchQuery, requestsList])
 
   /** Selecting another request (or closing the panel) drops the error the last
    *  decision left behind — it belongs to the PR it was raised on, not the next one. */
@@ -313,6 +328,11 @@ export default function PurchaseRequests() {
       <PageHeader
         title="Purchase Requests"
         description="Data-driven equipment acquisition workflows based on turnaways and sub-rental evidence."
+        search={{
+          value: searchQuery,
+          onChange: setSearchQuery,
+          placeholder: 'Search PR number, equipment, category, requester… (press /)',
+        }}
         actions={
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
             <Unavailable reason="Filter is not built — the status tabs below are the only filter on this screen.">
@@ -359,8 +379,11 @@ export default function PurchaseRequests() {
         {(['All', 'Draft', 'Submitted', 'Approved', 'Ordered', 'Received'] as const).map((t) => (
           <button
             key={t}
+            type="button"
+            aria-pressed={activeTab === t}
             onClick={() => setActiveTab(t)}
             className={`inventory-filter-chip ${activeTab === t ? 'is-active' : ''}`}
+            style={{ minHeight: 'var(--tap, 44px)' }}
           >
             {t}
             <span className="figure" style={{ color: activeTab === t ? 'var(--nav-active-accent)' : 'var(--muted)', fontWeight: 600 }}>
@@ -370,7 +393,7 @@ export default function PurchaseRequests() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: activePR ? '1fr 420px' : '1fr', gap: 'var(--sp-lg)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: viewport === 'desktop' && activePR ? '1fr 420px' : '1fr', gap: 'var(--sp-lg)', alignItems: 'start' }}>
         {/* Table View */}
         <Card title={`${activeTab} Purchase Requests (${filteredPRs.length})`} bodyStyle={{ padding: 0 }}>
           <PageBody
@@ -386,9 +409,9 @@ export default function PurchaseRequests() {
           {filteredPRs.length === 0 ? (
             <EmptyState
               icon={<Icon name="receipt" size={22} />}
-              title={activeTab === 'All' ? 'No purchase requests yet' : `No ${activeTab.toLowerCase()} requests`}
-              description={activeTab === 'All' ? 'Nothing has been requested yet.' : `Nothing is currently in the ${activeTab} stage.`}
-              {...(activeTab !== 'All' ? { actionLabel: 'Show all', onAction: () => setActiveTab('All') } : {})}
+              title={searchQuery.trim() ? 'No matching purchase requests' : activeTab === 'All' ? 'No purchase requests yet' : `No ${activeTab.toLowerCase()} requests`}
+              description={searchQuery.trim() ? `Nothing matched "${searchQuery.trim()}".` : activeTab === 'All' ? 'Nothing has been requested yet.' : `Nothing is currently in the ${activeTab} stage.`}
+              {...(activeTab !== 'All' || searchQuery.trim() ? { actionLabel: 'Clear filters', onAction: () => { setActiveTab('All'); setSearchQuery('') } } : {})}
             />
           ) : (
           <DataTableShell ariaLabel="Purchase requests directory" style={{ borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>

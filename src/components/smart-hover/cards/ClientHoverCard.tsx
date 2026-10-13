@@ -4,7 +4,7 @@
  * Restrictions outrank commercial metrics (§91, §104).
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { formatMoney } from '../../../lib/money'
 import { sortTxNewestFirst } from '../../../lib/smartHover'
 import { SmartHoverTabs } from '../SmartHoverShell'
@@ -18,12 +18,14 @@ export function ClientHoverCard({
   preview,
   canViewFinance,
   defaultTab,
+  notesContent,
   onAction,
   onOpenRental,
 }: {
   preview: ClientPreview
   canViewFinance: boolean
   defaultTab: string
+  notesContent?: ReactNode
   onAction?: (id: string) => void
   onOpenRental?: (rentalNo: string) => void
 }) {
@@ -46,7 +48,7 @@ export function ClientHoverCard({
             <div style={{ marginTop: 4 }}>
               <span style={{ background: tokens.bg, color: tokens.fg, borderRadius: 'var(--r-chip)', padding: '4px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                 <Icon name={preview.restricted ? 'alert_triangle' : 'check'} size={13} />
-                {preview.restricted ? 'RESTRICTED' : 'CLEAR'}
+                {preview.restricted ? 'RESTRICTED' : 'No block recorded'}
               </span>
               {preview.memberTier ? <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>{preview.memberTier}</span> : null}
             </div>
@@ -86,7 +88,7 @@ export function ClientHoverCard({
             <div>
               <p style={{ fontSize: 13, margin: '0 0 8px' }}>Outstanding <strong className="figure">{formatMoney(preview.payments.summary.outstandingPaisa as never)}</strong></p>
               <ul style={{ margin: 0, padding: 0 }}>
-                {sortTxNewestFirst(preview.payments.history).slice(0, 5).map((t) => <PaymentTransactionRow key={t.id} t={t} />)}
+                {sortTxNewestFirst(preview.payments.history).map((t) => <PaymentTransactionRow key={t.id} t={t} />)}
               </ul>
               {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('view_ledger')}>View full ledger</button> : null}
             </div>
@@ -95,7 +97,7 @@ export function ClientHoverCard({
           )
         ) : null}
         {tab === 'notes' ? (
-          <div>
+          notesContent ?? <div>
             <ul style={{ margin: 0, padding: 0 }}>
               {preview.notes.map((n) => (
                 <li key={n.id} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>

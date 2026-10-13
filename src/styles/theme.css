@@ -159,10 +159,7 @@
   --warn: #d46218;
   --on-warn: #231a05;
   --warn-text: #9a5417;
-  /* User ruling, 7 Oct 2026: booking pickup/return dates use orange everywhere. */
-  /* Slightly deeper ink keeps small dates readable on the darkest light inset. */
-  /* RULING 2026-10-13: kept orange — the glass ZIP's var(--text) here was unlogged (B-7). */
-  --booking-date-text: #985014;
+  --booking-date-text: var(--text);
 
   --ready: #d4a315;       /* Desaturated from #e3b117. */
   --on-ready: #231a05;
@@ -310,7 +307,7 @@
   --warn: #d47026;         /* ORANGE — "out with the client". Never a button. Desaturated from #e8762d. */
   --on-warn: #1c1005;
   --warn-text: #e8a06e;
-  --booking-date-text: var(--warn-text);
+  --booking-date-text: var(--text);
 
   --ready: #d4a824;        /* YELLOW — in-house work / waiting. Never a button. Desaturated from #edbe2a. */
   --on-ready: #1c1405;

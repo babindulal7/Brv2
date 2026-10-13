@@ -28,9 +28,13 @@
 .surface-card__header { background: var(--surface); }
 .ui-button { transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
 .ui-button:active:not(:disabled) { filter: brightness(0.96); }
-.ui-button--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--brand) 92%, var(--brand-ink)) !important; box-shadow: var(--shadow-primary-glow), var(--specular-rim); }
+/* Button.tsx sets resting fills inline; hover must override them as a pair. */
+.ui-button--primary:hover:not(:disabled) { background: var(--hover-button) !important; box-shadow: var(--shadow-primary-glow), var(--specular-rim); }
 .ui-button--link:hover:not(:disabled) { text-decoration: underline; }
 .ui-button--link:active:not(:disabled) { transform: none; opacity: 0.7; }
+.ui-button--secondary:hover:not(:disabled),
+.ui-button--outline:hover:not(:disabled),
+.ui-button--ghost:hover:not(:disabled),
 .ui-button--tertiary:hover:not(:disabled) { background: var(--hover-card) !important; border-color: var(--border2) !important; }
 .ui-button:focus-visible { outline: 2px solid var(--input-focus); outline-offset: 2px; }
 .overflow-menu__item:hover:not(:disabled) { background: var(--hover-card) !important; }
@@ -541,29 +545,30 @@ input[type='search']::-webkit-search-results-decoration {
   border: 1px solid transparent;
   min-height: 52px;
 }
+.next-action-banner--dim,
 .next-action-banner--neutral {
   background: var(--surface-2, #edf3fa);
   border-color: var(--border, #dbe5f0);
 }
-.next-action-banner--info {
-  background: color-mix(in srgb, #2456d6 10%, var(--surface));
-  border-color: color-mix(in srgb, #2456d6 30%, transparent);
+.next-action-banner--primary {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
 }
-.next-action-banner--active {
-  background: color-mix(in srgb, #d96518 10%, var(--surface));
-  border-color: color-mix(in srgb, #d96518 30%, transparent);
+.next-action-banner--out {
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
 }
-.next-action-banner--success {
-  background: color-mix(in srgb, #1e864a 10%, var(--surface));
-  border-color: color-mix(in srgb, #1e864a 30%, transparent);
+.next-action-banner--in {
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
 }
-.next-action-banner--warning {
-  background: color-mix(in srgb, #e3b117 12%, var(--surface));
-  border-color: color-mix(in srgb, #e3b117 35%, transparent);
+.next-action-banner--progress {
+  background: color-mix(in srgb, var(--ready) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--ready) 35%, transparent);
 }
 .next-action-banner--danger {
-  background: color-mix(in srgb, #c73a3a 10%, var(--surface));
-  border-color: color-mix(in srgb, #c73a3a 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
 .next-action-banner__left {
@@ -572,22 +577,7 @@ input[type='search']::-webkit-search-results-decoration {
   gap: 0.875rem;
   flex-wrap: wrap;
 }
-.status-pill {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 4px 9px;
-  border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-}
-.status-pill--neutral { background: #72757e; color: #ffffff; }
-.status-pill--info { background: #2456d6; color: #ffffff; }
-.status-pill--active { background: #d96518; color: #ffffff; }
-.status-pill--success { background: #1e864a; color: #ffffff; }
-.status-pill--warning { background: #e3b117; color: #231a05; }
-.status-pill--danger { background: #c73a3a; color: #ffffff; }
+/* Status blocks are rendered by Badge from lib/status.ts. */
 
 .next-action-banner__prompt {
   font-size: 15px;
@@ -598,26 +588,11 @@ input[type='search']::-webkit-search-results-decoration {
   margin-right: 4px;
 }
 .next-action-banner__action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 40px;
-  padding: 0 1.25rem;
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: var(--r-btn, 8px);
-  border: none;
-  background: var(--brand, #2456d6);
-  color: #ffffff;
-  cursor: pointer;
-  transition: filter 0.15s ease;
+  max-width: 100%;
+  white-space: normal !important;
+  flex-shrink: 0;
 }
-.next-action-banner__action:hover {
-  filter: brightness(1.08);
-}
-.next-action-banner__action:active {
-  filter: brightness(0.96);
-}
+.next-action-banner__left { min-width: 0; }
 
 /* ─── Responsive Table Card Transforms & Touch Targets (< 768px) ─── */
 @media (max-width: 767px) {

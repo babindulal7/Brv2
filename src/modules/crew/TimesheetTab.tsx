@@ -37,11 +37,14 @@ const chipRowStyle: React.CSSProperties = {
 }
 
 const weekChipBase: React.CSSProperties = {
+  minHeight: 'var(--tap, 44px)',
   padding: '7px 14px',
   borderRadius: '9px',
   fontSize: '12px',
   fontWeight: 600,
   cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
   border: '1px solid var(--border)',
   background: 'transparent',
   color: 'var(--text3)',
@@ -102,9 +105,11 @@ function StaffCard({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontWeight: 600, fontSize: 'var(--t-body)' }}>{row.totalHrs}h</div>
-              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text3)' }}>
-                {canViewMoney ? formatMoney(rupees(row.pay)) : '•••'}
-              </div>
+              {canViewMoney && (
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text3)' }}>
+                  {formatMoney(rupees(row.pay))}
+                </div>
+              )}
             </div>
             <Icon name={isOpen ? 'chevron_down' : 'chevron_right'} size={14} />
           </div>
@@ -187,13 +192,17 @@ export default function TimesheetTab() {
 
   const kpis: Kpi[] = useMemo(() => [
     { label: 'Total Hours', value: `${stats.totalHours}h`, icon: 'timer', accent: 'primary' },
-    {
-      label: 'Total Payroll',
-      value: canViewMoney ? formatMoney(rupees(stats.totalPayroll)) : '•••',
-      icon: 'card',
-      accent: 'success',
-      definition: 'Sum of (total hours × hourly rate) for all staff this period.',
-    },
+    ...(canViewMoney
+      ? [
+          {
+            label: 'Total Payroll',
+            value: formatMoney(rupees(stats.totalPayroll)),
+            icon: 'card' as const,
+            accent: 'success' as const,
+            definition: 'Sum of (total hours × hourly rate) for all staff this period.',
+          },
+        ]
+      : []),
     { label: 'Staff Logged', value: `${stats.staffLogged} / ${stats.totalStaff}`, icon: 'users', accent: 'progress' },
     { label: 'Overtime Flags', value: String(stats.overtimeFlags), icon: 'alert_triangle', accent: 'warn' },
   ], [stats, canViewMoney])
@@ -204,21 +213,28 @@ export default function TimesheetTab() {
         <PageHeader
           title="Presence Log & Timesheet"
           description="Staff hours, payroll calculations, and overtime tracking."
+          search={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search staff, role… (press /)',
+          }}
           actions={
-            <PageActions
-              secondary={
-                <Button onClick={handleExport}>
-                  <Icon name="download" size={14} />
-                  Export CSV
-                </Button>
-              }
-            />
+            canViewMoney ? (
+              <PageActions
+                secondary={
+                  <Button onClick={handleExport}>
+                    <Icon name="download" size={14} />
+                    Export CSV
+                  </Button>
+                }
+              />
+            ) : undefined
           }
         />
       }
     >
       {/* KPI strip */}
-      <KpiStrip items={kpis} columns={isPhone ? 2 : 4} />
+      <KpiStrip items={kpis} columns={isPhone ? 2 : (canViewMoney ? 4 : 3)} />
 
       {/* Controls row: week chips + search */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', margin: 'var(--sp-md) 0' }}>
@@ -226,6 +242,8 @@ export default function TimesheetTab() {
           {(['This Week', 'Last Week'] as TimesheetWeek[]).map((label) => (
             <button
               key={label}
+              type="button"
+              aria-pressed={week === label}
               style={week === label ? weekChipActive : weekChipBase}
               onClick={() => { setWeek(label); setOpenIdx(null) }}
             >
@@ -269,14 +287,16 @@ export default function TimesheetTab() {
                     <th key={d} style={{ padding: '10px 6px', fontWeight: 600, color: 'var(--text3)', textAlign: 'center', minWidth: 36 }}>{d}</th>
                   ))}
                   <th style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>Hours</th>
-                  <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>Pay</th>
+                  {canViewMoney && (
+                    <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text2)', textAlign: 'right' }}>Pay</th>
+                  )}
                   <th style={{ width: 32 }} />
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={11} style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text3)' }}>
+                    <td colSpan={canViewMoney ? 11 : 10} style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text3)' }}>
                       No staff matching "{search}"
                     </td>
                   </tr>
@@ -321,9 +341,11 @@ export default function TimesheetTab() {
                           </td>
                         ))}
                         <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 600 }}>{row.totalHrs}h</td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 500 }}>
-                          {canViewMoney ? formatMoney(rupees(row.pay)) : '•••'}
-                        </td>
+                        {canViewMoney && (
+                          <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 500 }}>
+                            {formatMoney(rupees(row.pay))}
+                          </td>
+                        )}
                         <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                           <Icon name={isOpen ? 'chevron_down' : 'chevron_right'} size={12} />
                         </td>
@@ -332,7 +354,7 @@ export default function TimesheetTab() {
                       {/* Expanded row: daily bar chart */}
                       {isOpen && (
                         <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td colSpan={11} style={{ padding: '0 16px 12px' }}>
+                          <td colSpan={canViewMoney ? 11 : 10} style={{ padding: '0 16px 12px' }}>
                             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', padding: '8px 0', maxWidth: 400 }}>
                               {row.hrs.map((h, di) => (
                                 <div key={di} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', flex: 1 }}>
@@ -351,15 +373,21 @@ export default function TimesheetTab() {
                               ))}
                             </div>
 
-                            {/* Rate info */}
-                            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text3)', marginTop: '4px' }}>
-                              Rate: {canViewMoney ? formatMoney(rupees(row.rate)) : '•••'}/day · {canViewMoney ? formatMoney(rupees(Math.round(row.rate / 8))) : '•••'}/hr
-                              {row.hrs.some((h) => h > 8) && (
-                                <span style={{ marginLeft: '8px' }}>
-                                  <Badge tone="warning" label="Overtime flagged" />
-                                </span>
-                              )}
-                            </div>
+                            {/* Rate & overtime info */}
+                            {(canViewMoney || row.hrs.some((h) => h > 8)) && (
+                              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text3)', marginTop: '4px' }}>
+                                {canViewMoney && (
+                                  <span>
+                                    Rate: {formatMoney(rupees(row.rate))}/day · {formatMoney(rupees(Math.round(row.rate / 8)))}/hr
+                                  </span>
+                                )}
+                                {row.hrs.some((h) => h > 8) && (
+                                  <span style={{ marginLeft: canViewMoney ? '8px' : 0 }}>
+                                    <Badge tone="warning" label="Overtime flagged" />
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}

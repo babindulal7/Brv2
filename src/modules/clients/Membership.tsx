@@ -156,7 +156,7 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
             ))}
           </div>
         )}
-        results={!loading && !error && <Pagination page={current} total={filtered.length} pageSize={pageSize} onPageChange={setPage} pageSizeOptions={PAGE_SIZES} onPageSizeChange={setPageSize} />}
+        results={!loading && !error && filtered.length > 0 && <Pagination page={current} total={filtered.length} pageSize={pageSize} onPageChange={setPage} pageSizeOptions={PAGE_SIZES} onPageSizeChange={setPageSize} />}
       >
         {loading ? <LoadingSkeleton label="Loading memberships" /> : error ? (
           <ErrorBanner title="Could not load memberships" message={error} onRetry={() => setRetry((value) => value + 1)} />

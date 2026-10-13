@@ -485,7 +485,12 @@ describe('Finance — money visibility is not permission to record a payment', (
       await openInvoicesTab(c)
       // Anchored: a bare /Pay/ would also match the header's "Record Payment"
       // and pass even if the row action had been dropped for everyone.
-      expect(byText(c, /^\+ Pay$/)).toBeDefined()
+      const pay = byText(c, /^\+ Pay$/)
+      expect(pay).toBeDefined()
+      expect(pay!.classList.contains('ui-button--primary')).toBe(true)
+      expect(pay!.style.background).toBe('var(--btn-primary-bg)')
+      expect(pay!.style.color).toBe('var(--btn-primary-fg)')
+      expect(Number.parseInt(pay!.style.minHeight, 10)).toBeGreaterThanOrEqual(44)
     })
   }
 })

@@ -1,3 +1,6 @@
+import { Badge } from './Badge'
+import { Button } from './Button'
+import { STATUS_ICON, type StatusKey } from '../../lib/status'
 import Icon from './Icon'
 import type { BookingStatus } from '../../lib/workflow'
 import {
@@ -28,7 +31,7 @@ export interface UniversalNextAction {
   stageLabel: string
   nextActionLabel: string
   primaryVerb: string
-  badgeTone: 'neutral' | 'info' | 'active' | 'success' | 'warning' | 'danger'
+  badgeTone: StatusKey
   currentStage: LifecycleStage
   stageIndex: number // 0-based
   /**
@@ -71,7 +74,7 @@ function bannerPresentation(
     return {
       stageLabel: 'PARTIAL RETURN',
       nextActionLabel: 'Continue Outstanding Return',
-      badgeTone: 'warning',
+      badgeTone: 'progress',
       currentStage: 'Return',
       stageIndex: 3,
     }
@@ -91,7 +94,7 @@ function bannerPresentation(
       return {
         stageLabel: 'CONFIRMED',
         nextActionLabel: 'Prepare Equipment',
-        badgeTone: 'info',
+        badgeTone: 'primary',
         currentStage: 'Prepare',
         stageIndex: 1,
       }
@@ -100,7 +103,7 @@ function bannerPresentation(
       return {
         stageLabel: 'PREPARING',
         nextActionLabel: 'Continue Preparation',
-        badgeTone: 'active',
+        badgeTone: 'progress',
         currentStage: 'Prepare',
         stageIndex: 1,
       }
@@ -109,7 +112,7 @@ function bannerPresentation(
       return {
         stageLabel: 'READY',
         nextActionLabel: 'Start Handover',
-        badgeTone: 'success',
+        badgeTone: 'progress',
         currentStage: 'Handover',
         stageIndex: 2,
       }
@@ -119,7 +122,7 @@ function bannerPresentation(
       return {
         stageLabel: 'OUT',
         nextActionLabel: 'Receive Return',
-        badgeTone: 'active',
+        badgeTone: 'out',
         currentStage: 'Return',
         stageIndex: 3,
       }
@@ -127,7 +130,7 @@ function bannerPresentation(
       return {
         stageLabel: 'RETURNED',
         nextActionLabel: 'Inspect Equipment',
-        badgeTone: 'warning',
+        badgeTone: 'in',
         currentStage: 'Inspect',
         stageIndex: 4,
       }
@@ -136,7 +139,7 @@ function bannerPresentation(
       return {
         stageLabel: 'INSPECTION COMPLETE',
         nextActionLabel: 'Clean & Reset',
-        badgeTone: 'active',
+        badgeTone: 'progress',
         currentStage: 'Reset',
         stageIndex: 5,
       }
@@ -145,7 +148,7 @@ function bannerPresentation(
       return {
         stageLabel: 'RESET COMPLETE',
         nextActionLabel: 'Close Rental',
-        badgeTone: 'success',
+        badgeTone: 'progress',
         currentStage: 'Closed',
         stageIndex: 6,
       }
@@ -153,7 +156,7 @@ function bannerPresentation(
       return {
         stageLabel: 'CLOSED',
         nextActionLabel: 'All lifecycle actions completed',
-        badgeTone: 'neutral',
+        badgeTone: 'dim',
         currentStage: 'Closed',
         stageIndex: 6,
       }
@@ -162,7 +165,7 @@ function bannerPresentation(
       return {
         stageLabel: 'CANCELLED',
         nextActionLabel: 'Rental cancelled',
-        badgeTone: 'danger',
+        badgeTone: normalized === 'Void' ? 'dim' : 'danger',
         currentStage: 'Created',
         stageIndex: 0,
       }
@@ -258,24 +261,30 @@ export function LifecycleProgress({
       {showNextActionBanner && (
         <div className={`next-action-banner next-action-banner--${nextAction.badgeTone}`}>
           <div className="next-action-banner__left">
-            <span className={`status-pill status-pill--${nextAction.badgeTone}`}>
-              {nextAction.stageLabel}
-            </span>
+            <Badge
+              tone={nextAction.badgeTone}
+              label={nextAction.stageLabel}
+              icon={<Icon name={STATUS_ICON[nextAction.badgeTone]} size={14} />}
+            />
             <span className="next-action-banner__prompt">
               <span className="next-action-banner__prefix">Next:</span>{' '}
               <strong>{nextAction.nextActionLabel}</strong>
             </span>
           </div>
           {onActionClick && nextAction.stageLabel !== 'CLOSED' && nextAction.stageLabel !== 'CANCELLED' && (
-            <button
+            <Button
               type="button"
+              variant="primary"
+              data-primary-verb
               className="next-action-banner__action"
+              disabled={nextAction.action.disabled}
+              title={nextAction.action.reason ?? undefined}
+              iconRight="chevron_right"
               onClick={onActionClick}
               aria-label={`${nextAction.primaryVerb} for this rental`}
             >
-              <span>{nextAction.primaryVerb}</span>
-              <Icon name="chevron_right" size={16} />
-            </button>
+              {nextAction.primaryVerb}
+            </Button>
           )}
         </div>
       )}
