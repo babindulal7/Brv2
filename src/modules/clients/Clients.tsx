@@ -28,6 +28,8 @@ import { TIER_TONE, type ClientRecord, STACK_NOTE } from '../../lib/queries/clie
 import { STATUS } from '../../lib/status'
 import { FilterButton } from '../../components/ui/FilterDrawer'
 import './clients.css'
+import { canImportClients } from '../../lib/clientImport'
+import { csvCell } from '../../lib/csv'
 
 /**
  * Clients — directory, memberships, referrals, credit, imports, and duplicates.
@@ -53,12 +55,6 @@ const TAB_DEFS: TabDef[] = [
   { key: 'import', label: 'Import' },
   { key: 'duplicates', label: 'Duplicates' },
 ]
-
-/** Escapes a value for a CSV cell — the export is real, so quoting has to be. */
-function csvCell(v: string | number): string {
-  const s = String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
 
 export default function Clients() {
   const viewport = useViewport()
@@ -99,7 +95,7 @@ export default function Clients() {
     (t) => (PRIMARY_TAB_KEYS.includes(t.key) || t.key === activeTab) && !t.hideInBar && (!t.money || money),
   )
 
-  /** Full directory export as CSV. Escaped cells; dates in both calendars. */
+  /** The loaded directory, including rows hidden by this screen's filters. */
   const exportCsv = () => {
     /* G5 (RULING 2026-10-07): phone, email and PAN leave the building only with Owner · Admin · Manager. */
     const pii = canExportClientPii(user?.role ?? 'Client')
@@ -129,7 +125,7 @@ export default function Clients() {
         .map(csvCell)
         .join(','),
     )
-    recordExport({ list: 'clients', module: 'Clients', rowCount: clients.length, columns: headers, includesPii: pii })
+    recordExport({ list: 'clients', module: 'Clients', rowCount: clients.length, columns: headers, includesPii: pii, scope: 'loaded_directory' })
     const blob = new Blob([[headers.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -225,13 +221,13 @@ export default function Clients() {
             primary={<GlobalAddMenu module="clients" />}
             // RULING 2026-10-13: on a phone, Export lives in More so the title and Add keep the header.
             secondary={phone ? [] : [
-              <Button key="export" icon="download" aria-label="Export clients" onClick={exportCsv}>
-                Export
+              <Button key="export" icon="download" aria-label="Export clients" title={`Export ${clients.length} loaded directory rows, including rows hidden by filters`} disabled={clientsLoading || Boolean(clientsError)} onClick={exportCsv}>
+                Export directory
               </Button>,
             ]}
             overflow={[
-              ...(phone ? [{ label: 'Export clients', icon: 'download' as const, onClick: exportCsv }] : []),
-              { label: 'Import Clients', icon: 'upload', onClick: () => setTab('import') },
+              ...(phone && !clientsLoading && !clientsError ? [{ label: 'Export loaded directory', icon: 'download' as const, onClick: exportCsv }] : []),
+              ...(user && canImportClients(user.role) ? [{ label: 'Import Clients', icon: 'upload' as const, onClick: () => setTab('import') }] : []),
               { label: 'Duplicate Center', icon: 'users', onClick: () => setTab('duplicates') },
               ...(money ? [{ label: 'Credit Policies', icon: 'card' as const, onClick: () => setTab('credit') }] : []),
               { label: 'Referral Codes', icon: 'sparkles', onClick: () => setTab('referral') },
