@@ -105,7 +105,7 @@ export function UpgradeTierModal({
             value={selectedTier}
             onChange={(e) => setSelectedTier(e.target.value as MembershipTier)}
             style={{
-              height: 38,
+              minHeight: 44,
               padding: '0 12px',
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',

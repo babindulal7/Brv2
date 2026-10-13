@@ -44,7 +44,7 @@ export function BookCrewFlow({
   // previous pass can never ride along into a new assignment.
   useEffect(() => {
     if (open) setChosen(null)
-  }, [open ])
+  }, [open])
 
   useEffect(() => {
     if (!open) return
