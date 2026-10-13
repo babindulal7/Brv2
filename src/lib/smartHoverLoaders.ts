@@ -6,7 +6,7 @@
  * Money-blind roles receive clearance-only payloads (no amounts) per §68.
  */
 
-import { IS_MOCK, supabase } from './supabase'
+import { loadIntelNotes } from './queries/intelExtras'
 import { formatMoney, type Paisa } from './money'
 import { toBs, formatBs, formatAdDateTime, formatBookingHoverDateTime, formatAd } from './bs'
 import { canViewMoneyField } from './fieldGating'
@@ -18,6 +18,7 @@ import {
 } from './queries/bookings'
 import {
   getClientPreviewRecord,
+  getClientBlockStatus,
 } from './queries/clients'
 import {
   getAssetDetail,
@@ -46,6 +47,17 @@ import { rentalDaysBetween } from './rentalDays'
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Never summarize an implicitly truncated ledger or booking history. */
+async function allPreviewRows<T>(read: (page: { index: number; size: number }) => Promise<{ rows: T[] }>): Promise<T[]> {
+  const rows: T[] = []
+  for (let index = 0; index < 100; index += 1) {
+    const result = await read({ index, size: 100 })
+    rows.push(...result.rows)
+    if (result.rows.length < 100) return rows
+  }
+  throw new Error('Intel history exceeds the supported record limit')
+}
 
 function moneyOrNull(paisa: Paisa | null, canSee: boolean): number | undefined {
   return canSee && paisa !== null ? paisa : undefined
@@ -77,8 +89,8 @@ export async function loadClientPreview(
   if (!record) throw new Error(`Client not found: ${clientRef}`)
   const dbId = record.id
 
-  const bookings = await listBookings({ chips: { client_id: [dbId] }, sort: { column: 'pickup_at', ascending: false }, page: { index: 0, size: 20 } })
-  const current: ClientPreview['current'] = bookings.rows.filter((row) => !row.isCancelled && !row.isClosed).slice(0, 5).map((row) => ({
+  const bookings = await allPreviewRows(page => listBookings({ chips: { client_id: [dbId] }, sort: { column: 'pickup_at', ascending: false }, page }))
+  const current: ClientPreview['current'] = bookings.filter((row) => !row.isCancelled && !row.isClosed).map((row) => ({
     rentalId: row.id,
     rentalNo: row.bookingNo,
     stage: row.stage,
@@ -86,7 +98,7 @@ export async function loadClientPreview(
     returnAt: adWithBs(row.returnAtAd),
     itemCount: row.itemCount,
   }))
-  const history: ClientPreview['history'] = bookings.rows.filter((row) => row.isClosed || row.isCancelled).slice(0, 5).map((row) => ({
+  const history: ClientPreview['history'] = bookings.filter((row) => row.isClosed || row.isCancelled).map((row) => ({
     rentalId: row.id,
     rentalNo: row.bookingNo,
     stage: row.stage,
@@ -121,8 +133,8 @@ export async function loadClientPreview(
 
 async function loadClientPayments(clientId: string, outstandingPaisa: Paisa, depositsHeldPaisa: Paisa): Promise<ClientPreview['payments']> {
   const paymentsResult = await paymentsForClient(clientId)
-  const paymentsList = await listPayments(paymentsResult)
-  const history = paymentsList.rows.map(toPaymentTx)
+  const paymentsList = await allPreviewRows(page => listPayments({ ...paymentsResult, page }))
+  const history = paymentsList.map(toPaymentTx)
   // The directory view owns balances. No overdue aggregate is supplied here.
   return { summary: { outstandingPaisa, depositsHeldPaisa }, history }
 }
@@ -147,12 +159,10 @@ export async function loadEquipmentPreview(
   const current: EquipmentPreview['current'] = relations
     .filter((row) => row.stage !== 'Closed' && row.stage !== 'Cancelled')
     .sort((a, b) => a.pickupAtAd.localeCompare(b.pickupAtAd))
-    .slice(0, 8)
     .map((row) => ({ rentalId: row.bookingId, rentalNo: row.bookingNo, clientName: row.clientName, pickupAt: adWithBs(row.pickupAtAd), returnAt: adWithBs(row.returnAtAd), qty: row.qty }))
   const history: EquipmentPreview['history'] = relations
     .filter((row) => row.stage === 'Closed' || row.stage === 'Cancelled')
     .sort((a, b) => b.pickupAtAd.localeCompare(a.pickupAtAd))
-    .slice(0, 8)
     .map((row) => ({ rentalId: row.bookingId, rentalNo: row.bookingNo, clientName: row.clientName, pickupAt: adWithBs(row.pickupAtAd), returnAt: adWithBs(row.returnAtAd) }))
   const packing = await loadEquipmentPacking(ref, ctx)
 
@@ -205,6 +215,13 @@ export async function loadRentalPreview(
   if (!booking) throw new Error(`Booking header unavailable: ${bookingRef}`)
 
   const readiness = await computeRentalReadiness(floor, ctx)
+  try {
+    // A confirmed block is authoritative. An unblocked client alone does not
+    // verify credit / On Stop or authorize confirmation and handover.
+    if (await getClientBlockStatus(booking.clientId) === true) readiness.clientAllowed = false
+  } catch {
+    readiness.clientAllowed = null
+  }
   const packingLines = floor.lines.flatMap(lineToPackingLines)
   const progress = packingProgress(packingLines)
 
@@ -226,8 +243,10 @@ export async function loadRentalPreview(
     pickupAt: formatBookingHoverDateTime(floor.pickupAtAd),
     returnAt: formatBookingHoverDateTime(floor.returnAtAd),
     rentalDays: rentalDaysBetween(floor.pickupAtAd, floor.returnAtAd),
+    ...(canSeeMoney && booking.totalAmount !== null && booking.totalAmount !== undefined ? { rentalTotalPaisa: booking.totalAmount } : {}),
     readiness,
-    equipment: floor.lines.map(l => ({ label: l.productName ?? '—', qty: l.qty, packed: l.units.every(u => u.packed) })),
+    equipment: floor.lines.map(l => ({ label: l.productName ?? l.description ?? l.lineType, qty: l.qty,
+      ...(l.unitsPresence === 'present' && l.units.length > 0 && l.units.length >= l.qty ? { packed: l.units.every(u => u.packed) } : {}) })),
     packing: { status: progress.status, lines: packingLines, updatedAt: undefined, updatedBy: undefined },
     ...(payments ? { payments } : {}),
     ...(clearance ? { clearance } : {}),
@@ -278,8 +297,8 @@ async function computeRentalReadiness(floor: FloorBooking, _ctx: GateContext): P
 
 async function loadRentalPayments(bookingId: string, grandTotal: Paisa, depositRequired: Paisa | null): Promise<RentalPreview['payments']> {
   const filters = paymentsForBooking(bookingId)
-  const paymentsList = await listPayments(filters)
-  const txs = paymentsList.rows.map(toPaymentTx)
+  const paymentsList = await allPreviewRows(page => listPayments({ ...filters, page }))
+  const txs = paymentsList.map(toPaymentTx)
   const summary = summarizeRentalPayments({ grandTotalPaisa: grandTotal, transactions: txs, ...(depositRequired !== null ? { depositRequiredPaisa: depositRequired } : {}) })
   return { summary, history: txs, depositHeldVerified: false }
 }
@@ -334,8 +353,8 @@ export async function loadInvoicePreview(
 async function loadInvoicePayments(invoiceId: string, canSeeMoney: boolean): Promise<PaymentTransaction[]> {
   if (!canSeeMoney) return []
   const filters = paymentsForInvoice(invoiceId)
-  const paymentsList = await listPayments(filters)
-  return paymentsList.rows.map(toPaymentTx)
+  const paymentsList = await allPreviewRows(page => listPayments({ ...filters, page }))
+  return paymentsList.map(toPaymentTx)
 }
 
 export async function loadPaymentPreview(paymentRef: string, ctx: GateContext): Promise<PaymentPreview> {
@@ -395,23 +414,8 @@ function mapChannelToMethod(channel: string | null): PaymentTransaction['method'
 }
 
 async function loadEntityNotes(entityType: 'client' | 'equipment' | 'rental', entityId: string, ctx: GateContext): Promise<ClientPreview['notes']> {
-  if (IS_MOCK || ctx.role === 'Client') return []
-  const noteTable = entityType === 'rental' ? 'booking_notes' : 'intel_entity_notes'
-  const key = entityType === 'client' ? 'client_id' : entityType === 'equipment' ? 'product_id' : 'booking_id'
-  const { data, error } = await supabase
-    .from(noteTable)
-    .select('id, body, visibility, created_at')
-    .eq(key, entityId)
-    .is('archived_at', null)
-    .order('created_at', { ascending: false })
-    .limit(20)
-  if (error) throw new Error(`Preview notes unavailable: ${error.message}`)
-  return (data ?? []).map(n => ({
-    id: n.id,
-    at: n.created_at,
-    by: 'Staff',
-    text: n.body,
-  }))
+  const notes = await loadIntelNotes(entityType, entityId, ctx)
+  return notes.map(n => ({ id: n.id, at: adWithBs(n.createdAt), by: n.visibility.replaceAll('_', ' '), text: n.body }))
 }
 
 /* ── Preview loaders map ──────────────────────────────────────────────────── */

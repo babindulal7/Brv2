@@ -118,7 +118,7 @@ export interface RentalReadiness {
 
 /**
  * Which gate is named first when handover cannot proceed. Gates evaluate in
- * operational order, not severity — the operator fixes the first blocker.
+ * client-restriction priority, then operational order.
  *
  * `includeMoneyGates: false` is the money-blind rendering (§22/§68): a role
  * that cannot see amounts must not be told "payment required" from figures it
@@ -127,14 +127,38 @@ export interface RentalReadiness {
  */
 export function handoverBlockedReason(r: RentalReadiness, opts?: { includeMoneyGates?: boolean | undefined }): string | null {
   const includeMoney = opts?.includeMoneyGates !== false
+  if (r.clientAllowed === false) return 'Client restricted — new rental confirmation blocked'
   if (r.equipmentReady === false) return 'Equipment not fully reserved'
   if (r.packingReady === false) return 'Packing incomplete'
   if (includeMoney && r.paymentReady === false) return 'Payment requirement not met'
   if (includeMoney && r.depositReady === false) return 'Security deposit missing'
   if (r.contractReady === false) return 'Contract not signed'
-  if (r.clientAllowed === false) return 'Client restricted — new rental confirmation blocked'
   if (r.equipmentReady === null || r.packingReady === null || r.contractReady === null || r.clientAllowed === null || (includeMoney && (r.paymentReady === null || r.depositReady === null))) return 'Readiness verification unavailable'
   return null
+}
+
+/** Display known blockers before unverified checks; never infer clearance. */
+export function rentalIntelChecks(r: RentalReadiness) {
+  return [
+    { ok: r.clientAllowed, label: 'Client allowed' },
+    { ok: r.equipmentReady, label: 'Equipment reserved' },
+    { ok: r.packingReady, label: 'Packing complete' },
+    { ok: r.paymentReady, label: 'Payment cleared' },
+    { ok: r.depositReady, label: 'Deposit satisfied' },
+    { ok: r.contractReady, label: 'Contract signed' },
+  ].sort((a, b) => (a.ok === false ? 0 : a.ok === null ? 1 : 2) - (b.ok === false ? 0 : b.ok === null ? 1 : 2))
+}
+
+/** Navigation guidance only. The booking workflow owns every transition gate. */
+export function rentalIntelNextStep(stage: string, r: RentalReadiness): string {
+  if (stage === 'Quote' || stage === 'Booked' || stage === 'Packed') {
+    if (r.clientAllowed === false) return 'Review the client restriction in the booking before continuing.'
+    if (handoverBlockedReason(r)) return 'Review booking requirements and complete the blocked or unverified checks.'
+    return 'Open the booking to verify handover in its workflow.'
+  }
+  if (stage === 'Returned') return 'Review inspection and settlement in the booking before closing.'
+  if (stage === 'On Rent') return 'Open the booking to review the return workflow.'
+  return 'Open the booking to review its recorded history.'
 }
 
 export function isHandoverReady(r: RentalReadiness, opts?: { includeMoneyGates?: boolean | undefined }): boolean {

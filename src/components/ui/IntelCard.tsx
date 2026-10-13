@@ -493,18 +493,20 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
                 entityId={linkedTop?.entityId ?? entityId}
                 context={context}
                 gateContext={gateContext}
+                actionContext={actionContext ?? null}
                 onFollow={followLink}
                 fallback={<DetailGroups groups={linkedTop?.groups ?? detail} onFollow={followLink} />}
               />
               {editableIntelType(linkedTop?.entityType ?? entityType) && (linkedTop?.entityId ?? entityId) && context && gateContext && (
                 <details style={{ marginTop: 12, borderTop: '1px solid var(--border)' }}>
-                  <summary style={{ minHeight: 44, display: 'flex', alignItems: 'center', color: 'var(--link)', cursor: 'pointer', fontWeight: 600 }}>Notes and custom fields</summary>
+                  <summary style={{ minHeight: 44, display: 'flex', alignItems: 'center', color: 'var(--link)', cursor: 'pointer', fontWeight: 600 }}>Custom fields</summary>
                   <IntelDetailExtras
                     entityType={(linkedTop?.entityType ?? entityType) as 'client' | 'equipment' | 'rental'}
                     entityId={(linkedTop?.entityId ?? entityId)!}
                     context={context}
                     gateContext={gateContext}
                     actionContext={actionContext ?? null}
+                    section="fields"
                   />
                 </details>
               )}
@@ -536,6 +538,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
           entityId={linkedTop?.entityId ?? entityId}
           context={context}
           gateContext={gateContext}
+          actionContext={actionContext ?? null}
           onFollow={followLink}
           fallback={<DetailGroups groups={linkedTop?.groups ?? detail} onFollow={followLink} />}
         />
@@ -546,6 +549,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
             context={context}
             gateContext={gateContext}
             actionContext={actionContext ?? null}
+            section="fields"
           />
         )}
       </Modal>

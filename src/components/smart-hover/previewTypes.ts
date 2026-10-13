@@ -70,6 +70,7 @@ export interface RentalPreview {
   returnAt: string
   rentalDays: number | null
   readiness: RentalReadiness
+  rentalTotalPaisa?: Paisa
   equipment: Array<{ label: string; qty: number; packed?: boolean | undefined }>
   packing: { status: PackingStatus; lines: PackingLine[]; updatedAt?: string | undefined; updatedBy?: string | undefined }
   payments?: { summary: RentalPaymentSummary; history: PaymentTransaction[]; depositHeldVerified?: boolean } | undefined

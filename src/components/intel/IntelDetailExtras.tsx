@@ -23,12 +23,13 @@ interface Props {
   context: IntelContext
   gateContext: GateContext
   actionContext: ActionContext | null
+  section?: 'notes' | 'fields'
 }
 
 const MANAGEMENT = ['Owner', 'Admin', 'Manager']
 const DESK = ['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse']
 
-export function IntelDetailExtras({ entityType, entityId, context, gateContext, actionContext }: Props) {
+export function IntelDetailExtras({ entityType, entityId, gateContext, actionContext, section }: Props) {
   const [notes, setNotes] = useState<IntelNoteRow[]>([])
   const [fields, setFields] = useState<IntelCustomFieldRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,7 +51,7 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
     setLoading(true)
     setError(null)
     try {
-      const result = await loadIntelExtras(entityType, entityId, gateContext)
+      const result = await loadIntelExtras(entityType, entityId, gateContext, section)
       setNotes(result.notes)
       setFields(result.fields)
     } catch (reason) {
@@ -58,7 +59,7 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
     } finally {
       setLoading(false)
     }
-  }, [entityType, entityId, gateContext])
+  }, [entityType, entityId, gateContext, section])
 
   useEffect(() => { void reload() }, [reload])
 
@@ -107,8 +108,8 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
   return (
     <div aria-label={`${entityType} Intel details`} style={{ display: 'grid', gap: 18, marginTop: 20 }}>
       {error && <div role="alert" style={{ color: 'var(--danger-text)' }}>{error} <button type="button" onClick={() => void reload()} style={{ minHeight: 44 }}>Retry</button></div>}
-      {loading && <p style={{ color: 'var(--muted)', margin: 0 }}>Loading notes and custom fields…</p>}
-      <section aria-label="Notes">
+      {loading && <p role="status" style={{ color: 'var(--muted)', margin: 0 }}>{section === 'notes' ? 'Loading notes…' : section === 'fields' ? 'Loading custom fields…' : 'Loading notes and custom fields…'}</p>}
+      {section !== 'fields' && <section aria-label="Notes">
         <h3 style={{ fontSize: 'var(--t-ui)', margin: '0 0 8px' }}>Notes</h3>
         {notes.length === 0 && !loading && !error && <p style={{ color: 'var(--muted)' }}>No notes recorded.</p>}
         {notes.map((note) => (
@@ -132,8 +133,8 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
             <button type="button" onClick={() => void saveNote()} disabled={saving || !body.trim()} style={{ minHeight: 44 }}>Save note</button>
           </div>
         )}
-      </section>
-      <section aria-label="Custom fields">
+      </section>}
+      {section !== 'notes' && <section aria-label="Custom fields">
         <h3 style={{ fontSize: 'var(--t-ui)', margin: '0 0 8px' }}>Custom fields</h3>
         {fields.length === 0 && !loading && !error && <p style={{ color: 'var(--muted)' }}>No custom fields configured.</p>}
         {fields.map((field) => (
@@ -155,8 +156,7 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
             )}
           </div>
         )}
-      </section>
-      <span className="sr-only">Context: {context}</span>
+      </section>}
     </div>
   )
 }
