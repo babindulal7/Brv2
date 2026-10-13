@@ -102,7 +102,17 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {!embedded && (
         <>
-          <PageHeader title="Clients" description="Current memberships" leading={<FilterButton onClick={() => setInternalFiltersOpen((open) => !open)} controls="membership-filters" expanded={filtersOpen} activeCount={Number(Boolean(selectedKind))} />} />
+          <PageHeader
+            title="Clients"
+            description="Current memberships"
+            leading={<FilterButton onClick={() => setInternalFiltersOpen((open) => !open)} controls="membership-filters" expanded={filtersOpen} activeCount={Number(Boolean(selectedKind))} />}
+            search={{
+              value: search,
+              onChange: (value) => updateParam('mq', value, true),
+              onClear: () => updateParam('mq', '', true),
+              placeholder: 'Search members... (press /)',
+            }}
+          />
           <nav aria-label="Client sections" style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
             {TABS.filter((tab) => money || tab !== 'Credit').map((tab) => (
               <button
@@ -129,7 +139,7 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
       <ListWorkspace
         controls={
           <ListControlRow
-            search={<SearchInput value={search} onChange={(value) => updateParam('mq', value, true)} onClear={() => updateParam('mq', '', true)} placeholder="Search members" aria-label="Search members" />}
+            search={embedded ? <SearchInput value={search} onChange={(value) => updateParam('mq', value, true)} onClear={() => updateParam('mq', '', true)} placeholder="Search members" aria-label="Search members" /> : undefined}
             sort={
               <select aria-label="Sort members" value={sort} onChange={(event) => updateParam('ms', event.target.value)} style={{ minHeight: 44 }}>
                 <option value="name">Name A–Z</option>

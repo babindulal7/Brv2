@@ -814,7 +814,7 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: 7,
-                          height: 38,
+                          minHeight: 44,
                           padding: '0 10px',
                           borderRadius: 'var(--r-btn)',
                           border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,

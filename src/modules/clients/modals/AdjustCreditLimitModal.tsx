@@ -133,7 +133,7 @@ export function AdjustCreditLimitModal({
               value={validity}
               onChange={(e) => setValidity(e.target.value as Validity)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',

@@ -82,7 +82,7 @@ export function VerifyKycModal({
               value={status}
               onChange={(e) => setStatus(e.target.value as KycStatus)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -107,7 +107,7 @@ export function VerifyKycModal({
               value={docType}
               onChange={(e) => setDocType(e.target.value)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -134,7 +134,7 @@ export function VerifyKycModal({
             value={docNumber}
             onChange={(e) => setDocNumber(e.target.value)}
             style={{
-              height: 36,
+              minHeight: 44,
               padding: '0 12px',
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',
