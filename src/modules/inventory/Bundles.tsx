@@ -1,12 +1,13 @@
 import { Pagination } from '../../components/ui/Pagination'
 import { recordExport } from '../../lib/exportAudit'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AddBundle } from './AddBundle'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { Card, Button, KpiStrip, Rail, SummaryRows } from '../../components/ui/Page'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { PageBody } from '../../components/ui/PageBody'
@@ -371,7 +372,19 @@ const ROWS_PER_PAGE = [10, 25, 50]
 
 /* ── the screen ────────────────────────────────────────────────────────── */
 
-export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { filtersOpen?: boolean; onFiltersClose?: () => void }) {
+export function Bundles({
+  filtersOpen = false,
+  onFiltersClose = () => {},
+  searchQuery,
+  onSearchChange,
+  onActiveFilterCountChange,
+}: {
+  filtersOpen?: boolean
+  onFiltersClose?: () => void
+  searchQuery?: string
+  onSearchChange?: (q: string) => void
+  onActiveFilterCountChange?: (count: number) => void
+}) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const isNewBundle = params.get('action') === 'new'
@@ -438,6 +451,18 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
   const [tag, setTag] = useState('All')
   const [hasCrew, setHasCrew] = useState<Triple>('Any')
   const [hasVehicle, setHasVehicle] = useState<Triple>('Any')
+  const [localSearch, setLocalSearch] = useState('')
+  const effectiveSearch = searchQuery ?? localSearch
+  const setEffectiveSearch = (q: string) => {
+    if (onSearchChange) onSearchChange(q)
+    else setLocalSearch(q)
+    setPage(1)
+  }
+  const activeFilterCount =
+    Number(category !== 'All') + Number(tag !== 'All') + Number(hasCrew !== 'Any') + Number(hasVehicle !== 'Any')
+  useEffect(() => {
+    onActiveFilterCountChange?.(activeFilterCount)
+  }, [activeFilterCount, onActiveFilterCountChange])
   const [sort, setSort] = useState<Sort>({ key: 'name', dir: 'asc' })
   /*
     Spec 7.2 draws a bundle-CARD grid, not a table: "TABLET 2-up · PHONE 1-up,
@@ -466,6 +491,7 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
     setTag('All')
     setHasCrew('Any')
     setHasVehicle('Any')
+    setEffectiveSearch('')
     setPage(1)
   }
 
@@ -479,6 +505,7 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
 
   const filtered = useMemo(() => {
     const source = chip === 'Archived' ? archivedBundles : activeBundles
+    const q = effectiveSearch.trim().toLowerCase()
     const rows = source.filter((b) => {
       const f = factsOf(b)
       if (chip !== 'All' && chip !== 'Archived' && f.state !== chip) return false
@@ -486,6 +513,14 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
       if (tag !== 'All' && !b.tags.includes(tag)) return false
       if (hasCrew !== 'Any' && (f.crew > 0) !== (hasCrew === 'Yes')) return false
       if (hasVehicle !== 'Any' && (f.vehicle > 0) !== (hasVehicle === 'Yes')) return false
+      if (q) {
+        const matchesBundle =
+          b.name.toLowerCase().includes(q) ||
+          b.id.toLowerCase().includes(q) ||
+          b.category.toLowerCase().includes(q) ||
+          b.lines.some((l) => l.model.toLowerCase().includes(q) || l.group.toLowerCase().includes(q))
+        if (!matchesBundle) return false
+      }
       return true
     })
 
@@ -509,7 +544,7 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
           return 0
       }
     })
-  }, [chip, category, tag, hasCrew, hasVehicle, sort, activeBundles, archivedBundles])
+  }, [chip, category, tag, hasCrew, hasVehicle, effectiveSearch, sort, activeBundles, archivedBundles])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const safePage = Math.min(page, pageCount)
@@ -864,6 +899,15 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
 
           {/* Sorting and view controls stay beside the list. */}
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ flex: '1 1 220px', maxWidth: 360, minWidth: 0 }}>
+              <SearchInput
+                value={effectiveSearch}
+                onChange={setEffectiveSearch}
+                onClear={() => setEffectiveSearch('')}
+                placeholder="Search bundles, ID, or equipment…"
+                aria-label="Search bundles"
+              />
+            </div>
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                 Sort by

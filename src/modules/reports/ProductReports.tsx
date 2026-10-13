@@ -250,7 +250,7 @@ export default function ProductReports() {
 
       <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <KpiStrip items={kpis} columns={kpis.length} />
+          <KpiStrip items={kpis} columns={phone ? 1 : tablet ? 2 : kpis.length} />
 
           <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : tablet ? 'repeat(2, minmax(0,1fr))' : money ? 'repeat(4, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             {money && (

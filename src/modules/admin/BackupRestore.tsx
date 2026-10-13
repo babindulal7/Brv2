@@ -327,7 +327,7 @@ export default function BackupRestore() {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <KpiStrip items={KPIS} columns={6} />
+          <KpiStrip items={KPIS} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 6} />
 
           <div style={{ display: 'grid', gridTemplateColumns: viewport === 'phone' ? 'minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
             <Card
@@ -338,7 +338,7 @@ export default function BackupRestore() {
                 </span>
               }
             >
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: viewport === 'phone' ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
                 {OVERVIEW.map((o, i) => (
                   <div
                     key={o.label}
@@ -404,7 +404,7 @@ export default function BackupRestore() {
             </Card>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.55fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1.55fr) minmax(0,1fr)' : 'minmax(0,1fr)', gap: 'var(--sp-md)' }}>
             <Card title="Backup History" bodyStyle={{ padding: 0 }}>
               {/* The real record — `backup_logs` via `lib/queries/backup.ts`.
                   Restricted outranks everything: RLS admits Owner/Admin only,
@@ -544,7 +544,7 @@ export default function BackupRestore() {
                 </span>
               }
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: viewport === 'phone' ? 'minmax(0,1fr)' : '1fr 1fr', gap: 'var(--sp-md)' }}>
                 <fieldset style={{ border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
                   <legend style={legend}>Restore What?</legend>
                   {RESTORE_SCOPES.map((s) => (
@@ -589,7 +589,7 @@ export default function BackupRestore() {
                         alignItems: 'center',
                         gap: 6,
                         width: '100%',
-                        height: 32,
+                        minHeight: 44,
                         padding: '0 9px',
                         borderRadius: 'var(--r-input)',
                         border: '1px solid var(--input-border)',

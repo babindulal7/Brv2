@@ -5,6 +5,7 @@ import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -48,6 +49,7 @@ function staffCsv(isManager: boolean, myName: string | undefined): ReportCsvRow[
 export default function StaffReports() {
   const money = useCanViewMoney()
   const { user } = useAuth()
+  const viewport = useViewport()
   const [, setSummary] = useState<StaffReportsSummary | null>(null)
 
   useEffect(() => {
@@ -108,7 +110,7 @@ export default function StaffReports() {
           dropped its `icon` prop ("clock" was not even a registry name — never
           caught, because nothing rendered it). */}
       <KpiStrip
-        columns={4}
+        columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4}
         items={[
           {
             label: 'Revenue Handled',

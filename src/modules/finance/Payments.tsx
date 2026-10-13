@@ -657,22 +657,20 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         title="Payments"
         description="Review receipts and refunds."
         actions={
-          !embedded ? (
-            <PageActions
-              primary={
-                money && canTakePayment ? (
-                  <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={openRecord}>
-                    {phone ? '' : 'Record Payment'}
-                  </Button>
-                ) : undefined
-              }
-              secondary={[
-                <Button key="refresh" icon="refresh" aria-label="Refresh" onClick={refreshAll}>
-                  {phone ? '' : 'Refresh'}
-                </Button>,
-              ]}
-            />
-          ) : undefined
+          <PageActions
+            primary={
+              money && canTakePayment ? (
+                <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={openRecord}>
+                  {phone ? '' : 'Record Payment'}
+                </Button>
+              ) : undefined
+            }
+            secondary={[
+              <Button key="refresh" icon="refresh" aria-label="Refresh" onClick={refreshAll}>
+                {phone ? '' : 'Refresh'}
+              </Button>,
+            ]}
+          />
         }
       />
 

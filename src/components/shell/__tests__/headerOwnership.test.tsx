@@ -8,10 +8,10 @@ import { PageHeader } from '../../ui/header/PageHeader'
 import { WorkspaceHeaderRightActions, WorkspaceHeaderSearch } from '../WorkspacePortal'
 import Header from '../Header'
 
-const state = vi.hoisted(() => ({ viewport: 'desktop' }))
+const state = vi.hoisted(() => ({ viewport: 'desktop', syncStatus: 'synced', pendingCount: 0 }))
 vi.mock('../../../lib/device', () => ({ useViewport: () => state.viewport }))
 vi.mock('../../../lib/auth', () => ({ useAuth: () => ({ user: { name: 'Babin', role: 'Owner' }, logout: vi.fn(), lockNow: vi.fn(), hasPin: false }) }))
-vi.mock('../../../lib/syncContext', () => ({ useSync: () => ({ status: 'synced', pendingCount: 0 }) }))
+vi.mock('../../../lib/syncContext', () => ({ useSync: () => ({ status: state.syncStatus, pendingCount: state.pendingCount }) }))
 vi.mock('../../ui/creation/GlobalAddMenu', () => ({ GlobalAddMenu: () => <button>Global Add</button> }))
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -19,6 +19,8 @@ let root: Root
 let container: HTMLDivElement
 beforeEach(() => {
   state.viewport = 'desktop'
+  state.syncStatus = 'synced'
+  state.pendingCount = 0
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -42,6 +44,25 @@ async function renderPage(page: 'rentals' | 'edit' | 'plain') {
 }
 
 describe('page ownership of the application header', () => {
+  it('reclaims healthy sync space on tablets but keeps every actionable sync state visible', async () => {
+    state.viewport = 'tablet'
+    await renderPage('plain')
+    expect(container.querySelector<HTMLElement>('.header-sync-context')?.style.display).toBe('none')
+    for (const status of ['offline', 'pending', 'syncing', 'error']) {
+      state.syncStatus = status
+      await renderPage('plain')
+      const sync = container.querySelector<HTMLElement>('.header-sync-context')!
+      expect(sync.style.display).toBe('flex')
+      expect(sync.getAttribute('aria-hidden')).toBeNull()
+      expect(sync.querySelector('button')?.tabIndex).toBe(0)
+    }
+    state.syncStatus = 'synced'
+    state.pendingCount = 2
+    await renderPage('plain')
+    expect(container.querySelector<HTMLElement>('.header-sync-context')?.style.display).toBe('flex')
+    expect(container.querySelector('.header-sync-context')?.textContent).toContain('2 Queued')
+  })
+
   it('uses the contextual phone search, preserves its query on Escape and clears without closing', async () => {
     state.viewport = 'phone'
     function SearchPage() {

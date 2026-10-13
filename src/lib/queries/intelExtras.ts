@@ -42,25 +42,39 @@ function visibleField(field: RawDefinition, ctx: GateContext): boolean {
 }
 
 /** The database applies RLS first; these predicates also keep the React payload narrow. */
-export async function loadIntelExtras(entityType: IntelEntityType, entityId: string, ctx: GateContext): Promise<{
+export async function loadIntelNotes(entityType: IntelEntityType, entityId: string, ctx: GateContext): Promise<IntelNoteRow[]> {
+  if (IS_MOCK || ctx.role === 'Client' || !['client', 'equipment', 'rental'].includes(entityType)) return []
+  const key = entityType === 'client' ? 'client_id' : entityType === 'equipment' ? 'product_id' : 'booking_id'
+  const table = entityType === 'rental' ? 'booking_notes' : 'intel_entity_notes'
+  const notes: IntelNoteRow[] = []
+  for (let page = 0; page < 100; page += 1) {
+    const { data, error } = await supabase.from(table as never).select('id, body, visibility, created_at')
+      .eq(key, entityId).is('archived_at', null).order('created_at', { ascending: false }).order('id', { ascending: false })
+      .range(page * 100, page * 100 + 99)
+    if (error) throw new Error(`Could not read Intel notes: ${error.message}`)
+    const chunk = (data ?? []) as unknown as RawNote[]
+    notes.push(...chunk.filter(note => visibleNote(note, ctx)).map(note => ({ id: note.id, body: note.body, visibility: note.visibility, createdAt: note.created_at })))
+    if (chunk.length < 100) return notes
+  }
+  throw new Error('Intel notes exceed the supported record limit')
+}
+
+export async function loadIntelExtras(entityType: IntelEntityType, entityId: string, ctx: GateContext, section?: 'notes' | 'fields'): Promise<{
   notes: IntelNoteRow[]
   fields: IntelCustomFieldRow[]
 }> {
   if (IS_MOCK || ctx.role === 'Client') return { notes: [], fields: [] }
   if (entityType === 'document') return { notes: [], fields: [] }
+  if (section === 'notes') return { notes: await loadIntelNotes(entityType, entityId, ctx), fields: [] }
   const key = entityType === 'client' ? 'client_id' : entityType === 'equipment' ? 'product_id' : 'booking_id'
-  const noteTable = entityType === 'rental' ? 'booking_notes' : 'intel_entity_notes'
   const [notesResult, definitionsResult, valuesResult] = await Promise.all([
-    supabase.from(noteTable as never).select('id, body, visibility, created_at').eq(key, entityId).is('archived_at', null).order('created_at', { ascending: false }).limit(30),
+    section === 'fields' ? Promise.resolve([]) : loadIntelNotes(entityType, entityId, ctx),
     supabase.from('intel_field_definitions' as never).select('id, field_key, label, classification, high_priority').eq('entity_type', entityType).is('archived_at', null),
     supabase.from('intel_field_values' as never).select('id, definition_id, value_text, created_at').eq(key, entityId).order('created_at', { ascending: false }),
   ])
-  if (notesResult.error) throw new Error(`Could not read Intel notes: ${notesResult.error.message}`)
   if (definitionsResult.error) throw new Error(`Could not read custom fields: ${definitionsResult.error.message}`)
   if (valuesResult.error) throw new Error(`Could not read custom field values: ${valuesResult.error.message}`)
-  const notes = ((notesResult.data ?? []) as unknown as RawNote[])
-    .filter((note) => visibleNote(note, ctx))
-    .map((note) => ({ id: note.id, body: note.body, visibility: note.visibility, createdAt: note.created_at }))
+  const notes = notesResult
   const values = new Map<string, string | null>()
   for (const value of (valuesResult.data ?? []) as unknown as RawValue[]) {
     if (!values.has(value.definition_id)) values.set(value.definition_id, value.value_text)

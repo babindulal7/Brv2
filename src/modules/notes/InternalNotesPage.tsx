@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/ui/Page'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useAuth } from '../../lib/auth'
 import { useOptionalToast } from '../../components/ui/Toast'
@@ -420,99 +421,76 @@ export default function InternalNotesPage() {
       />
 
       {/* Page Header */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-          borderBottom: '1px solid var(--border)',
-          paddingBottom: 16,
+      <PageHeader
+        title="Team Dispatch & Shift Notes"
+        description={`Live shift handovers, equipment alerts & field notices · ${nepaliDateStr}`}
+        search={{
+          value: searchTerm,
+          onChange: setSearchTerm,
+          placeholder: 'Search notes by keyword, booking ID, author, asset tag… (press /)',
         }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 'var(--r-sm)',
-                background: 'rgba(28, 92, 196, 0.1)',
-                color: 'var(--accent)',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <Icon name="message" size={20} />
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* View Mode Toggle */}
+            <div style={{ display: 'flex', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+              <button
+                type="button"
+                aria-pressed={viewMode === 'cards'}
+                className={`notes-view-btn ${viewMode === 'cards' ? 'is-active' : ''}`}
+                onClick={() => setViewMode('cards')}
+                title="Cards feed view"
+                style={{ minHeight: 44 }}
+              >
+                <Icon name="queues" size={14} />
+                Cards
+              </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === 'compact'}
+                className={`notes-view-btn ${viewMode === 'compact' ? 'is-active' : ''}`}
+                onClick={() => setViewMode('compact')}
+                title="Compact operations table view"
+                style={{ minHeight: 44 }}
+              >
+                <Icon name="checklist" size={14} />
+                Compact
+              </button>
             </div>
-            <div>
-              <h1 style={{ margin: 0, fontSize: 'var(--t-title)', fontWeight: 700, color: 'var(--text)' }}>
-                Team Dispatch & Shift Notes
-              </h1>
-              <div style={{ fontSize: 'var(--t-caption)', color: 'var(--muted)', marginTop: 2 }}>
-                Live shift handovers, equipment alerts & field notices · {nepaliDateStr}
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {/* View Mode Toggle */}
-          <div style={{ display: 'flex', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', overflow: 'hidden' }}>
-            <button
-              type="button"
-              className={`notes-view-btn ${viewMode === 'cards' ? 'is-active' : ''}`}
-              onClick={() => setViewMode('cards')}
-              title="Cards feed view"
-            >
-              <Icon name="queues" size={14} />
-              Cards
-            </button>
-            <button
-              type="button"
-              className={`notes-view-btn ${viewMode === 'compact' ? 'is-active' : ''}`}
-              onClick={() => setViewMode('compact')}
-              title="Compact operations table view"
-            >
-              <Icon name="checklist" size={14} />
-              Compact
-            </button>
-          </div>
-
-          <Button
-            variant="secondary"
-            onClick={() => setIsShiftBriefOpen(true)}
-            title="Open structured shift handover brief modal (WhatsApp/Telegram export)"
-            style={{ minHeight: 44 }}
-          >
-            <Icon name="copy" size={16} />
-            Shift Brief
-          </Button>
-
-          {stats.resolved > 0 && (
             <Button
               variant="secondary"
-              onClick={handleClearResolved}
-              title={`Archive ${stats.resolved} resolved notes`}
-              style={{ minHeight: 44, color: 'var(--muted)' }}
+              onClick={() => setIsShiftBriefOpen(true)}
+              title="Open structured shift handover brief modal (WhatsApp/Telegram export)"
+              style={{ minHeight: 44 }}
             >
-              <Icon name="archive" size={16} />
-              Clear Resolved ({stats.resolved})
+              <Icon name="copy" size={16} />
+              Shift Brief
             </Button>
-          )}
 
-          <Button
-            variant="secondary"
-            onClick={() => window.dispatchEvent(new CustomEvent('babin:open-notes'))}
-            title="Open quick drawer overlay (Alt+N)"
-            style={{ minHeight: 44 }}
-          >
-            <Icon name="external_link" size={16} />
-            Open in Drawer
-          </Button>
-        </div>
-      </div>
+            {stats.resolved > 0 && (
+              <Button
+                variant="secondary"
+                onClick={handleClearResolved}
+                title={`Archive ${stats.resolved} resolved notes`}
+                style={{ minHeight: 44, color: 'var(--muted)' }}
+              >
+                <Icon name="archive" size={16} />
+                Clear Resolved ({stats.resolved})
+              </Button>
+            )}
+
+            <Button
+              variant="secondary"
+              onClick={() => window.dispatchEvent(new CustomEvent('babin:open-notes'))}
+              title="Open quick drawer overlay (Alt+N)"
+              style={{ minHeight: 44 }}
+            >
+              <Icon name="external_link" size={16} />
+              Open in Drawer
+            </Button>
+          </div>
+        }
+      />
 
       {/* Metrics KPI Strip — Interactive Clickable Filters */}
       <div className="notes-metrics-grid">
@@ -794,6 +772,7 @@ export default function InternalNotesPage() {
                   <button
                     key={tab}
                     type="button"
+                    aria-pressed={statusFilter === tab}
                     onClick={() => setStatusFilter(tab)}
                     style={{
                       minHeight: 44,
@@ -816,6 +795,7 @@ export default function InternalNotesPage() {
               {/* Priority filter toggle */}
               <button
                 type="button"
+                aria-pressed={priorityFilter === 'urgent'}
                 onClick={() => setPriorityFilter(prev => prev === 'all' ? 'urgent' : 'all')}
                 style={{
                   minHeight: 44,
@@ -868,9 +848,10 @@ export default function InternalNotesPage() {
                   <button
                     key={cat}
                     type="button"
+                    aria-pressed={isActive}
                     onClick={() => setFilterCategory(cat)}
                     style={{
-                      minHeight: 32,
+                      minHeight: 44,
                       padding: '4px 12px',
                       borderRadius: 'var(--r-pill)',
                       border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
@@ -927,6 +908,7 @@ export default function InternalNotesPage() {
                   type="button"
                   onClick={() => setSelectedEntityFilter(null)}
                   style={{
+                    minHeight: 44,
                     background: 'none',
                     border: 'none',
                     color: 'var(--accent)',
@@ -1068,7 +1050,8 @@ export default function InternalNotesPage() {
                               onClick={() => handleToggleResolve(n.id)}
                               title={isResolved ? 'Reopen task' : 'Mark as done'}
                               style={{
-                                padding: '4px 8px',
+                                minHeight: 44,
+                                padding: '4px 10px',
                                 borderRadius: 'var(--r-sm)',
                                 border: '1px solid var(--border)',
                                 background: isResolved ? 'var(--surface-2)' : 'rgba(47, 158, 68, 0.08)',
@@ -1076,20 +1059,28 @@ export default function InternalNotesPage() {
                                 cursor: 'pointer',
                                 fontSize: '11px',
                                 fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
                               }}
                             >
                               {isResolved ? 'Reopen' : 'Done'}
                             </button>
                             <button
                               type="button"
+                              aria-label={n.pinned ? 'Unpin note' : 'Pin note'}
                               onClick={() => handleTogglePin(n.id)}
                               title={n.pinned ? 'Unpin' : 'Pin'}
                               style={{
+                                minWidth: 44,
+                                minHeight: 44,
                                 padding: '4px 6px',
                                 border: 'none',
                                 background: 'transparent',
                                 color: n.pinned ? 'var(--accent)' : 'var(--muted)',
                                 cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                               }}
                             >
                               <Icon name="bell" size={14} fill={Boolean(n.pinned)} />
@@ -1218,9 +1209,12 @@ export default function InternalNotesPage() {
                         {/* Pin and Delete Buttons */}
                         <button
                           type="button"
+                          aria-label={isPinned ? 'Unpin note' : 'Pin note to top'}
                           onClick={() => handleTogglePin(n.id)}
                           title={isPinned ? 'Unpin note' : 'Pin note to top'}
                           style={{
+                            minWidth: 44,
+                            minHeight: 44,
                             border: 'none',
                             background: 'transparent',
                             color: isPinned ? 'var(--accent)' : 'var(--muted)',
@@ -1236,9 +1230,12 @@ export default function InternalNotesPage() {
 
                         <button
                           type="button"
+                          aria-label="Delete note"
                           onClick={() => handleDelete(n.id)}
                           title="Delete note"
                           style={{
+                            minWidth: 44,
+                            minHeight: 44,
                             border: 'none',
                             background: 'transparent',
                             color: 'var(--muted)',
@@ -1294,7 +1291,8 @@ export default function InternalNotesPage() {
                               type="button"
                               onClick={() => setIsEditingEntitySelectorOpen(true)}
                               style={{
-                                padding: '3px 8px',
+                                minHeight: 44,
+                                padding: '3px 10px',
                                 borderRadius: 'var(--r-sm)',
                                 border: '1px solid var(--border)',
                                 background: 'var(--surface-2)',
@@ -1324,7 +1322,7 @@ export default function InternalNotesPage() {
                               background: 'var(--input-bg)',
                               color: 'var(--text)',
                               fontSize: '11px',
-                              minHeight: 36,
+                              minHeight: 44,
                             }}
                           >
                             {CATEGORIES.map(c => (
@@ -1342,7 +1340,7 @@ export default function InternalNotesPage() {
                               background: 'var(--input-bg)',
                               color: 'var(--text)',
                               fontSize: '11px',
-                              minHeight: 36,
+                              minHeight: 44,
                             }}
                           >
                             <option value="low">Low</option>
@@ -1392,13 +1390,16 @@ export default function InternalNotesPage() {
                                   onClick={() => setSelectedEntityFilter(ref)}
                                   title={`Filter all notes by ${ref}`}
                                   style={{
+                                    minHeight: 44,
                                     border: 'none',
                                     background: 'var(--surface-2)',
                                     color: 'var(--muted)',
                                     cursor: 'pointer',
-                                    padding: '2px 5px',
+                                    padding: '0 10px',
                                     borderRadius: 'var(--r-sm)',
                                     fontSize: '10px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
                                   }}
                                 >
                                   Filter
@@ -1443,8 +1444,8 @@ export default function InternalNotesPage() {
                             type="button"
                             onClick={() => handleToggleResolve(n.id)}
                             style={{
-                              minHeight: 36,
-                              padding: '0 10px',
+                              minHeight: 44,
+                              padding: '0 12px',
                               borderRadius: 'var(--r-sm)',
                               border: `1px solid ${isResolved ? 'var(--border)' : 'var(--success-border, rgba(47, 158, 68, 0.4))'}`,
                               background: isResolved ? 'var(--surface-2)' : 'rgba(47, 158, 68, 0.08)',
@@ -1468,8 +1469,8 @@ export default function InternalNotesPage() {
                               onClick={() => handleStartEdit(n)}
                               title="Edit note"
                               style={{
-                                minHeight: 36,
-                                padding: '0 8px',
+                                minHeight: 44,
+                                padding: '0 10px',
                                 borderRadius: 'var(--r-sm)',
                                 border: 'none',
                                 background: 'transparent',
@@ -1496,8 +1497,8 @@ export default function InternalNotesPage() {
                               }}
                               title="Copy text"
                               style={{
-                                minHeight: 36,
-                                padding: '0 8px',
+                                minHeight: 44,
+                                padding: '0 10px',
                                 borderRadius: 'var(--r-sm)',
                                 border: 'none',
                                 background: 'transparent',

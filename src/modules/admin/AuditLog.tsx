@@ -173,7 +173,7 @@ export default function AuditLog() {
           a session RLS refuses, so both render only past the restriction. */}
       {!restriction.restricted && (
         <>
-          <KpiStrip items={kpis} columns={4} />
+          <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           {/* §10.4's `[entity ▾][user ▾][date ▾]`. The only inputs on the page.
               Module is the schema's own entity vocabulary; the actor filter is

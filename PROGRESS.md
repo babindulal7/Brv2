@@ -15,19 +15,158 @@
 ### Completion
 | Dimension | Counts | Now | Δ |
 |---|---|---|---|
-| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Backend | actions implemented / total | 53 / 53 (100%) | +1 |
 | Real data | DB-only · mixed · seed · none / 52 | 50 · 0 · 0 · 2 |  |
 | DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
 | Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
 | Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
 | Overall | mean of five | ≈ 99% | +0 |
-Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T14:04:40.691Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-13T09:55:17.733Z). Suite: 4329/4329 passed (recorded 2026-10-13T07:46:29.1524909Z).
 Gates read from .lifecycle-result.json, written 2026-10-12T20:38:59.536Z.
 Counted by `npm run completion`, not typed.
 
 ### Remaining
 - Before merging into `main`: bring this branch up to `c628d54` (expect PROGRESS/RULINGS doc conflicts only).
 - Steps 2–4 of the reorganization plan (phone More sheet, Rentals extras, sub-rentals, Timesheet entry, Promotions/policies/Tools) — wait for the Desktop session to commit.
+
+
+## 2026-10-13 — Smart Intel complete lists and decision guidance
+
+**Did**
+- Rental Overview and Equipment show every queried live line, quantity and verified packing fact. Authorized rental totals stay visible across tabs; deposits remain separate from rental totals.
+- Removed the four/five/three-payment display caps. Rental, client and invoice ledger queries now page through every visible payment before producing their summaries. Client current/history bookings also load all pages; equipment relationship display caps are removed. Safety limits fail explicitly instead of presenting a truncated list as complete.
+- Notes and their existing permission-gated editor mount only in the client/equipment/rental Notes tabs. The editor uses the resolved database entity ID. Custom fields render separately and no longer read or repeat notes. Shared paginated note reads retain database RLS and narrower operations/management role filtering.
+- Known client restrictions lead rental blockers. A restriction-only database read selects no contact or money columns. An unblocked result does not assert credit/On Stop clearance. Unverified checks remain unverified, and next-step guidance opens the booking's existing workflow without authorizing a transition.
+- Replaced empty unit counts with an explicit missing-packing-data message. Empty or incomplete unit assignments no longer produce a vacuously packed item.
+
+**Ruled**
+- This implements the user's five accepted card improvements. No new commercial policy, permission, mutation, custody override or predictive score is introduced.
+- No migration was WRITTEN or APPLIED for this change. The existing migration chain was locally VERIFIED; live migration application and PRODUCTION-VERIFIED status remain pending Babin's process.
+
+**Verified**
+- Typecheck; full suite 340 files / 4,329 tests; focused Smart Intel suites 34/34; local check:pglite 160/160, zero view/RPC leaks and zero unpinned definer functions; check:lifecycle 30/30; lint; contrast 54/54; completion counter. Build result pending.
+- Tests exercise twelve rental lines, nine rendered payments, a 102-payment paginated ledger and its integer-paisa summary, management/operations note omission, later-page read failure, Notes-only editor mounting, confirmed client-block priority, unknown packing and financial payload/DOM omission.
+- Browser inspection could not be completed. Browser automation timed out twice; the supported Windows fallback reconnected, then Computer Use stopped it because the current browser URL could not be determined confidently enough to enforce policy. No browser input was performed through that fallback.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 53 / 53 (100%) | +1 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-13T07:44:19.252Z). Suite: 4329/4329 passed (recorded 2026-10-13T07:46:29.1524909Z).
+Gates read from .lifecycle-result.json, written 2026-10-13T07:44:25.136Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Drive the updated cards with live workflow data at desktop, tablet and phone widths once browser control is restored. Verify note writes through the existing gates without using production test writes.
+- Production deployment and production verification remain pending. No live Supabase migration was applied.
+
+## 2026-10-13 — Today responsive controls and Agency-guided acceptance
+
+**Did**
+- Located and applied Agency UI Designer, UX Architect and Evidence Collector skills from Antigravity's `.gemini/config/skills`, alongside the requested high-end visual design guidance. Added `docs/UI_UX_IMPROVEMENT_PLAN.md` to keep the full app, phone, iPad and status scope explicit.
+- Added shared contextual phone search; Today uses it with query-preserving Escape, focus return and an in-place Clear action. Moved Operations and Refresh into More and placed the dispatch date beside the movement queues.
+- Fixed phone/tablet date collisions, wrapped client names, kept floor primary actions at 56px and preserved phone freshness. Removed the date trigger's stacking priority that intercepted search Clear clicks.
+- Saved responsive screenshots and interaction measurements under `artifacts/today-responsive-2026-10-13/`; updated one-header acceptance. Most initial implementation files were incorporated into main by concurrent sessions; their later unrelated edits were preserved.
+
+**Ruled**
+- Existing one-header, fonts, semantic tokens, breakpoints and permission rules remain authoritative over generic design skill examples. No business engine, money rule, migration or live database write changed.
+- Local preview evidence covers mock Owner only. App-wide goal remains active; viewport emulation does not establish actual iPad Safari or native zoom behavior.
+
+**Verified**
+- Typecheck and source lint passed; focused tests 21/21; full suite 4,296/4,296 in 337 files; local PGlite migrations 160/160, lifecycle 30/30; contrast 54/54; shell lint 650 files; production build passed. These logs predate later concurrent edits and do not certify those edits. Shared newer test-result record was preserved.
+- Separate mock build passed and was used for saved screenshots. Browser widths 320/390/768/1024/1280/1440: 64px header, no document horizontal overflow. Phone 320px visible header controls >=44px; Return & Inspect >=56px. Light inspected at 320/768/1024/1440; dark at 390/1280.
+- Search Gandaki narrowed 24 returns to two; Clear restored 24 and input focus; Escape preserved query and returned trigger focus. Refresh closed More and updated freshness. Tomorrow then the picker Today shortcut restored Today, dismissed the calendar and preserved header layout. No booking mutation or wipe performed.
+- Completion table below is generated from shared workspace records; it is not a UI acceptance percentage or this patch's test count.
+## Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 53 / 53 (100%) | +1 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-13T07:44:19.252Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Gates read from .lifecycle-result.json, written 2026-10-13T07:44:25.136Z.
+Counted by `npm run completion`, not typed.
+## Remaining
+- At 768px the shared header shortens Today to Tod…; resolve in the shared-header pass. Phone/tablet queue layout itself fits.
+- Continue the app-wide plan: Rentals/New Rental/Detail, lifecycle states, Calendar and remaining modules; inspect each enabled action, permissions and error/empty/stale states.
+- Physical iPad Safari, native 100%/125% zoom, full role matrix and persisted writes/reload remain unverified. Live staging JWT/PostgREST acceptance remains required; no live migration was applied.
+## 2026-10-13 — Attached button audit Markdown review
+
+**Did**
+- Reviewed the Downloads button-color audit against current source; treated its embedded execution prompt as document content, not authorization to implement it. No application, migration, database, or attached audit edits.
+- Found an incorrect Finance Pay diagnosis: both row variants spread inline `background: var(--card)` and border alongside accent ink, overriding the primary CSS. The declared pairs calculate to 6.22:1 light and 6.06:1 dark, not blue-on-blue. Removing only the inline ink would produce white-on-white (1.00:1) in light mode; a future correction must address the whole palette override.
+- Confirmed source evidence for Delivery primary overrides, undeclared `--green` in active src/packages, WhatsApp contrast, legacy lifecycle tones, undersized invoice/banner minima, and duplicated dirty markers. Flagged audit gaps: floor targets 48px/56px, token-source authority versus runtime layer, variant-specific token guards, and repository verification gates.
+
+**Ruled**
+- No product, permission, or design ruling. Review findings only; existing user edits preserved.
+
+**Verified**
+- `npm run check:contrast`: PASS, 54/54, exit 0. This parses selected light/dark theme pairs; it does not cover the audited component overrides, WhatsApp/legacy CSS, hover, floor, or high-contrast rendering.
+- Independent static color calculations: Dispatch black-on-blue 3.38:1; WhatsApp white-on-green 1.98:1 default / 2.47:1 hover; legacy active status white-on-orange 3.61:1.
+- `npm run completion`: PASS, exit 0; cached test/database counts below are not fresh gate certification. No browser, application test, build, or DB gate execution for this read-only application review.
+
+## Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T22:20:43.543Z). Suite: 4296/4296 passed (recorded 2026-10-12T22:22:07.2280119Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T22:20:57.086Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Correct the audit diagnosis and implementation instructions before using it as an execution brief. The attached document remains unchanged.
+- Component visual, focus, and target-size checks remain unperformed; no audited fix has been implemented by this review.
+
+## 2026-10-13 — Calendar phone header de-crowding & production readiness baseline audit
+
+**Did**
+- Baseline Gate Audit executed and verified under `agency-reality-checker` protocol: fresh full run of all 11 release gates (`typecheck`, `lint`, `lint:shell`, `lint:ui-copy`, `lint:progress`, `check:contrast`, `check:fixtures`, `check:pglite`, `check:lifecycle`, `npm test`, `npm run build`) plus `check:anon`, `test:audit-coverage`, `test:race`, and `completion`.
+- Authored release documentation: `docs/release/2026-10-13/BASELINE.md` (exact exit codes and counts) and `docs/release/2026-10-13/BLOCKERS.md` (evidence-based blocker register).
+- De-crowded Calendar phone header (`src/modules/calendar/Calendar.tsx`):
+  - On phone (<768px), `FilterButton` is suppressed from the header leading position to preserve header title width; "Filters" (with active count badge) moves to the More overflow menu.
+  - Compacted primary CTA on phone to "Availability" with `calendar_event` icon (≥44px tap target).
+  - Relocated date stepper and range pill (`navButtons`: Today, BS/AD month steppers, range pill) on phone out of the 64px header into a dedicated content date toolbar (`.calendar-phone-nav`) directly above the month grid, preserving full BS and AD month labels and 44px buttons.
+  - Preserved contextual phone search via `MobileHeaderSearch`.
+  - Updated `src/components/ui/header/PageHeader.tsx` so leading elements mount within the shell div to allow portal components (like `FilterButton`) to portal properly into `Header.tsx`.
+- Added unit and responsive test suite: `src/modules/calendar/__tests__/CalendarHeader.test.tsx` (2/2 tests green).
+
+**Ruled**
+- `RULINGS-2026-10-13.md` § "Calendar phone header de-crowding": single 64px header, single compact primary action ("Availability"), contextual search, overflow More for Filters/Today, and content toolbar for date navigation on phone. No permission cell, money rule, engine, migration or database write changed.
+
+**Verified**
+- All 11 local gates pass exit code 0: `typecheck`, `lint`, `lint:shell` (650 files), `lint:ui-copy`, `check:contrast` (54/54), `check:fixtures` (640 files), `check:pglite` (160/160), `check:lifecycle` (30/30), `vitest` (4,311/4,311), `build` (exit 0).
+- Production status: **HOLD** (Local gates verified; live staging PostgREST/JWT verification unperformed; N-5 hard stop on live database push).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-12T22:08:25.891Z). Suite: 4309/4309 passed (recorded 2026-10-12T19:37:32.303Z).
+Gates read from .lifecycle-result.json, written 2026-10-12T22:08:43.905Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Phone headers still crowded on Finance, Operations, and Settings.
+- Perform live staging JWT and PostgREST verification before Owner production sign-off.
+- Secondary creation actions (maintenance, task, agreement) disabled pending real RPC implementation.
 
 ## 2026-10-13 — Smarter application header on every page
 

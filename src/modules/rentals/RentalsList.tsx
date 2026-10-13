@@ -1495,6 +1495,7 @@ export default function RentalsList() {
       rowCount: rows.length,
       columns: columns.map((c) => c.head),
       filter: savedViewQuery,
+      scope: selectedIds.size > 0 ? 'selected_page_rows' : 'current_page',
     })
     const csv = [columns.map((c) => csvCell(c.head)).join(','), ...rows.map((r) => columns.map((c) => csvCell(c.cell(r))).join(','))].join('\r\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -2657,6 +2658,7 @@ export default function RentalsList() {
           {
             id: 'bulk-export',
             label: 'Export CSV',
+            title: 'Export selected rows on this page, using the visible columns',
             icon: 'download',
             onClick: handleBulkExport,
             disabled: bulkProcessing,

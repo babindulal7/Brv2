@@ -363,11 +363,15 @@ function KpiCard({ c }: { c: CardModel }) {
 /* ── page ──────────────────────────────────────────────────────────────── */
 
 export default function Pulse() {
+  const money = useCanViewMoney()
   if (!IS_MOCK) return (
     <PageShell>
       <PageHeader title="Pulse" description="Business overview" />
       <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-md)' }}>
-        {['Revenue', 'Cash', 'Equipment utilisation', 'Exceptions'].map((label) => <Card key={label} title={label}><p style={{ margin: 0, color: 'var(--muted)' }}>Not tracked yet.</p></Card>)}
+        {(money
+          ? ['Revenue', 'Cash', 'Equipment utilisation', 'Exceptions']
+          : ['Equipment utilisation', 'Exceptions']
+        ).map((label) => <Card key={label} title={label}><p style={{ margin: 0, color: 'var(--muted)' }}>Not tracked yet.</p></Card>)}
       </section>
       <Card title="Reports"><p style={{ margin: 0 }}>Open a report to see recorded invoices, collections, and rental activity.</p><Link to="/finance?tab=reports" style={{ color: 'var(--link)', display: 'inline-block', padding: '12px 0', minHeight: 44 }}>Browse reports</Link></Card>
     </PageShell>

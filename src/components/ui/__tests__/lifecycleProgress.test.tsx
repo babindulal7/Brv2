@@ -42,6 +42,19 @@ describe('LifecycleProgress banner delegates to getRentalPrimaryAction', () => {
   it('keeps its progress-track presentation independent of the action', () => {
     expect(getUniversalNextAction('Booked').stageIndex).toBe(1)
     expect(getUniversalNextAction('On Rent').currentStage).toBe('Return')
-    expect(getUniversalNextAction('Closed').badgeTone).toBe('neutral')
+    expect(getUniversalNextAction('Closed').badgeTone).toBe('dim')
+  })
+
+  it.each([
+    ['Draft', 'neutral'], ['Booked', 'primary'], ['Preparing', 'progress'],
+    ['Packed', 'progress'], ['On Rent', 'out'], ['Partial Return', 'progress'],
+    ['Returned', 'in'], ['Inspection Complete', 'progress'], ['Reset Complete', 'progress'],
+    ['Closed', 'dim'], ['Cancelled', 'danger'], ['Void', 'dim'],
+  ])('paints %s with the operational %s meaning', (status, tone) => {
+    expect(getUniversalNextAction(status).badgeTone).toBe(tone)
+  })
+
+  it('prioritizes an overdue alarm over the partial-return warning', () => {
+    expect(getUniversalNextAction('On Rent', { isOverdue: true, isPartial: true }).badgeTone).toBe('danger')
   })
 })

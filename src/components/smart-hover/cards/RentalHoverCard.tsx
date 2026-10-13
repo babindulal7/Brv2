@@ -4,8 +4,9 @@
  * Readiness and packing stay separate (§34); blockers lead (§39).
  */
 
-import { useState } from 'react'
-import { handoverBlockedReason, packingProgress, sortTxNewestFirst } from '../../../lib/smartHover'
+import { useState, type ReactNode } from 'react'
+import { handoverBlockedReason, packingProgress, sortTxNewestFirst, rentalIntelChecks, rentalIntelNextStep } from '../../../lib/smartHover'
+import { formatMoney, type Paisa } from '../../../lib/money'
 import { PACKING_TONE } from '../entityStatusColors'
 import { STATUS } from '../../../lib/status'
 import { SmartHoverTabs } from '../SmartHoverShell'
@@ -17,14 +18,18 @@ export function RentalHoverCard({
   preview,
   canViewFinance,
   defaultTab,
+  notesContent,
   onAction,
   onOpenClient,
+  onOpenBooking,
 }: {
   preview: RentalPreview
   canViewFinance: boolean
   defaultTab: string
+  notesContent?: ReactNode
   onAction?: (id: string) => void
   onOpenClient?: () => void
+  onOpenBooking?: () => void
 }) {
   const [tab, setTab] = useState(defaultTab)
   const progress = packingProgress(preview.packing.lines)
@@ -32,6 +37,7 @@ export function RentalHoverCard({
   const beforeHandover = preview.stage === 'Quote' || preview.stage === 'Booked' || preview.stage === 'Packed'
   const tone = STATUS[PACKING_TONE[preview.packing.status] ?? 'neutral']
   const safeTone = tone ?? STATUS.neutral
+  const total = preview.rentalTotalPaisa ?? preview.payments?.summary.totalPaisa
 
   return (
     <div>
@@ -47,10 +53,11 @@ export function RentalHoverCard({
           {preview.clientName} ›
         </button> : <div>{preview.clientName}</div>}
         <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{preview.pickupAt} → {preview.returnAt}</span>{preview.rentalDays === null ? '' : ` · ${preview.rentalDays} rental day${preview.rentalDays === 1 ? '' : 's'}`}</div>
+        {canViewFinance && total !== undefined ? <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8 }}><span>Rental total</span><strong className="figure">{formatMoney(total as Paisa)}</strong></div> : null}
         {beforeHandover && blocked ? (
           <p role={blocked === 'Readiness verification unavailable' ? 'status' : 'alert'} style={{ margin: '6px 0 0', fontSize: 13, color: blocked === 'Readiness verification unavailable' ? 'var(--muted)' : 'var(--danger-text)' }}>{blocked === 'Readiness verification unavailable' ? 'Handover readiness not verified' : `🔴 Handover blocked — ${blocked}`}</p>
         ) : (
-          <p style={{ margin: '6px 0 0', fontSize: 13 }}>Packing {progress.packed} / {progress.total}</p>
+          <p style={{ margin: '6px 0 0', fontSize: 13 }}>{progress.total > 0 ? `Packing ${progress.packed} / ${progress.total}` : 'No assigned unit packing data'}</p>
         )}
       </div>
       <SmartHoverTabs
@@ -69,27 +76,19 @@ export function RentalHoverCard({
           <div style={{ fontSize: 13, display: 'grid', gap: 8 }}>
             {beforeHandover ? <section aria-label="Readiness">
               <h4 style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: 'var(--muted)', margin: '0 0 4px' }}>READINESS</h4>
-              <ReadinessRow ok={preview.readiness.equipmentReady} label="Equipment reserved" />
-              <ReadinessRow ok={preview.readiness.packingReady} label={`Packing ${progress.packed} / ${progress.total}`} />
-              <ReadinessRow ok={preview.readiness.paymentReady} label="Payment cleared" />
-              <ReadinessRow ok={preview.readiness.depositReady} label="Deposit satisfied" />
-              <ReadinessRow ok={preview.readiness.contractReady} label="Contract signed" />
-              <ReadinessRow ok={preview.readiness.clientAllowed} label="Client allowed" />
+              {rentalIntelChecks(preview.readiness).map(check => <ReadinessRow key={check.label} ok={check.ok} label={check.label} />)}
             </section> : <p style={{ margin: 0 }}>Stage: {preview.stage}. Handover readiness applies before pickup.</p>}
+            <p style={{ margin: 0 }}><strong>Next: </strong>{rentalIntelNextStep(preview.stage, preview.readiness)}</p>
+            {onOpenBooking ? <button type="button" onClick={onOpenBooking} style={{ minHeight: 44, color: 'var(--link)', border: 'none', background: 'transparent', textAlign: 'left' }}>Review booking</button> : null}
+            <RentalItems equipment={preview.equipment} />
           </div>
         ) : null}
         {tab === 'equipment' ? (
-          <ul style={{ margin: 0, padding: 0 }}>
-            {preview.equipment.map((e, i) => (
-              <li key={`${e.label}-${i}`} style={{ listStyle: 'none', padding: '6px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
-                {e.packed === true ? '✓ ' : e.packed === false ? '○ ' : ''}{e.qty}× {e.label}
-              </li>
-            ))}
-          </ul>
+          <RentalItems equipment={preview.equipment} />
         ) : null}
         {tab === 'packing' ? (
           <div style={{ display: 'grid', gap: 10 }}>
-            <PackingBar packed={progress.packed} total={progress.total} />
+            {progress.total > 0 ? <PackingBar packed={progress.packed} total={progress.total} /> : <p role="status" style={{ margin: 0 }}>No assigned unit packing data. Open the booking to verify quantities and packing requirements.</p>}
             {progress.blocked > 0 ? (
               <p role="alert" style={{ margin: 0, fontSize: 13, color: 'var(--danger-text)' }}>🔴 {progress.blocked} blocked line{progress.blocked === 1 ? '' : 's'} need action</p>
             ) : null}
@@ -109,7 +108,7 @@ export function RentalHoverCard({
             <div style={{ display: 'grid', gap: 10 }}>
               <PaymentSummary summary={preview.payments.summary} showDepositHeld={preview.payments.depositHeldVerified !== false} />
               <ul style={{ margin: 0, padding: 0 }}>
-                {sortTxNewestFirst(preview.payments.history).slice(0, 4).map((t) => <PaymentTransactionRow key={t.id} t={t} />)}
+                {sortTxNewestFirst(preview.payments.history).map((t) => <PaymentTransactionRow key={t.id} t={t} />)}
               </ul>
               {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer', textAlign: 'left' }} onClick={() => onAction('view_ledger')}>View full ledger</button> : null}
             </div>
@@ -118,7 +117,7 @@ export function RentalHoverCard({
           )
         ) : null}
         {tab === 'notes' ? (
-          <div>
+          notesContent ?? <div>
             <ul style={{ margin: 0, padding: 0 }}>
               {preview.notes.map((n) => (
                 <li key={n.id} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
@@ -133,6 +132,16 @@ export function RentalHoverCard({
       </div>
     </div>
   )
+}
+
+function RentalItems({ equipment }: { equipment: RentalPreview['equipment'] }) {
+  return <section aria-label="Rental items">
+    <h4 style={{ fontSize: 13, margin: '8px 0' }}>All items · {equipment.length} line{equipment.length === 1 ? '' : 's'}</h4>
+    <ul style={{ margin: 0, padding: 0 }}>{equipment.map((item, index) => <li key={`${item.label}-${index}`} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13, overflowWrap: 'anywhere' }}>
+      <span className="figure">{item.qty}× </span>{item.label}{item.packed !== undefined ? <span style={{ color: 'var(--muted)' }}> · {item.packed ? 'Packed' : 'Packing pending'}</span> : null}
+    </li>)}</ul>
+    {equipment.length === 0 ? <p style={{ color: 'var(--muted)' }}>No item lines recorded.</p> : null}
+  </section>
 }
 
 function ReadinessRow({ ok, label }: { ok: boolean | null; label: string }) {

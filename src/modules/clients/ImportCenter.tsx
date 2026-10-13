@@ -7,62 +7,29 @@ import { Card, Button, KpiStrip, FooterNote, cardStyle } from '../../components/
 import { ScreenHeader } from '../../components/ui/ScreenHeader'
 import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
-import { Unavailable } from '../../components/ui/Unavailable'
+import { RestrictedState } from '../../components/ui/StateViews'
+import { UnsavedLeaveDialog, useUnsavedRecord } from '../../components/ui/RecordWorkspace'
+import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
+import { useViewport } from '../../lib/device'
+import { newClientUuid } from '../../lib/supabase'
+import { importClients, type ClientImportEntry, type ClientImportOutcome } from '../../actions/clients/importClients'
 import { parseCsv, csvCell } from '../../lib/csv'
 import {
   IMPORT_TARGET_FIELDS,
   IMPORT_SAMPLE_HEADERS,
   IMPORT_SAMPLE_ROW,
   guessTargetField,
-  buildImportRow,
+  buildImportPreview,
+  importMappingErrors,
+  importClientValues,
+  canImportClients,
   type ImportTargetField,
   type ImportRowResult,
 } from '../../lib/clientImport'
 import { findClientMatches, type ClientRecord } from '../../lib/queries/clients'
 
-/**
- * Import Center — the last confirmed Clients gap from this session's audit
- * reconciliation (`PLAN.md §6.4`). Upload → map columns → preview & validate
- * → **stop**. Parsing, mapping-guesses and per-row validation are all real
- * (`lib/csv.ts`, `lib/clientImport.ts`), and duplicate matching runs against
- * the DATABASE: the file's phones and emails go to `client_directory_v` as a
- * server-side filter (`findClientMatches`, Law 2) and `buildImportRow` then
- * does the exact match over the candidates that came back. The 26-row
- * `CLIENTS_DATA` seed this screen used to match against is gone from it —
- * a CSV row duplicating a *real* client is now flagged, and the flag can only
- * ever name a client that exists (docs/pages/42 §7.3). The commit step
- * is not connected, and no longer pretends to be.
- *
- * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
- * section D — this screen was the worst entry in it). `runImport` called **no
- * action at all**. It was a bare `window.setTimeout(…, 700)` that flipped
- * `setImported(true)`, fired `showSuccessToast('Import complete', …)` quoting
- * the *real* parsed counts, and then navigated to `/clients`.
- *
- * That is credible precisely because the numbers are the operator's own file:
- * they map 340 rows, review the preview, press Import, read "312 clients
- * imported · 19 skipped for errors · 9 flagged as possible duplicates", land on
- * the client list — and archive or delete the source CSV. Zero clients were
- * created. The CSV was the only copy of those 312 records.
- *
- * There is no import action to wire this to: `src/actions/clients/` holds
- * `createClient`, `updateClient`, `blockClient` and `mergeClients`, and nothing
- * that creates clients from a file. Inventing one is a build, not a fix. So the
- * screen states the gap instead — a visible, disabled affordance with its reason
- * attached (`components/ui/Unavailable.tsx`, the codebase's existing
- * "grey it out, but say why" control) plus a persistent line in the commit bar,
- * because a `title`-only reason is invisible on the touch devices this app runs
- * on. No toast, no `setImported`, and deliberately **no `navigate('/clients')`**:
- * landing on the client list is this app's universal "the write landed" signal.
- */
-
-/**
- * Short form, for the disabled button's tooltip/long-press popover — that
- * popover is capped at 220px wide, so the full explanation lives in the commit
- * bar's persistent line instead of here.
- */
-const IMPORT_UNAVAILABLE_REASON =
-  'Import is not connected in this build — no client-import action exists, so nothing can be created.'
+/** CSV imports use the shared transactional client save, with one receipt key per row. */
 
 /* Law 15 — hit area, not paint; the number comes from `--tap`. The one
    consumer is the Maps To select in the mapping preview, one per column and
@@ -93,9 +60,31 @@ export interface ImportCenterProps {
   embedded?: boolean
 }
 
-export default function ImportCenter({ embedded = false }: ImportCenterProps = {}) {
+export default function ImportCenter(props: ImportCenterProps = {}) {
+  const { user } = useAuth()
+  if (!user || !canImportClients(user.role)) return <RestrictedState />
+  return <ClientImportForm key={user.id} {...props} />
+}
+
+function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
+  const viewport = useViewport()
+  const { user } = useAuth()
+  const online = useNetwork()
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileVersion = useRef(0)
+  const submitGuard = useRef(false)
+  const stopRequested = useRef(false)
+  const [batch, setBatch] = useState<ClientImportEntry[] | null>(null)
+  const [outcomes, setOutcomes] = useState<ClientImportOutcome[]>([])
+  const [busy, setBusy] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const [commitError, setCommitError] = useState('')
+  const [duplicateRetry, setDuplicateRetry] = useState(0)
+  const locked = busy || batch !== null
+  const savedCount = outcomes.filter(row => row.status === 'saved').length
+  const unresolved = batch !== null && savedCount < batch.length
+  useUnsavedRecord(busy || unresolved)
 
   const [fileName, setFileName] = useState<string | null>(null)
   const [rawRows, setRawRows] = useState<string[][]>([])
@@ -128,7 +117,8 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
   const mappedFields = useMemo(() => new Set(Object.values(mapping)), [mapping])
   const nameMapped = Array.from(mappedFields).includes('name')
   const phoneMapped = Array.from(mappedFields).includes('phone')
-  const readyToPreview = nameMapped && phoneMapped
+  const mappingErrors = useMemo(() => importMappingErrors(headers, mapping), [headers, mapping])
+  const readyToPreview = nameMapped && phoneMapped && mappingErrors.length === 0
 
   /**
    * Fetch the duplicate corpus for the current file + mapping: every value in
@@ -174,39 +164,76 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
     return () => {
       cancelled = true
     }
-  }, [dataRows, mapping, readyToPreview])
+  }, [dataRows, mapping, readyToPreview, duplicateRetry])
 
   const results: ImportRowResult[] = useMemo(() => {
     if (!readyToPreview) return []
-    return dataRows.map((row, i) => {
-      const raw = {} as Record<ImportTargetField, string>
-      IMPORT_TARGET_FIELDS.forEach((f) => {
-        raw[f.key] = ''
-      })
-      row.forEach((value, colIndex) => {
-        const target = mapping[colIndex]
-        if (target && target !== 'skip') raw[target] = value
-      })
-      // The duplicate corpus is the DIRECTORY MATCHES fetched above, not a
-      // seed array. While the check is in flight (or failed) it is empty and
-      // the page says so beside the preview — a row is never silently marked
-      // "Ready" as if the directory had been consulted when it had not.
-      return buildImportRow(raw, i, dupMatches ?? [])
-    })
-  }, [dataRows, mapping, readyToPreview, dupMatches])
+    return buildImportPreview(dataRows, mapping, dupMatches ?? [], skippedRows)
+  }, [dataRows, mapping, readyToPreview, dupMatches, skippedRows])
 
-  const readyRows = results.filter((r) => r.errors.length === 0 && !skippedRows.has(r.rowIndex))
-  const errorRows = results.filter((r) => r.errors.length > 0)
-  const duplicateRows = results.filter((r) => r.duplicateOf && r.errors.length === 0)
+  const includedRows = results.filter(row => !row.skip)
+  const readyRows = includedRows.filter(row => row.errors.length === 0 && !row.duplicateOf && row.record)
+  const errorRows = includedRows.filter(row => row.errors.length > 0)
+  const duplicateRows = includedRows.filter(row => row.duplicateOf && row.errors.length === 0)
+  const commitReady = readyToPreview && dupMatches !== null && !dupChecking && !dupCheckError &&
+    errorRows.length === 0 && duplicateRows.length === 0 && readyRows.length > 0 && !parseError
+  const ignoredColumns = headers.filter((_, index) => !mapping[index] || mapping[index] === 'skip').length
+
+  async function runImport() {
+    if (submitGuard.current || !user || !online || (!batch && !commitReady)) return
+    submitGuard.current = true
+    stopRequested.current = false
+    setStopping(false)
+    setBusy(true)
+    setCommitError('')
+    const prepared = batch ?? readyRows.map(row => ({
+      rowIndex: row.rowIndex, clientUuid: newClientUuid(), values: importClientValues(row.record!),
+    }))
+    setBatch(prepared)
+    setOutcomes(previous => {
+      const byIndex = new Map(previous.map(row => [row.rowIndex, row]))
+      return prepared.map(row => byIndex.get(row.rowIndex) ?? { rowIndex: row.rowIndex, status: 'pending' })
+    })
+    const confirmed = new Set(outcomes.filter(row => row.status === 'saved').map(row => row.rowIndex))
+    const remaining = prepared.filter(row => !confirmed.has(row.rowIndex))
+    function update(next: readonly ClientImportOutcome[]) {
+      setOutcomes(previous => {
+        const byIndex = new Map(previous.map(row => [row.rowIndex, row]))
+        next.forEach(row => byIndex.set(row.rowIndex, row))
+        return prepared.map(row => byIndex.get(row.rowIndex) ?? { rowIndex: row.rowIndex, status: 'pending' })
+      })
+    }
+    try {
+      const result = await importClients({
+        rows: remaining, onProgress: update, shouldStop: () => stopRequested.current,
+      }, { userId: user.id, role: user.role, isOnline: online })
+      update(result.outcomes)
+    } catch (error: unknown) {
+      setCommitError(error instanceof Error ? error.message : 'The import could not finish. Your file and mappings are still here.')
+    } finally {
+      setBusy(false)
+      setStopping(false)
+      submitGuard.current = false
+    }
+  }
 
   function handleFile(file: File) {
+    if (busy) return
+    const version = ++fileVersion.current
+    setFileName(null)
+    setRawRows([])
+    setBatch(null)
+    setOutcomes([])
+    setCommitError('')
+    setDupMatches(null)
     setParseError(null)
     setMapping({})
     setSkippedRows(new Set())
     file
       .text()
       .then((text) => {
-        const parsed = parseCsv(text)
+        if (version !== fileVersion.current) return
+        const parsed = parseCsv(text.replace(/^\uFEFF/, ''))
 
         /*
          * ⛔ A file the parser could not read must not reach the mapping step.
@@ -236,10 +263,16 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
         })
         setMapping(guesses)
       })
-      .catch(() => setParseError('Could not read that file — make sure it is a plain-text CSV.'))
+      .catch(() => { if (version === fileVersion.current) setParseError('Could not read that file — make sure it is a plain-text CSV.') })
   }
 
   function reset() {
+    if (busy) return
+    fileVersion.current += 1
+    setBatch(null)
+    setOutcomes([])
+    setCommitError('')
+    setDupMatches(null)
     setFileName(null)
     setRawRows([])
     setMapping({})
@@ -266,7 +299,7 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
         embedded={embedded}
         icon="upload"
         title="Import Clients"
-        description="Upload a CSV, map its columns and validate every row. Committing the import is not connected yet — nothing here creates a client."
+        description="Upload a CSV, review the columns and save the selected clients. Existing clients are never overwritten."
         actions={
           !embedded ? (
             <Button icon="external_link" onClick={() => navigate('/clients')}>
@@ -293,6 +326,9 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
             onClick={() => fileInputRef.current?.click()}
             role="button"
             tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click() }
+            }}
             style={{
               border: `1.5px dashed ${dragOver ? 'var(--nav-active-accent)' : 'var(--border)'}`,
               borderRadius: 10,
@@ -343,7 +379,8 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
               fontWeight: 600,
               cursor: 'pointer',
               fontFamily: 'inherit',
-              padding: 0,
+              padding: '8px 0',
+              minHeight: 44,
             }}
           >
             <Icon name="download" size={14} />
@@ -365,13 +402,14 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   <input
                     type="checkbox"
+                    disabled={locked}
                     checked={hasHeaderRow}
                     onChange={(e) => setHasHeaderRow(e.target.checked)}
                     style={{ accentColor: 'var(--nav-active-accent)' }}
                   />
                   First row is headers
                 </label>
-                <Button icon="close" onClick={reset}>
+                <Button icon="close" onClick={reset} disabled={busy}>
                   Choose Different File
                 </Button>
               </div>
@@ -395,7 +433,8 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                         <td style={{ ...td, color: 'var(--muted)' }}>{dataRows[0]?.[colIndex] || '—'}</td>
                         <td style={td}>
                           <Select
-                            aria-label={`Map column ${h || `Column ${colIndex + 1}`}`}
+                            aria-label={`Map column ${colIndex + 1}: ${h || "unnamed"}`}
+                            disabled={locked}
                             value={mapping[colIndex] ?? 'skip'}
                             onChange={(e) => setMapping((prev) => ({ ...prev, [colIndex]: e.target.value as ImportTargetField }))}
                             style={{ ...inputStyle, width: '100%' }}
@@ -412,6 +451,12 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                   </tbody>
                 </table>
               </DataTableShell>
+              <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                {headers.length} columns retained. {ignoredColumns} skipped column{ignoredColumns === 1 ? '' : 's'} will not be saved.
+                Blank columns remain available to map. Client type defaults to Organisation / Production House when omitted.
+                Membership is managed separately after import.
+              </p>
+              {mappingErrors.map(message => <p key={message} role="alert" style={{ color: 'var(--danger-text)' }}>{message}</p>)}
               {!readyToPreview && (
                 <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon name="error" size={13} />
@@ -423,7 +468,7 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
 
           {readyToPreview && (
             <>
-              <KpiStrip items={kpis} columns={kpis.length} />
+              <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : kpis.length} />
 
               {/* The state of the directory check, stated beside the preview it
                   qualifies. In-flight is a fact, not an error; a failed check is
@@ -454,6 +499,7 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                     <strong>not checked against the client directory</strong>, so a row marked Ready may still duplicate
                     an existing client.
                   </span>
+                  <Button onClick={() => setDuplicateRetry(value => value + 1)} disabled={busy}>Retry duplicate check</Button>
                 </p>
               )}
 
@@ -473,12 +519,15 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                     <tbody>
                       {results.map((r) => {
                         const skipped = skippedRows.has(r.rowIndex)
+                        const outcome = outcomes.find(row => row.rowIndex === r.rowIndex)
                         return (
                           <tr key={r.rowIndex} style={{ borderBottom: '1px solid var(--border)', opacity: skipped ? 0.5 : 1 }}>
                             <td style={{ ...td, width: 30 }}>
                               <input
                                 type="checkbox"
-                                aria-label={`Include row ${r.rowIndex} (${r.record?.name || 'unnamed'})`}
+                                aria-label={`Include row ${r.rowIndex + 1} (${r.record?.name || "unnamed"})`}
+                                disabled={locked}
+                                style={{ accentColor: "var(--nav-active-accent)", minWidth: 44, minHeight: 44 }}
                                 checked={!skipped}
                                 onChange={() =>
                                   setSkippedRows((prev) => {
@@ -488,7 +537,6 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                                     return next
                                   })
                                 }
-                                style={{ accentColor: 'var(--nav-active-accent)' }}
                               />
                             </td>
                             <td className="figure" style={{ ...td, color: 'var(--muted)' }}>
@@ -498,7 +546,15 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                             <td className="figure" style={td}>{r.record?.phone || '—'}</td>
                             <td style={{ ...td, color: 'var(--text2)' }}>{r.record?.clientType ?? '—'}</td>
                             <td style={td}>
-                              {r.errors.length > 0 ? (
+                              {outcome?.status === 'saved' ? (
+                                <span style={{ color: 'var(--success-text)' }}><Icon name="check" size={14} /> Saved <Link to={`/clients/${outcome.clientId}`}>{outcome.clientCode}</Link></span>
+                              ) : outcome && outcome.status !== 'pending' ? (
+                                <span role="alert" style={{ color: 'var(--danger-text)' }}>{outcome.message}</span>
+                              ) : outcome?.status === 'pending' ? (
+                                <span>Waiting to save</span>
+                              ) : skipped ? (
+                                <span>Skipped by you</span>
+                              ) : r.errors.length > 0 ? (
                                 <div>
                                   {r.errors.map((e) => (
                                     <div key={e} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, color: 'var(--danger-text)', fontSize: 'var(--t-th)' }}>
@@ -524,6 +580,8 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                                     </div>
                                   ))}
                                 </div>
+                              ) : !dupCheckDone || dupChecking ? (
+                                <span>Checking duplicates…</span>
                               ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--success-text)', fontSize: 'var(--t-th)', fontWeight: 600 }}>
                                   <Icon name="checklist" size={12} />
@@ -539,46 +597,43 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                 </DataTableShell>
               </Card>
 
-              {/* The commit bar. It used to say how many rows "will be imported"
-                  beside a button that imported none of them; it now states the
-                  gap and keeps stating it. Law 12 — errors are inline and
-                  persistent, never a toast (`useToast()` exposes only
-                  `showSuccessToast`, and there is nothing successful here). */}
-              <section style={{ ...cardStyle, padding: 'var(--sp-lg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
-                <p
-                  style={{
-                    margin: 0,
-                    maxWidth: 620,
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 7,
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    color: 'var(--danger-text)',
-                    lineHeight: 1.45,
-                  }}
-                >
-                  <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                  <span>
-                    Import is not connected, so this file cannot be committed. {readyRows.length} row
-                    {readyRows.length === 1 ? '' : 's'} passed validation, but no client-import action exists in this
-                    build (nothing under <code>src/actions/clients/</code> creates clients from a file), so pressing
-                    Import could not create anyone. <strong>Nothing has been written and no client has been created.</strong>{' '}
-                    Keep this CSV — it is still the only copy of these rows.
-                  </span>
-                </p>
-                <Unavailable reason={IMPORT_UNAVAILABLE_REASON}>
-                  <Button variant="primary" icon="check" disabled>
-                    Import {readyRows.length} Client{readyRows.length === 1 ? '' : 's'}
+              <section style={{ ...cardStyle, padding: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+                {commitError && <p role="alert" style={{ margin: 0, color: 'var(--danger-text)' }}>{commitError}</p>}
+                {!online && <p role="alert" style={{ margin: 0, color: 'var(--danger-text)' }}>Connect to import clients. Your file and mappings are still here.</p>}
+                {batch ? (
+                  <p role="status" aria-live="polite" style={{ margin: 0 }}>
+                    {savedCount} of {batch.length} clients confirmed saved.
+                    {busy ? ' Saving selected rows…' : unresolved ? ' Retry to continue with the same saves.' : ' Import complete.'}
+                    {' '}{dataRows.length - batch.length} rows skipped by you.
+                  </p>
+                ) : (
+                  <p style={{ margin: 0, color: 'var(--text2)' }}>
+                    {readyRows.length} ready; {skippedRows.size} skipped by you. Fix errors or deselect affected rows before importing.
+                    Duplicate rows must be skipped. Review every mapping; only mapped columns will be saved.
+                  </p>
+                )}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-sm)' }}>
+                  <Button variant="primary" icon="check" onClick={() => void runImport()}
+                    disabled={busy || !online || (batch ? !unresolved : !commitReady)}>
+                    {busy ? 'Importing…' : batch ? unresolved ? 'Retry remaining rows' : 'Import complete' : `Import ${readyRows.length} Client${readyRows.length === 1 ? '' : 's'}`}
                   </Button>
-                </Unavailable>
+                  {busy && <Button disabled={stopping} onClick={() => { stopRequested.current = true; setStopping(true) }}>
+                    {stopping ? 'Stopping after this row…' : 'Stop after current row'}
+                  </Button>}
+                  {savedCount > 0 && !busy && <Button onClick={() => navigate('/clients')}>View Clients</Button>}
+                </div>
+                <p style={{ margin: 0, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+                  Keep the CSV and stay on this page while saving. Each row is saved separately; if one fails, later rows wait.
+                  A lost confirmation is checked with the same save when you retry.
+                </p>
               </section>
             </>
           )}
         </>
       )}
 
-      <FooterNote extra={['Import is validation-only — no client-import action exists yet, so no client can be created from this screen']} />
+      <FooterNote extra={['Only confirmed saves are counted. Existing clients and memberships are unchanged.']} />
+      <UnsavedLeaveDialog />
     </div>
   )
 }

@@ -330,8 +330,8 @@ export default function RevenueReport() {
                 onClick={() => setActiveTab(tab)}
                 aria-pressed={active}
                 style={{
-                  height: 32,
-                  padding: '0 12px',
+                  minHeight: 44,
+                  padding: '0 14px',
                   fontSize: 'var(--t-meta)',
                   fontWeight: active ? 600 : 400,
                   border: '1px solid var(--border)',
@@ -354,7 +354,7 @@ export default function RevenueReport() {
       </ReportToolbar>
 
       {/* KPI Strip */}
-      <KpiStrip items={kpis} />
+      <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
       {/* Main Tab Content */}
       {activeTab === 'trends' && (

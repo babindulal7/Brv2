@@ -24,6 +24,8 @@ export interface ExportAuditInput {
   filter?: string
   /** True when the file carries phone, email or tax-id of a client. */
   includesPii?: boolean
+  /** Explicit row scope; never imply that a loaded page contains every matching record. */
+  scope?: 'selected_page_rows' | 'current_page' | 'loaded_directory'
 }
 
 export function recordExport(input: ExportAuditInput): void {
@@ -50,6 +52,7 @@ export function recordExport(input: ExportAuditInput): void {
         columns: input.columns ? [...input.columns] : null,
         filter: input.filter ?? null,
         includesPii: input.includesPii ?? false,
+        scope: input.scope ?? null,
       },
     })
   })()

@@ -408,6 +408,7 @@ export default function RentalReports() {
                 aria-pressed={on}
                 onClick={() => setActiveTab(key)}
                 className={`report-toggle-btn ${on ? 'is-active' : ''}`}
+                style={{ minHeight: 44 }}
               >
                 {label}
               </button>
@@ -419,7 +420,7 @@ export default function RentalReports() {
       {/* TAB 1: PERFORMANCE */}
       {activeTab === 'performance' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={performanceKpis} />
+          <KpiStrip items={performanceKpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           <div
             style={{
@@ -563,7 +564,7 @@ export default function RentalReports() {
       {/* TAB 2: DURATION */}
       {activeTab === 'duration' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={durationKpis} />
+          <KpiStrip items={durationKpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           <div
             style={{
@@ -651,7 +652,7 @@ export default function RentalReports() {
       {/* TAB 3: CANCELLATIONS */}
       {activeTab === 'cancellations' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={cancellationKpis} />
+          <KpiStrip items={cancellationKpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
           <div
             style={{

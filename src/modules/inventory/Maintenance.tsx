@@ -572,7 +572,13 @@ function recordFromStartedJob(job: MaintenanceStartedPayload): MaintenanceRecord
   }
 }
 
-export function Maintenance() {
+export function Maintenance({
+  searchQuery: externalSearchQuery,
+  onSearchChange,
+}: {
+  searchQuery?: string
+  onSearchChange?: (q: string) => void
+} = {}) {
   const money = useCanViewMoney()
   const { user } = useAuth()
   /* Spec 07 §7.4: "TABLET: same, fewer columns.  PHONE: card rows." — and the
@@ -590,7 +596,12 @@ export function Maintenance() {
   // derives from.
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
 
-  const [searchQuery, setSearchQuery] = useState('')
+  const [localSearchQuery, setLocalSearchQuery] = useState('')
+  const searchQuery = externalSearchQuery ?? localSearchQuery
+  const setSearchQuery = (q: string) => {
+    if (onSearchChange) onSearchChange(q)
+    else setLocalSearchQuery(q)
+  }
   const [tab, setTab] = useState<'Maintenance' | 'Damage'>('Maintenance')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
@@ -895,9 +906,9 @@ export function Maintenance() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 5,
-                height: 26,
-                padding: '0 9px',
-                borderRadius: 'var(--r-xs)',
+                minHeight: 'var(--tap)',
+                padding: '0 10px',
+                borderRadius: 'var(--r-sm)',
                 border: `1px solid ${on ? tone.fg : 'var(--border)'}`,
                 background: on ? tone.bg : 'transparent',
                 color: on ? tone.fg : 'var(--muted)',

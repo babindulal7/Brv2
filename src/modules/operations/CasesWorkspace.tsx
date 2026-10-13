@@ -351,6 +351,16 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
             </div>
           }
           title="Cases"
+          search={{
+            value: searchInput,
+            onChange: setSearchInput,
+            onClear: () => {
+              setSearchInput('')
+              patch({ q: null })
+            },
+            placeholder: 'Search ID, title, client… (press /)',
+            ariaLabel: 'Search cases by ID, title, or client',
+          }}
         />
       )}
 
@@ -458,6 +468,8 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
           ] as const).map((chip) => (
             <button
               key={chip.label}
+              type="button"
+              aria-pressed={activeFilter === chip.label}
               onClick={() => setActiveFilter(chip.label as FilterKey)}
               style={{
                 minHeight: 44,

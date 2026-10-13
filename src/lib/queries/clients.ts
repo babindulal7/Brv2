@@ -584,6 +584,13 @@ export interface ClientPreviewRecord {
   depositHeldPaisa?: Paisa
 }
 
+/** Restriction-only read: no personal contact or financial columns. */
+export async function getClientBlockStatus(id: string): Promise<boolean | null> {
+  const { data, error } = await supabase.from('client_directory_v').select('is_blocked').eq('id', id).maybeSingle()
+  if (error) throw new Error(`Client restriction unavailable: ${error.message}`)
+  return data?.is_blocked === true ? true : data?.is_blocked === false ? false : null
+}
+
 /** The preview asks the directory view only for fields this role may receive.
  * A money-blind or PII-limited request never selects those columns. */
 export async function getClientPreviewRecord(ref: string, ctx: GateContext): Promise<ClientPreviewRecord | null> {

@@ -12,6 +12,7 @@ import type { StatusKey, BrandKey } from '../../../lib/status'
 import { SETTING_SPECS, formatSetting } from '../../../lib/settingsStore'
 import type { SettingKey, SettingValue, SettingsRecord } from '../../../lib/settingsStore'
 import { useTheme } from '../../../lib/theme'
+import { useViewport } from '../../../lib/device'
 import { getAllowOverbooking, setAllowOverbooking } from '../../../lib/bookingRules'
 import { TEXT_SIZES, applyTextSize, readTextSize } from '../../../lib/textSize'
 import type { TextSize } from '../../../lib/textSize'
@@ -437,10 +438,20 @@ export function KpiCard({ k }: { k: KpiSpec }) {
 
 /** The KPI strip, sized for whichever column it lands in. */
 export function KeyFigures({ kpis }: { kpis: KpiSpec[] }) {
+  const viewport = useViewport()
   return (
     <section
       aria-label="Key figures"
-      style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 'var(--sp-md)' }}
+      style={{
+        display: 'grid',
+        gridTemplateColumns:
+          viewport === 'phone'
+            ? '1fr'
+            : viewport === 'tablet'
+              ? 'repeat(2, minmax(0, 1fr))'
+              : 'repeat(auto-fit, minmax(168px, 1fr))',
+        gap: 'var(--sp-md)',
+      }}
     >
       {kpis.map((k) => (
         <KpiCard key={k.label} k={k} />

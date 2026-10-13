@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../supabase', () => ({ IS_MOCK: true, supabase: {} }))
-vi.mock('../queries/clients', () => ({ getClientPreviewRecord: vi.fn() }))
+vi.mock('../queries/clients', () => ({ getClientPreviewRecord: vi.fn(), getClientBlockStatus: vi.fn() }))
 vi.mock('../queries/bookings', () => ({ listBookings: vi.fn(), fetchFloorBooking: vi.fn() }))
 vi.mock('../queries/inventory', () => ({ getAssetDetail: vi.fn() }))
 vi.mock('../queries/equipmentRelations', () => ({ equipmentBookingRelations: vi.fn() }))
@@ -10,7 +10,7 @@ vi.mock('../queries/finance', () => ({
   paymentsForBooking: vi.fn(), paymentsForInvoice: vi.fn(),
 }))
 
-import { getClientPreviewRecord } from '../queries/clients'
+import { getClientPreviewRecord, getClientBlockStatus } from '../queries/clients'
 import { listBookings, fetchFloorBooking } from '../queries/bookings'
 import { getAssetDetail } from '../queries/inventory'
 import { equipmentBookingRelations } from '../queries/equipmentRelations'
@@ -31,6 +31,7 @@ describe('Smart Hover role-filtered payloads', () => {
     const preview = await loadClientPreview(UUID, { role: 'Warehouse' })
     expect(preview).not.toHaveProperty('contact')
     expect(preview).not.toHaveProperty('payments')
+    expect(preview).not.toHaveProperty('rentalTotalPaisa')
     expect(preview).not.toHaveProperty('finance')
     expect(JSON.stringify(preview)).not.toContain('123400')
     expect(JSON.stringify(preview)).not.toContain('private@example.com')
@@ -83,5 +84,33 @@ describe('Smart Hover role-filtered payloads', () => {
     const finance = await loadDocumentPreview('INV-161', { role: 'Owner' })
     expect(finance.type).toBe('Tax Invoice')
     expect(finance).not.toHaveProperty('totalPaisa')
+  })
+})
+
+describe('complete rental Intel data', () => {
+  it('reads the entire ledger and retains unknown unit packing and a confirmed client block', async () => {
+    vi.mocked(fetchFloorBooking).mockResolvedValue({ id: UUID, bookingNo: 'B-1', stage: 'Booked', clientName: 'Client One',
+      pickupAtAd: null, returnAtAd: null, linesPresence: 'present', lines: Array.from({ length: 12 }, (_, index) => ({
+        id: `line-${index}`, productName: `Gear ${index + 1}`, qty: 1, unitsPresence: 'present', units: [], trackingMode: 'Serialised',
+      })),
+    } as never)
+    vi.mocked(listBookings).mockResolvedValue({ rows: [{ id: UUID, clientId: 'client-1', totalAmount: 1234500, depositRequired: 0 }], total: 1 } as never)
+    vi.mocked(getClientBlockStatus).mockResolvedValue(true)
+    const payments = Array.from({ length: 102 }, (_, index) => ({ id: `pay-${index}`, clientId: 'client-1', bookingId: UUID,
+      paymentType: 'Rental', channelGroup: 'Cash', status: 'Received', amount: 100,
+      createdAtAd: '2026-10-13T00:00:00Z',
+    }))
+    vi.mocked(listPayments).mockImplementation(async opts => {
+      const start = (opts?.page?.index ?? 0) * (opts?.page?.size ?? 100)
+      return { rows: payments.slice(start, start + 100), total: 102 } as never
+    })
+    const preview = await loadRentalPreview(UUID, { role: 'Owner' })
+    expect(preview.equipment).toHaveLength(12)
+    expect(preview.equipment[0]).not.toHaveProperty('packed')
+    expect(preview.rentalTotalPaisa).toBe(1234500)
+    expect(preview.payments?.history).toHaveLength(102)
+    expect(preview.payments?.summary.paidPaisa).toBe(10200)
+    expect(preview.readiness.clientAllowed).toBe(false)
+    expect(listPayments).toHaveBeenCalledTimes(2)
   })
 })

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, KpiStrip, FooterNote } from '../../components/ui/Page'
@@ -175,13 +175,27 @@ function pulseKpis(f: PeriodFigures): Kpi[] {
   ]
 }
 
-export function ReportCatalog() {
+export function ReportCatalog({
+  searchQuery: externalQuery,
+  onSearchChange,
+}: {
+  searchQuery?: string
+  onSearchChange?: (q: string) => void
+} = {}) {
   const viewport = useViewport()
   const money = useCanViewMoney()
   const restriction = financeRestriction(money)
 
   const [detailed, setDetailed] = useState(false)
-  const [query, setQuery] = useState('')
+  const [localQuery, setLocalQuery] = useState('')
+  const query = externalQuery ?? localQuery
+  const setQuery = useCallback(
+    (q: string) => {
+      if (onSearchChange) onSearchChange(q)
+      else setLocalQuery(q)
+    },
+    [onSearchChange],
+  )
   const [openReport, setOpenReport] = useState<CatalogReport | null>(null)
   /** Phone only — §9.6: "accordion, one group open at a time". */
   const [openGroup, setOpenGroup] = useState<GroupKey | null>('01')
@@ -219,6 +233,7 @@ export function ReportCatalog() {
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
+              minHeight: 'var(--tap, 44px)',
               padding: '6px 14px',
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',
