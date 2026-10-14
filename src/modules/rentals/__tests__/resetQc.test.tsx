@@ -23,10 +23,15 @@
  * name that `selfIdOf` cannot resolve — reaches `runFloorVerb` with no `qcBy`
  * at all, which is the defect stated as an assertion.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { loadMockClient } from '../../../lib/supabase'
+
+beforeAll(async () => {
+  await loadMockClient()
+})
 
 const B901 = '11111111-1111-4111-8111-111111111111'
 

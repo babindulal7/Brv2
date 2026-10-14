@@ -118,6 +118,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
   const openTimer = useRef<number | null>(null)
   const closeTimer = useRef<number | null>(null)
   const suppress = useRef(false)
+  const restoringFocus = useRef(false)
   const spaceHeld = useRef(false)
   const spaceHeldLong = useRef(false)
   const spaceTimer = useRef<number | null>(null)
@@ -297,7 +298,9 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
         const wasPinned = pinned
         doClose()
         if (wasPinned || document.activeElement?.closest?.('[data-intel-overlay]')) {
+          restoringFocus.current = true
           triggerRef.current?.focus()
+          restoringFocus.current = false
         }
       }
     }
@@ -359,7 +362,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       aria-haspopup="dialog"
       aria-expanded={open || sheetOpen}
       aria-describedby={open ? cardId : undefined}
-      style={{ position: 'relative', display: 'inline-flex', minWidth: 0, maxWidth: '100%' }}
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', minHeight: 44, minWidth: 44, maxWidth: '100%' }}
       onMouseEnter={(e) => {
         if (!hasHover) return
         leavePoint.current = null
@@ -385,6 +388,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       }}
       onFocus={(e) => {
         if (e.target !== e.currentTarget) return
+        if (restoringFocus.current) return
         if (sheetOpen) return
         clearCloseTimer()
         doOpen()

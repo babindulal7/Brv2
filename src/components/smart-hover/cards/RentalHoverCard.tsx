@@ -53,6 +53,9 @@ export function RentalHoverCard({
           {preview.clientName} ›
         </button> : <div>{preview.clientName}</div>}
         <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{preview.pickupAt} → {preview.returnAt}</span>{preview.rentalDays === null ? '' : ` · ${preview.rentalDays} rental day${preview.rentalDays === 1 ? '' : 's'}`}</div>
+      </div>
+      <div data-rental-intel-summary style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--surface-card, var(--card))', padding: '4px 0 0', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '0 14px 8px' }}>
         {canViewFinance && total !== undefined ? <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8 }}><span>{preview.isDraft ? 'Draft rental total' : 'Rental total'}</span><strong className="figure">{formatMoney(total as Paisa)}</strong></div> : null}
         {beforeHandover && blocked ? (
           <p role={blocked === 'Readiness verification unavailable' ? 'status' : 'alert'} style={{ margin: '6px 0 0', fontSize: 13, color: blocked === 'Readiness verification unavailable' ? 'var(--muted)' : 'var(--danger-text)' }}>{blocked === 'Readiness verification unavailable' ? 'Handover readiness not verified' : `🔴 Handover blocked — ${blocked}`}</p>
@@ -71,6 +74,7 @@ export function RentalHoverCard({
         active={tab}
         onChange={setTab}
       />
+      </div>
       <div role="tabpanel">
         {tab === 'overview' ? (
           <div style={{ fontSize: 13, display: 'grid', gap: 8 }}>
