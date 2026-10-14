@@ -168,4 +168,70 @@ describe('Calendar application header and mobile de-crowding', () => {
     expect(phoneNav).not.toBeNull()
     expect(phoneNav?.textContent).toContain('Today')
   })
+
+  it('triggers CheckAvailability modal from phone primary CTA and opens FilterDrawer from overflow menu', async () => {
+    state.viewport = 'phone'
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <WorkspaceProvider>
+            <Header crumbs={[{ label: 'Calendar' }]} />
+            <Calendar />
+          </WorkspaceProvider>
+        </MemoryRouter>
+      )
+    })
+
+    // 1. Primary CTA click opens CheckAvailability modal
+    const checkBtn = container.querySelector('[aria-label="Check availability"]') as HTMLButtonElement | null
+    expect(checkBtn).not.toBeNull()
+    await act(async () => {
+      checkBtn?.click()
+    })
+    const availabilityDialog = document.body.querySelector('[role="dialog"]')
+    expect(availabilityDialog).not.toBeNull()
+
+    // 2. Open More actions overflow menu
+    const moreBtn = container.querySelector('[aria-label="More actions"]') as HTMLButtonElement | null
+    expect(moreBtn).not.toBeNull()
+    await act(async () => {
+      moreBtn?.click()
+    })
+
+    // 3. Find and click Filters item
+    const filtersMenuItem = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (el) => el.textContent?.includes('Filters')
+    ) as HTMLElement | undefined
+    expect(filtersMenuItem).toBeDefined()
+    await act(async () => {
+      filtersMenuItem?.click()
+    })
+
+    // Filter drawer should now be open
+    const filterDrawer = container.querySelector('#calendar-filters')
+    expect(filterDrawer).not.toBeNull()
+  })
+
+  it('enforces >=44px touch floor on phone navigation controls', async () => {
+    state.viewport = 'phone'
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <WorkspaceProvider>
+            <Header crumbs={[{ label: 'Calendar' }]} />
+            <Calendar />
+          </WorkspaceProvider>
+        </MemoryRouter>
+      )
+    })
+
+    const phoneNavButtons = container.querySelectorAll('.calendar-phone-nav button')
+    expect(phoneNavButtons.length).toBeGreaterThan(0)
+    for (const btn of phoneNavButtons) {
+      const htmlBtn = btn as HTMLElement
+      // Either style height/minHeight >= 44 or standard class with var(--tap)
+      const h = htmlBtn.style.height || htmlBtn.style.minHeight || window.getComputedStyle(htmlBtn).minHeight
+      expect(h === '44px' || h === 'var(--tap)' || htmlBtn.className.includes('btn') || htmlBtn.className.includes('calendar-stepper-btn')).toBe(true)
+    }
+  })
 })

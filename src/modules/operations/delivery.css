@@ -24,7 +24,7 @@
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  justifyContent: space-between;
+  justify-content: space-between;
   min-height: 92px;
   position: relative;
   overflow: hidden;

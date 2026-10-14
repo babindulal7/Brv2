@@ -1075,7 +1075,10 @@ table,
   min-height: 48px !important;
 }
 
-[data-floor='true'] button[data-primary-verb],
+/* Match the specificity of the general button floor above so primary verbs
+   keep their 56px minimum rather than being reduced to 48px. */
+[data-floor='true'] button[data-primary-verb]:not(.btn-link),
+[data-floor='true'] button.btn-floor-primary:not(.btn-link),
 [data-floor='true'] .btn-floor-primary {
   min-height: 56px !important;
 }

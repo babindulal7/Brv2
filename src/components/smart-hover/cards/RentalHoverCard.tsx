@@ -43,7 +43,7 @@ export function RentalHoverCard({
     <div>
       <div id="smart-hover-title" style={{ padding: '14px 14px 8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <span className="identifier" style={{ fontWeight: 800, fontSize: 15 }}>#{preview.rentalNo}</span>
+          <span className="identifier" style={{ fontWeight: 800, fontSize: 15 }}>{preview.isDraft ? '' : '#'}{preview.rentalNo}</span>
           <span style={{ background: safeTone.bg, color: safeTone.fg, borderRadius: 'var(--r-chip)', padding: '4px 8px', fontSize: 11, fontWeight: 800, display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             <Icon name={preview.packing.status === 'blocked' ? 'alert_triangle' : 'check'} size={13} />
             {preview.stage.toUpperCase()}
@@ -53,11 +53,11 @@ export function RentalHoverCard({
           {preview.clientName} ›
         </button> : <div>{preview.clientName}</div>}
         <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{preview.pickupAt} → {preview.returnAt}</span>{preview.rentalDays === null ? '' : ` · ${preview.rentalDays} rental day${preview.rentalDays === 1 ? '' : 's'}`}</div>
-        {canViewFinance && total !== undefined ? <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8 }}><span>Rental total</span><strong className="figure">{formatMoney(total as Paisa)}</strong></div> : null}
+        {canViewFinance && total !== undefined ? <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8 }}><span>{preview.isDraft ? 'Draft rental total' : 'Rental total'}</span><strong className="figure">{formatMoney(total as Paisa)}</strong></div> : null}
         {beforeHandover && blocked ? (
           <p role={blocked === 'Readiness verification unavailable' ? 'status' : 'alert'} style={{ margin: '6px 0 0', fontSize: 13, color: blocked === 'Readiness verification unavailable' ? 'var(--muted)' : 'var(--danger-text)' }}>{blocked === 'Readiness verification unavailable' ? 'Handover readiness not verified' : `🔴 Handover blocked — ${blocked}`}</p>
         ) : (
-          <p style={{ margin: '6px 0 0', fontSize: 13 }}>{progress.total > 0 ? `Packing ${progress.packed} / ${progress.total}` : 'No assigned unit packing data'}</p>
+          <p style={{ margin: '6px 0 0', fontSize: 13 }}>{preview.isDraft ? 'Saved draft — equipment is not reserved' : progress.total > 0 ? `Packing ${progress.packed} / ${progress.total}` : 'No assigned unit packing data'}</p>
         )}
       </div>
       <SmartHoverTabs
@@ -77,9 +77,9 @@ export function RentalHoverCard({
             {beforeHandover ? <section aria-label="Readiness">
               <h4 style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: 'var(--muted)', margin: '0 0 4px' }}>READINESS</h4>
               {rentalIntelChecks(preview.readiness).map(check => <ReadinessRow key={check.label} ok={check.ok} label={check.label} />)}
-            </section> : <p style={{ margin: 0 }}>Stage: {preview.stage}. Handover readiness applies before pickup.</p>}
+            </section> : <p style={{ margin: 0 }}>{preview.isDraft ? 'Open the saved draft to continue planning.' : `Stage: ${preview.stage}. Handover readiness applies before pickup.`}</p>}
             <p style={{ margin: 0 }}><strong>Next: </strong>{rentalIntelNextStep(preview.stage, preview.readiness)}</p>
-            {onOpenBooking ? <button type="button" onClick={onOpenBooking} style={{ minHeight: 44, color: 'var(--link)', border: 'none', background: 'transparent', textAlign: 'left' }}>Review booking</button> : null}
+            {onOpenBooking ? <button type="button" onClick={onOpenBooking} style={{ minHeight: 44, color: 'var(--link)', border: 'none', background: 'transparent', textAlign: 'left' }}>{preview.isDraft ? 'Continue draft' : 'Review booking'}</button> : null}
             <RentalItems equipment={preview.equipment} />
           </div>
         ) : null}
@@ -88,7 +88,7 @@ export function RentalHoverCard({
         ) : null}
         {tab === 'packing' ? (
           <div style={{ display: 'grid', gap: 10 }}>
-            {progress.total > 0 ? <PackingBar packed={progress.packed} total={progress.total} /> : <p role="status" style={{ margin: 0 }}>No assigned unit packing data. Open the booking to verify quantities and packing requirements.</p>}
+            {progress.total > 0 ? <PackingBar packed={progress.packed} total={progress.total} /> : <p role="status" style={{ margin: 0 }}>{preview.isDraft ? 'Packing begins after the rental is created. Saved draft items are not reserved.' : 'No assigned unit packing data. Open the booking to verify quantities and packing requirements.'}</p>}
             {progress.blocked > 0 ? (
               <p role="alert" style={{ margin: 0, fontSize: 13, color: 'var(--danger-text)' }}>🔴 {progress.blocked} blocked line{progress.blocked === 1 ? '' : 's'} need action</p>
             ) : null}
@@ -104,7 +104,7 @@ export function RentalHoverCard({
           </div>
         ) : null}
         {tab === 'payments' ? (
-          canViewFinance && preview.payments ? (
+          preview.isDraft ? <p role="status" style={{ margin: 0 }}>No rental ledger exists for this saved draft. Payments and deposits are verified after the rental is created.</p> : canViewFinance && preview.payments ? (
             <div style={{ display: 'grid', gap: 10 }}>
               <PaymentSummary summary={preview.payments.summary} showDepositHeld={preview.payments.depositHeldVerified !== false} />
               <ul style={{ margin: 0, padding: 0 }}>

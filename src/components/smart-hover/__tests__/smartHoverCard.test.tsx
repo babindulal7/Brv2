@@ -81,6 +81,24 @@ describe('rental decisions and complete tabs', () => {
     expect(container.textContent).not.toMatch(/Rs\s|12,345/)
     await act(async () => root.unmount()); container.remove()
   })
+  it('keeps draft instructions in Notes and explains why no packing or ledger exists', async () => {
+    const data = preview()
+    data.stage = 'Draft'
+    data.isDraft = true
+    data.rentalNo = 'Draft #3'
+    data.rentalTotalPaisa = 301000 as NonNullable<RentalPreview['rentalTotalPaisa']>
+    delete data.payments
+    const { root, container } = await mountText(<RentalHoverCard preview={data} canViewFinance defaultTab="overview" onOpenBooking={() => {}} />)
+    expect(container.textContent).toContain('Draft rental total')
+    expect(container.textContent).toContain('Continue draft')
+    expect(container.textContent).not.toContain('Private note')
+    for (const [tab, text] of [['Packing', 'Packing begins after'], ['Payments', 'No rental ledger exists'], ['Notes', 'Private note']]) {
+      const button = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(item => item.textContent?.startsWith(tab!))
+      await act(async () => button?.click())
+      expect(container.textContent).toContain(text)
+    }
+    await act(async () => root.unmount()); container.remove()
+  })
 })
 
 describe('invoice card money-blind (§68)', () => {

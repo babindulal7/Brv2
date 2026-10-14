@@ -1,3 +1,4 @@
+import { calculateDraftTotal } from '../../lib/rentalDraftPricing'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { csvCell } from '../../lib/csv'
 import { recordExport } from '../../lib/exportAudit'
@@ -27,7 +28,7 @@ import { Badge } from '../../components/ui/Badge'
 import { STATUS, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
 import type { StatusKey, BrandKey } from '../../lib/status'
-import { formatMoney, toRupees, type Paisa } from '../../lib/money'
+import { formatMoney, toRupees } from '../../lib/money'
 import { listInvoices, payableInvoices } from '../../lib/queries/finance'
 import { businessNowAd } from '../../lib/queries/today'
 import { formatAd, getBusinessToday } from '../../lib/bs'
@@ -174,25 +175,6 @@ function Tag({ text, status }: { text: string; status: StatusKey }) {
  */
 const EXTERNAL_LABEL = 'Sub-rented — external gear'
 const EXTERNAL_ICON: IconName = 'external_link'
-
-function calculateDraftTotal(data: RentalDraftRecord['data']): Paisa {
-  let linesTotal = 0
-  for (const l of data.lines || []) {
-    const base = (l.ratePaisa || 0) * (l.qty || 1) * (l.days || 1)
-    const discount = Math.round((base * (l.discountPct || 0)) / 100)
-    linesTotal += base - discount
-  }
-  let crewTotal = 0
-  for (const c of data.crew || []) {
-    crewTotal += (c.dayRatePaisa || 0) + (c.overtimePaisa || 0) + (c.accommodationPaisa || 0) + (c.mealsPaisa || 0)
-  }
-  const delivery = (data.deliveryChargePaisa || 0) + (data.fuelChargePaisa || 0) + (data.returnPickupChargePaisa || 0)
-  const subtotal = linesTotal + crewTotal + delivery
-  const totalDiscount = Math.round((subtotal * (data.discountPct || 0)) / 100)
-  const taxable = subtotal - totalDiscount
-  const vat = data.vatOn ? Math.round((taxable * (data.vatRatePercent ?? 13)) / 100) : 0
-  return (taxable + vat) as Paisa
-}
 
 function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
   const data = d.data

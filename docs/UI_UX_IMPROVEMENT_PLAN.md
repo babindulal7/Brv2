@@ -17,9 +17,9 @@ Keep the existing semantic tokens, Outfit/Source Sans/JetBrains fonts, Tabler ic
 
 | Step | Scope | State / evidence required |
 |---|---|---|
-| 1 | Shared shell, search, primary actions, More | First patch locally verified 12 Oct; Today phone search, Clear/Escape focus, Refresh and More verified 13 Oct. The 768px title truncation remains open. |
+| 1 | Shared shell, search, primary actions, More | First patch locally verified 12 Oct; Today phone search, Clear/Escape focus, Refresh and More verified 13 Oct. The 768px Today title truncation was resolved and visually verified 14 Oct. |
 | 2 | Rentals list selection, pagination, New Rental and Booking Detail | Existing work needs the full acceptance matrix; consolidate selected-row actions without losing callbacks. |
-| 3 | Pack, Handover, Return, Inspection, Cleaning/Reset | Check every persisted status, valid next action, prohibited action, exceptions, and safe test-database writes/reload. |
+| 3 | Pack, Handover, Return, Inspection, Cleaning/Reset | Phone stage navigation/footer and local booking lookup fixed; On Rent return popup and completed/locked navigation verified 14 Oct. Every persisted status, exceptions and safe test-database writes/reload still need acceptance. |
 | 4 | Today and Calendar | Today responsive pass verified in local mock at 320/390/768/1024/1280/1440px; Today quick filter preserves the layout. Calendar and remaining status/data reconciliation still need acceptance. |
 | 5 | Inventory, Bundles, Clients, Membership | Match form/navigation patterns; create/edit/retire and duplicate/hold/history states with permission checks. |
 | 6 | Finance, Payments, Expenses, Documents | Validate immutable money flows, error feedback, double-submit prevention, print/export and money-blind roles. |
@@ -46,3 +46,13 @@ Saved screenshots and interaction measurements: `artifacts/today-responsive-2026
 The six checked widths had no document horizontal overflow. Light screenshots cover 320/768/1024/1440px; dark screenshots cover 390/1280px. This is Chromium viewport emulation, not physical iPad Safari or native 125% zoom. At 768px the shared header truncates Today to Tod…; retain this as an open header issue. The mock corpus exercised empty pickups and overdue returns, not every booking status or role.
 
 Typecheck, source lint, 21 focused tests, a 4,296-test full run, 160 local migrations, 30 lifecycle checks, 54 contrast pairs, shell lint and production build passed for this patch before later concurrent source edits. A separate mock build supplied the saved screenshots. These results do not certify unrelated changes made afterward. Untested modules remain open; no full-app completion claim is made.
+
+## Workflow follow-up — 14 October 2026
+
+- The healthy sync placeholder no longer consumes tablet header width. At 768px, Today renders in full in the 64px header. Offline/queued/syncing/error visibility is covered by the header regression test.
+- Operations uses two stage columns on phones and four on tablet/desktop. Phone confirmation is 56px tall above the full-width Back button. Browser checks at 320, 390, 768 and 1440px found no document horizontal overflow or stage label overlap.
+- Mock booking numbers now follow the existing bare-number rule while accepting legacy links. Seeded and replayed local records retain stable IDs. Regression coverage resolves all six seeded booking stages and checks allocation across reload.
+- The updated mock browser opened booking 864 with two lines/four units. Completed Packing was read-only; Return reopened; Cleaning was disabled; confirmation stayed disabled with incomplete return gates. No return session was submitted. This does not certify persisted transitions or live permissions.
+- The pre-refresh New Rental catalogue stayed within the phone viewport, but its View/Add Bundle buttons measured 26px tall. Recheck the current shared-button build and bring these controls to 44px in the next pass. Screenshot/measurement: `artifacts/workflow-responsive-2026-10-13/`.
+- Patch verification: typecheck; scoped lint; 4,405 tests in 347 files (including 12 Operations, 6 header ownership and 2 booking lookup tests); local PGlite 160/160 and lifecycle 30/30; production and mock builds. Theme contrast at follow-up: 82/82. Concurrent changes made after these runs are outside this evidence.
+- Browser cache was temporarily bypassed for the test tab because it retained the old offline build; cache settings and viewport overrides were restored afterward. Evidence covers dark Chromium viewport emulation, not physical iPad Safari or native zoom.

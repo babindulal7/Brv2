@@ -88,12 +88,12 @@ export function IntelTabbedDetail({ entityType, entityId, context, gateContext, 
   if (!loaded || loaded.type !== core) return <><p role="status">Loading preview tabs…</p>{fallback}</>
 
   const defaultTab = defaultTabForContext(core, CONTEXT[context])
-  const notesContent = loaded.type === 'client' || loaded.type === 'equipment' || loaded.type === 'rental'
+  const notesContent = loaded.type === 'client' || loaded.type === 'equipment' || (loaded.type === 'rental' && !loaded.preview.isDraft)
     ? <IntelDetailExtras entityType={loaded.type} entityId={loaded.preview.id} context={context} gateContext={gateContext} actionContext={actionContext ?? null} section="notes" /> : undefined
   if (loaded.type === 'client') return <ClientHoverCard key={entityId} preview={loaded.preview} notesContent={notesContent} canViewFinance={canViewMoneyField(gateContext, 'client-balance')} defaultTab={defaultTab} onOpenRental={(no) => onFollow(`/rentals/${encodeURIComponent(no)}`)} />
   if (loaded.type === 'equipment') return <EquipmentHoverCard key={entityId} preview={loaded.preview} notesContent={notesContent} canViewFinance={canViewMoneyField(gateContext, 'asset-finance')} defaultTab={defaultTab} onOpenRental={(no) => onFollow(`/rentals/${encodeURIComponent(no)}`)} />
   if (loaded.type === 'invoice') return <DocumentHoverCard key={entityId} preview={loaded.preview} canViewFinance={canViewMoneyField(gateContext, 'booking')} />
   if (loaded.type === 'document') return <RegistryDocumentHoverCard key={entityId} preview={loaded.preview} onFollow={onFollow} />
   if (loaded.type === 'payment') return <PaymentHoverCard key={entityId} preview={loaded.preview} onFollow={onFollow} />
-  return <RentalHoverCard key={entityId} preview={loaded.preview} notesContent={notesContent} canViewFinance={canViewMoneyField(gateContext, 'booking')} defaultTab={defaultTab} onOpenBooking={() => navigate(`/rentals/${encodeURIComponent(loaded.preview.rentalNo)}`)} onOpenClient={() => onFollow(`/clients/${encodeURIComponent(loaded.preview.clientId)}`)} />
+  return <RentalHoverCard key={entityId} preview={loaded.preview} notesContent={notesContent} canViewFinance={canViewMoneyField(gateContext, 'booking')} defaultTab={defaultTab} onOpenBooking={() => navigate(loaded.preview.isDraft ? `/rentals?action=new&draft=${encodeURIComponent(loaded.preview.id)}` : `/rentals/${encodeURIComponent(loaded.preview.rentalNo)}`)} {...(loaded.preview.clientId ? { onOpenClient: () => onFollow(`/clients/${encodeURIComponent(loaded.preview.clientId)}`) } : {})} />
 }

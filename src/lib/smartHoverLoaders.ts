@@ -9,7 +9,9 @@
 import { loadIntelNotes } from './queries/intelExtras'
 import { formatMoney, type Paisa } from './money'
 import { toBs, formatBs, formatAdDateTime, formatBookingHoverDateTime, formatAd } from './bs'
-import { canViewMoneyField } from './fieldGating'
+import { canViewMoneyField, canViewPII } from './fieldGating'
+import { fetchRentalDraft } from '../actions/rentals/saveDraft'
+import { calculateDraftTotal, draftInstant } from './rentalDraftPricing'
 import {
   fetchFloorBooking,
   listBookings,
@@ -209,7 +211,26 @@ export async function loadRentalPreview(
 ): Promise<RentalPreview> {
   const canSeeMoney = canViewMoneyField(ctx, 'booking')
   const floor = await fetchFloorBooking(bookingRef)
-  if (!floor) throw new Error(`Booking not found: ${bookingRef}`)
+  if (!floor) {
+    // A draft's opaque JSON contains private and financial terms. Its RLS
+    // still applies, and the loader refuses to request it for narrower roles.
+    if (!canSeeMoney || !canViewPII(ctx)) throw new Error(`Booking not found: ${bookingRef}`)
+    const draft = await fetchRentalDraft(bookingRef)
+    if (draft.status !== 'Active') throw new Error('Saved draft is no longer active. Open its rental from the rental list.')
+    const data = draft.data
+    const pickup = draftInstant(data.pickup, data.pickupTime)
+    const ret = draftInstant(data.returnDate, data.returnTime)
+    return {
+      id: draft.id, rentalNo: `Draft #${draft.bookingNo}`, stage: 'Draft', isDraft: true,
+      clientId: data.clientDbId ?? data.selectedClientId ?? '', clientName: data.clientName || 'Client not selected',
+      pickupAt: formatBookingHoverDateTime(pickup), returnAt: formatBookingHoverDateTime(ret), rentalDays: rentalDaysBetween(pickup, ret),
+      rentalTotalPaisa: calculateDraftTotal(data),
+      readiness: { equipmentReady: null, packingReady: null, paymentReady: null, depositReady: null, contractReady: null, clientAllowed: null },
+      equipment: data.lines.map(line => ({ label: line.name, qty: line.qty })),
+      packing: { status: 'not_started', lines: [] },
+      notes: data.specialInstructions.trim() ? [{ id: draft.id, at: adWithBs(draft.updatedAt), by: 'Saved draft instructions', text: data.specialInstructions }] : [],
+    }
+  }
   const bookingRows = await listBookings({ chips: { id: [floor.id] }, ...(canSeeMoney ? { withTotalAmount: true, withDeposit: true } : {}) })
   const booking = bookingRows.rows[0]
   if (!booking) throw new Error(`Booking header unavailable: ${bookingRef}`)

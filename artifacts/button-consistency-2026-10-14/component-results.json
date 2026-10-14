@@ -1,0 +1,3875 @@
+{
+  "pass": true,
+  "results": [
+    {
+      "kind": "isolated-components",
+      "width": 375,
+      "theme": "light",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(36, 86, 214)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 375,
+      "theme": "light",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(36, 86, 214)",
+        "width": 108.484375,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 375,
+      "theme": "dark",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(56, 106, 247)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(56, 106, 247)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 375,
+      "theme": "dark",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(56, 106, 247)",
+        "width": 108.484375,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(56, 106, 247)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 375,
+      "theme": "high-contrast",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(0, 0, 0)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 21,
+          "hoverRatio": 17.9278402530276
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 5.58046438625577,
+          "hoverRatio": 5.58046438625577
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(10, 10, 10)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 19.79814571052481,
+          "hoverRatio": 17.9278402530276
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(250, 204, 21)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 375,
+      "theme": "high-contrast",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(0, 0, 0)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 21,
+          "hoverRatio": 17.9278402530276
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 5.58046438625577,
+          "hoverRatio": 5.58046438625577
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(10, 10, 10)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 19.79814571052481,
+          "hoverRatio": 17.9278402530276
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(250, 204, 21)",
+        "width": 108.484375,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 820,
+      "theme": "light",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(36, 86, 214)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 820,
+      "theme": "light",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(36, 86, 214)",
+        "width": 108.484375,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 820,
+      "theme": "dark",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(56, 106, 247)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(56, 106, 247)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 820,
+      "theme": "dark",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(56, 106, 247)",
+        "width": 108.484375,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(56, 106, 247)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 820,
+      "theme": "high-contrast",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(0, 0, 0)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 21,
+          "hoverRatio": 17.9278402530276
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 5.58046438625577,
+          "hoverRatio": 5.58046438625577
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(10, 10, 10)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 19.79814571052481,
+          "hoverRatio": 17.9278402530276
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(250, 204, 21)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 820,
+      "theme": "high-contrast",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 57.8125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 108.484375,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 148.3125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(0, 0, 0)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 50.078125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 21,
+          "hoverRatio": 17.9278402530276
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 52.5625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 5.58046438625577,
+          "hoverRatio": 5.58046438625577
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(10, 10, 10)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 198.203125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 19.79814571052481,
+          "hoverRatio": 17.9278402530276
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(250, 204, 21)",
+        "width": 108.484375,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 1440,
+      "theme": "light",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(36, 86, 214)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 1440,
+      "theme": "light",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 58.875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 58.875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 111.25,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 111.25,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(36, 86, 214)",
+            "width": 152.421875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(30, 73, 184)",
+            "width": 152.421875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 6.2182850552692726,
+          "hoverRatio": 7.77674196103501
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 50.890625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 50.890625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 53.453125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 53.453125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(255, 255, 255)",
+            "width": 203.578125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(15, 23, 42)",
+            "bg": "rgb(238, 244, 251)",
+            "width": 203.578125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(15, 23, 42)"
+          },
+          "normalRatio": 17.85253496299567,
+          "hoverRatio": 16.1256923683925
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(36, 86, 214)",
+        "width": 111.25,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 1440,
+      "theme": "dark",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(56, 106, 247)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(56, 106, 247)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 1440,
+      "theme": "dark",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 58.875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 58.875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 111.25,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 111.25,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(56, 106, 247)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(56, 106, 247)",
+            "width": 152.421875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(47, 92, 224)",
+            "width": 152.421875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 4.592327780008101,
+          "hoverRatio": 5.632911730991395
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 50.890625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 50.890625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 53.453125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(199, 58, 58)",
+            "width": 53.453125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 5.128527155449672,
+          "hoverRatio": 5.128527155449672
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 27, 42)",
+            "width": 203.578125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(241, 245, 249)",
+            "bg": "rgb(15, 30, 48)",
+            "width": 203.578125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(241, 245, 249)"
+          },
+          "normalRatio": 15.835389644107082,
+          "hoverRatio": 15.351175862137952
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(255, 255, 255)",
+        "bg": "rgb(56, 106, 247)",
+        "width": 111.25,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(56, 106, 247)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 1440,
+      "theme": "high-contrast",
+      "floor": false,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 55.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 102.484375,
+            "height": 44,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 139.421875,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(0, 0, 0)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 48.328125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 21,
+          "hoverRatio": 17.9278402530276
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 50.625,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 5.58046438625577,
+          "hoverRatio": 5.58046438625577
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(10, 10, 10)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 183.03125,
+            "height": 44,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 19.79814571052481,
+          "hoverRatio": 17.9278402530276
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(250, 204, 21)",
+        "width": 102.484375,
+        "height": 44,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        },
+        {
+          "height": 44,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "kind": "isolated-components",
+      "width": 1440,
+      "theme": "high-contrast",
+      "floor": true,
+      "controls": [
+        {
+          "id": "pay",
+          "normal": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 58.875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "+ Pay",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 58.875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "dispatch",
+          "normal": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 111.25,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "hover": {
+            "text": "Dispatch Now",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 111.25,
+            "height": 48,
+            "disabled": false,
+            "outline": "solid",
+            "outlineWidth": "2px",
+            "outlineColor": "rgb(36, 86, 214)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "delivered",
+          "normal": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(250, 204, 21)",
+            "width": 152.421875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Confirm Delivered ✓",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(234, 179, 8)",
+            "width": 152.421875,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 13.712773555273134,
+          "hoverRatio": 10.950031209124901
+        },
+        {
+          "id": "utility",
+          "normal": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(0, 0, 0)",
+            "width": 50.890625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "PDF",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 50.890625,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 21,
+          "hoverRatio": 17.9278402530276
+        },
+        {
+          "id": "danger",
+          "normal": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 53.453125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "hover": {
+            "text": "Void",
+            "fg": "rgb(0, 0, 0)",
+            "bg": "rgb(239, 68, 68)",
+            "width": 53.453125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(0, 0, 0)"
+          },
+          "normalRatio": 5.58046438625577,
+          "hoverRatio": 5.58046438625577
+        },
+        {
+          "id": "whatsapp",
+          "normal": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(10, 10, 10)",
+            "width": 203.578125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "hover": {
+            "text": "Send digest on WhatsApp",
+            "fg": "rgb(255, 255, 255)",
+            "bg": "rgb(23, 23, 23)",
+            "width": 203.578125,
+            "height": 48,
+            "disabled": false,
+            "outline": "none",
+            "outlineWidth": "3px",
+            "outlineColor": "rgb(255, 255, 255)"
+          },
+          "normalRatio": 19.79814571052481,
+          "hoverRatio": 17.9278402530276
+        }
+      ],
+      "focus": {
+        "text": "Dispatch Now",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(250, 204, 21)",
+        "width": 111.25,
+        "height": 48,
+        "disabled": false,
+        "outline": "solid",
+        "outlineWidth": "2px",
+        "outlineColor": "rgb(36, 86, 214)"
+      },
+      "lifecycle": [
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        },
+        {
+          "height": 56,
+          "disabled": false
+        }
+      ]
+    }
+  ]
+}

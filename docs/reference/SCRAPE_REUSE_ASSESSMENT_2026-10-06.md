@@ -42,3 +42,11 @@ There are internal contradictions. `DESIGN.md` repeats the claim that reference 
 No external websites were contacted: findings concern the supplied snapshot. No app code, dependency, permission or migration was changed. No production data was imported. Runtime gates were not rerun for this document-only review.
 
 Recommendation: use this archive as an evidence-backed acceptance checklist. The most useful next work is completing client import, correcting and clarifying exports, then improving shortage drill-downs; retain the current app architecture.
+
+## Implementation follow-up — 14 October 2026
+
+The remaining client CSV commit path is implemented with row validation, stable retry keys, confirmed outcomes, stop/retry controls and contact-access gating. Export row scope is explicit in audit metadata; the rental deposit fallback and visible-column behavior were already corrected by the 7 October adoption. Shortage ranges now follow configured operational days, with equipment/calendar/booking links and retryable read errors. The original assessment above remains a dated record of what was found on 6 October.
+
+Verification: 345 test files / 4,392 passing tests, typecheck/lint/build passed, local PGlite 160/160 and lifecycle 30/30 green. The isolated browser saved two equal-name/different-phone clients, retained both after reload and blocked a repeated import. Phone page width stayed within 390px, with zero page errors. No new migration or production data write.
+
+Detailed results and limits: [implementation evidence](../../artifacts/scrape-adoption-2026-10-13/README.md). Unfinished imports retain retry keys only while the import remains open; membership continues through its existing workflow.

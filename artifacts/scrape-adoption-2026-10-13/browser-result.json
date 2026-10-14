@@ -1,0 +1,11 @@
+{
+  "environment": "isolated mock origin",
+  "imported": 2,
+  "retainedAfterReload": 2,
+  "repeatedImportBlocked": true,
+  "phoneWidth": {
+    "viewport": 390,
+    "content": 390
+  },
+  "pageErrors": []
+}
