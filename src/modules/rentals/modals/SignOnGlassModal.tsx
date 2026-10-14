@@ -347,7 +347,7 @@ export function SignOnGlassModal({
               placeholder="Full name of person signing…"
               style={{
                 width: '100%',
-                height: 42,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-input, 6px)',
                 border: '1px solid var(--border)',
@@ -364,7 +364,7 @@ export function SignOnGlassModal({
             </label>
             <div
               style={{
-                height: 42,
+                minHeight: 44,
                 display: 'flex',
                 alignItems: 'center',
                 padding: '0 12px',
@@ -514,12 +514,12 @@ export function SignOnGlassModal({
 
         {/* Receiver Government ID Verification Checkbox */}
         {role === 'receiver' && (
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)', color: 'var(--text)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', minHeight: 44, gap: 10, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)', color: 'var(--text)' }}>
             <input
               type="checkbox"
               checked={verifiedGovId}
               onChange={(e) => setVerifiedGovId(e.target.checked)}
-              style={{ width: 18, height: 18, marginTop: 2, accentColor: 'var(--primary, #2563eb)' }}
+              style={{ width: 18, height: 18, flexShrink: 0, accentColor: 'var(--primary, #2563eb)' }}
             />
             <div>
               <strong>Verify Government Photo ID (Citizenship / National ID / Passport)</strong>
@@ -531,12 +531,12 @@ export function SignOnGlassModal({
         )}
 
         {/* Terms Agreement Checkbox */}
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)', color: 'var(--text)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', minHeight: 44, gap: 10, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)', color: 'var(--text)' }}>
           <input
             type="checkbox"
             checked={agreedToTerms}
             onChange={(e) => setAgreedToTerms(e.target.checked)}
-            style={{ width: 18, height: 18, marginTop: 2, accentColor: 'var(--primary, #2563eb)' }}
+            style={{ width: 18, height: 18, flexShrink: 0, accentColor: 'var(--primary, #2563eb)' }}
           />
           <div>
             <strong>I acknowledge and accept this digital signature as a legally binding certification.</strong>

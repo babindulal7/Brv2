@@ -22,6 +22,7 @@ import { captureError } from '../../lib/monitoring'
 import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
+import { useViewport } from '../../lib/device'
 import { newClientUuid } from '../../lib/supabase'
 import {
   useStockTransfers,
@@ -523,6 +524,7 @@ const TRANSFER_TRANSITION_UNAVAILABLE =
 export default function Warehouses() {
   const { user } = useAuth()
   const online = useNetwork()
+  const viewport = useViewport()
   /* Stable identity so the `rackGlance`/`rackDetailGroups` memo below (and
      anything else keyed on `gctx`) only recomputes when the viewing role
      actually changes — `gateContext` returns a fresh object literal on every
@@ -1064,7 +1066,11 @@ export default function Warehouses() {
                clear 6·min + 5·12 at 862. 140 did not — it dropped the sixth
                card onto a row of its own from 1440 down. Widening beyond the
                min is auto-fit's job: the cards still render ~150px at 1536. */
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 'var(--sp-md)' }}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: viewport === 'phone' ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(132px, 1fr))',
+              gap: 'var(--sp-md)',
+            }}
           >
             <KpiCard
               label="Total Warehouses"
@@ -1151,7 +1157,11 @@ export default function Warehouses() {
                264 needed 1,092px and this column is 958 at the render's own
                width, so it wrapped 3+1. 4·228 + 3·12 = 948 fits, and the cards
                still stretch to ~230 each. */
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(228px, 1fr))', gap: 'var(--sp-md)' }}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: viewport === 'phone' ? '1fr' : 'repeat(auto-fit, minmax(228px, 1fr))',
+              gap: 'var(--sp-md)',
+            }}
           >
             {WAREHOUSES.map((w) => {
               const on = w.id === selectedId
@@ -1305,13 +1315,14 @@ export default function Warehouses() {
                       <button
                         key={v}
                         type="button"
+                        className="tap"
                         onClick={() => setView(v)}
                         aria-pressed={view === v}
                         aria-label={v === 'table' ? 'Table view' : 'Card view'}
                         title={v === 'table' ? 'Table view' : 'Card view'}
                         style={{
-                          width: 32,
-                          height: 32,
+                          minWidth: 44,
+                          minHeight: 44,
                           border: 'none',
                           background: view === v ? 'var(--nav-active-bg)' : 'var(--input-bg)',
                           color: view === v ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -1469,10 +1480,12 @@ export default function Warehouses() {
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
                               <button
                                 type="button"
+                                className="tap"
                                 onClick={() => openWarehouse(w.id)}
                                 aria-label={`Open ${w.name}`}
                                 title={`Open ${w.name}`}
                                 style={{
+                                  position: 'relative',
                                   width: 28,
                                   height: 28,
                                   borderRadius: 'var(--r-xs)',
@@ -1651,7 +1664,7 @@ export default function Warehouses() {
                         onClick={() => setProfileTab(t.id)}
                         aria-current={on ? 'page' : undefined}
                         style={{
-                          height: 36,
+                          minHeight: 44,
                           padding: '0 12px',
                           border: 'none',
                           borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
@@ -1812,14 +1825,14 @@ export default function Warehouses() {
                         does nothing when typed into and submitted (Law 6). */}
                     <Unavailable reason="AI Warehouse Assistant is not built — there is no query engine behind this prompt yet.">
                       <div className="focus-host" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)', display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
-                        <span style={{ display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 'var(--r-sm)', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)' }}>
+                        <span style={{ display: 'grid', placeItems: 'center', width: 36, height: 36, borderRadius: 'var(--r-sm)', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)' }}>
                           <Icon name="message" size={16} />
                         </span>
                         <input
                           type="text"
                           disabled
                           placeholder="Ask AI Assistant (e.g. Which warehouse is full? Show empty storage...)"
-                          style={{ height: 32, padding: '0 9px', borderRadius: 'var(--r-input)', border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', flex: 1, minWidth: 0, outline: 'none' }}
+                          style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', flex: 1, minWidth: 0, outline: 'none' }}
                         />
                         <Button variant="primary" disabled>Ask</Button>
                       </div>

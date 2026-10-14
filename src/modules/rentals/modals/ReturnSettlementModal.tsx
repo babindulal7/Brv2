@@ -461,25 +461,25 @@ export function ReturnSettlementModal({
 
           {lateResult.band !== 'None' && (
             <div style={{ marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, gap: 6, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)' }}>
                   <input
                     type="radio"
                     name="lateDecision"
                     checked={lateDecision === 'Apply'}
                     onChange={() => setLateDecision('Apply')}
-                    style={{ accentColor: 'var(--primary, #2563eb)' }}
+                    style={{ width: 16, height: 16, accentColor: 'var(--primary, #2563eb)' }}
                   />
                   <span>Charge Late Fee (<b>{formatMoney(lateResult.feePaisa)}</b>)</span>
                 </label>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, gap: 6, cursor: 'pointer', fontSize: 'var(--t-meta, 12px)' }}>
                   <input
                     type="radio"
                     name="lateDecision"
                     checked={lateDecision === 'Waive'}
                     onChange={() => setLateDecision('Waive')}
-                    style={{ accentColor: 'var(--primary, #2563eb)' }}
+                    style={{ width: 16, height: 16, accentColor: 'var(--primary, #2563eb)' }}
                   />
                   <span>Waive Late Fee</span>
                 </label>
@@ -595,7 +595,7 @@ export function ReturnSettlementModal({
                         aria-label={`Damage charge for ${item.name}`}
                         style={{
                           width: 100,
-                          minHeight: 36,
+                          minHeight: 44,
                           padding: '0 8px',
                           borderRadius: 'var(--r-input, 4px)',
                           border: '1px solid var(--input-border)',

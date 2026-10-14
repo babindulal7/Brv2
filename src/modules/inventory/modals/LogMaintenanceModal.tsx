@@ -170,7 +170,7 @@ export function LogMaintenanceModal({
               value={equipment}
               onChange={(e) => setEquipment(e.target.value)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -191,7 +191,7 @@ export function LogMaintenanceModal({
               value={serial}
               onChange={(e) => setSerial(e.target.value)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -212,7 +212,7 @@ export function LogMaintenanceModal({
               value={jobType}
               onChange={(e) => setJobType(e.target.value as MaintenanceType)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -236,7 +236,7 @@ export function LogMaintenanceModal({
               value={priority}
               onChange={(e) => setPriority(e.target.value as MaintenancePriority)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -264,7 +264,7 @@ export function LogMaintenanceModal({
               value={technician}
               onChange={(e) => setTechnician(e.target.value)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -285,7 +285,7 @@ export function LogMaintenanceModal({
               value={vendor}
               onChange={(e) => setVendor(e.target.value)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -310,7 +310,7 @@ export function LogMaintenanceModal({
               placeholder="0"
               onChange={(e) => setCostRupees(Math.max(0, Number(e.target.value) || 0))}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -335,7 +335,7 @@ export function LogMaintenanceModal({
               value={daysToComplete}
               onChange={(e) => setDaysToComplete(Math.max(1, Number(e.target.value) || 1))}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -357,7 +357,7 @@ export function LogMaintenanceModal({
             value={bookingImpact}
             onChange={(e) => setBookingImpact(e.target.value)}
             style={{
-              height: 36,
+              minHeight: 44,
               padding: '0 12px',
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',

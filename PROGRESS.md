@@ -1,5 +1,44 @@
 # Progress Log
 
+## 2026-10-14 — Smart Intel live visual checks: persistent totals, touch targets and focus dismissal
+
+**Did**
+- Drove the existing Chrome Rentals tab through desktop, tablet and phone card checks. Reproduced totals/tabs disappearing during long-list scroll and a 19.5px-high phone identifier target.
+- Kept the rental total, warning and tabs in a compact sticky summary while all item lines scroll. Shared Intel wrappers now have a 44px height/width floor.
+- Reproduced Escape restoring focus and immediately reopening Intel. Programmatic focus return now skips the ordinary focus-open handler; the Close control also returns focus without reopening. Added a regression using actual focused card controls.
+- Authorized rentals without a persisted total say Not recorded; empty Notes says No notes recorded. Neither state fabricates a financial amount or readiness.
+- Saved phone/tablet screenshots and exact observed checks/limits under artifacts/intel-visual-2026-10-14/README.md. No note, record, payment or workflow transition was saved during browser checks.
+
+**Ruled**
+- No new product decision, permission, financial arithmetic or workflow authority. Notes remain isolated to Notes and role payload boundaries remain unchanged.
+- No migration was WRITTEN, APPLIED or PRODUCTION-VERIFIED. Existing migration chain locally VERIFIED by both database gates; live Supabase application remains pending.
+- Browser connection detached during later checks. Supported recovery/reclaim did not restore it. Remaining browser and authenticated-role acceptance is pending; no complete multi-role production acceptance is claimed.
+
+**Verified**
+- Live Chrome: seven complete draft item lines and matching list/card total; scrolling to the final item with total/tabs visible in phone and tablet; no measured horizontal card overflow. Phone trigger increased from 45.18 by 19.5px to 45.18 by 44px.
+- Touch long press opened the sheet without leaving Rentals; close dismissed it. Client link replaced the active card and Back restored the draft. Desktop Enter, adjacent-identifier ArrowDown, and corrected Escape dismissal/focus return were observed. The booked rental loaded eight complete lines representing ten item quantities, without asserting clearance or inventing its missing total.
+- Final required sequence PASS: typecheck; full suite 348 files / 4,446 tests; PGlite 160/160 with view/RPC exposure and definer hygiene gates; lifecycle 30/30; production build with 297 PWA entries. Full source lint PASS, contrast 82/82 PASS.
+- Earlier mid-edit checks failed while the focus correction and concurrent Delivery/Import changes were being completed. Fresh final checks passed; final Smart Intel regressions include both Escape and Close focus return, 300ms hover and touch long press.
+- npm run completion executed; generated block follows. Detailed local logs: .intel-visual-final-*.log.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 53 / 53 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 52 | 50 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-14T15:51:56.059Z). Suite: 4446/4446 passed (recorded 2026-10-14T15:52:33.8620383Z).
+Gates read from .lifecycle-result.json, written 2026-10-14T15:52:10.252Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Inventory/Clients directory visual acceptance, complete live pointer timing/safe-travel measurements, remaining core surfaces and alternate authenticated-role checks need a working browser connection. Current session proves selected Rentals flows, not every app surface or role.
+- Hover timing, blocked-client behavior and role omission passed automated checks; those conditions were not all independently exercised against live authenticated roles. Live JWT/PostgREST and production verification remain pending.
+- Temporary viewport reset could not be confirmed after debugger detachment; touch emulation had been disabled before desktop verification. Existing Chrome zoom was preserved; requested 390px phone override measured approximately 355 CSS px.
+- No production deployment or live migration application was performed.
 ## 2026-10-14 — Button audit fixes: browser finish and local verification
 
 **Did**

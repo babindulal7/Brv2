@@ -516,8 +516,8 @@ export function FastReturnModal({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 6,
-                    minHeight: 34,
-                    padding: '0 10px',
+                    minHeight: 44,
+                    padding: '0 12px',
                     borderRadius: 'var(--r-badge)',
                     border: bookingRef === b.booking_no ? '1px solid var(--primary)' : '1px solid var(--border)',
                     background: bookingRef === b.booking_no ? 'var(--hover-card)' : 'transparent',
@@ -618,9 +618,9 @@ export function FastReturnModal({
                         onChange={(e) => updateItemCondition(item.key, e.target.value as ItemCondition)}
                         aria-label={`Condition for ${item.name}`}
                         style={{
-                          height: 28,
-                          padding: '0 6px',
-                          fontSize: '12px',
+                          minHeight: 44,
+                          padding: '0 8px',
+                          fontSize: 'var(--t-meta)',
                           borderRadius: 'var(--r-xs)',
                           border: '1px solid var(--input-border)',
                           background: 'var(--input-bg)',
@@ -651,9 +651,9 @@ export function FastReturnModal({
                         onChange={(e) => updateItemMissingReason(item.key, e.target.value)}
                         style={{
                           width: '100%',
-                          height: 28,
-                          padding: '0 8px',
-                          fontSize: '12px',
+                          minHeight: 44,
+                          padding: '0 10px',
+                          fontSize: 'var(--t-meta)',
                           borderRadius: 'var(--r-input)',
                           border: '1px solid var(--danger)',
                           background: 'var(--input-bg)',
@@ -668,9 +668,9 @@ export function FastReturnModal({
                         aria-label={`Decision for ${item.name}`}
                         style={{
                           width: '100%',
-                          height: 28,
-                          padding: '0 8px',
-                          fontSize: '12px',
+                          minHeight: 44,
+                          padding: '0 10px',
+                          fontSize: 'var(--t-meta)',
                           borderRadius: 'var(--r-input)',
                           border: '1px solid var(--input-border)',
                           background: 'var(--input-bg)',

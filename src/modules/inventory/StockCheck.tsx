@@ -916,7 +916,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
       >
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-            <KpiStrip items={kpis} columns={4} />
+            <KpiStrip items={kpis} columns={viewport === 'phone' ? 1 : viewport === 'tablet' ? 2 : 4} />
 
             {/* §7.3's session card — `session · scheduled` over the progress bar. */}
             <Card>

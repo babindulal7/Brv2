@@ -130,7 +130,7 @@ export function CreatePurchaseRequestModal({
               value={equipmentTitle}
               onChange={(e) => setEquipmentTitle(e.target.value)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -149,7 +149,7 @@ export function CreatePurchaseRequestModal({
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -179,7 +179,7 @@ export function CreatePurchaseRequestModal({
               value={quantity}
               onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -201,7 +201,7 @@ export function CreatePurchaseRequestModal({
               placeholder="0"
               onChange={(e) => setUnitCostRupees(Math.max(0, Number(e.target.value) || 0))}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -220,7 +220,7 @@ export function CreatePurchaseRequestModal({
               value={priority}
               onChange={(e) => setPriority(e.target.value as PRPriority)}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -251,7 +251,7 @@ export function CreatePurchaseRequestModal({
             placeholder="0"
             onChange={(e) => setTurnaways(Math.max(0, Number(e.target.value) || 0))}
             style={{
-              height: 36,
+              minHeight: 44,
               padding: '0 12px',
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',

@@ -446,6 +446,12 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
         }
       }}
       onClick={(e) => {
+        // React portals still bubble through the originating row. Card and
+        // sheet controls must not activate that row's separate workflow.
+        if (e.target instanceof Element && (e.target.closest('[data-intel-overlay]') || (sheetOpen && e.target.closest('[role="dialog"]')))) {
+          e.stopPropagation()
+          return
+        }
         // A completed long-press also emits a synthetic click on lift; left
         // unswallowed it falls through to the row's own onClick and
         // navigates away the instant the card opens (SCREENS.md).
@@ -485,7 +491,12 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
             leavePoint.current = { x: e.clientX, y: e.clientY }
             scheduleClose()
           }}
-          onClose={doClose}
+          onClose={() => {
+            doClose()
+            restoringFocus.current = true
+            triggerRef.current?.focus()
+            restoringFocus.current = false
+          }}
           content={
             <>
               {linkedStack.length > 0 ? <button type="button" onClick={goBack} style={{ minHeight: 44, border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer' }}>← Back</button> : null}

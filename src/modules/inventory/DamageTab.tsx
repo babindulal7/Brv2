@@ -247,7 +247,7 @@ export function DamageTab() {
                       type="number"
                       value={draft ?? String(toRupees(f.chargePaisa))}
                       onChange={(e) => setChargeDraft((d) => ({ ...d, [f.id]: e.target.value }))}
-                      style={{ width: 140, height: 32, padding: '0 10px', borderRadius: 'var(--r-input)', border: `1px solid ${validation.errors.charge ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+                      style={{ width: 140, minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-input)', border: `1px solid ${validation.errors.charge ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                     />
                     <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                       Crosses to Owner at {formatMoney(OWNER_APPROVAL_THRESHOLD)}

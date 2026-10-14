@@ -1,0 +1,156 @@
+[
+  {
+    "card": {
+      "bottom": 572,
+      "height": 560,
+      "left": 373.4545593261719,
+      "right": 853.4545593261719,
+      "top": 12,
+      "width": 480,
+      "x": 373.4545593261719,
+      "y": 12
+    },
+    "check": "equipment-desktop-scroll",
+    "entries": 7,
+    "overflow": false,
+    "tabs": {
+      "bottom": 125.4545440673828,
+      "height": 52,
+      "left": 386.1818237304687,
+      "right": 831.2727355957031,
+      "top": 73.45454406738281,
+      "width": 445.0909118652344,
+      "x": 386.1818237304687,
+      "y": 73.45454406738281
+    },
+    "viewport": 1440
+  },
+  {
+    "check": "equipment-notes-only",
+    "composerOutsideNotes": 0
+  },
+  {
+    "card": {
+      "bottom": 572,
+      "height": 560,
+      "left": 277,
+      "right": 757,
+      "top": 12,
+      "width": 480,
+      "x": 277,
+      "y": 12
+    },
+    "check": "equipment-tablet-tabs",
+    "entries": 7,
+    "overflow": false,
+    "viewport": 769
+  },
+  {
+    "card": {
+      "bottom": 767.2727355957031,
+      "height": 652.1818237304688,
+      "left": 0,
+      "right": 360,
+      "top": 115.09091186523438,
+      "width": 360,
+      "x": 0,
+      "y": 115.09091186523438
+    },
+    "check": "equipment-phone",
+    "entries": 7,
+    "overflow": false,
+    "tabs": {
+      "bottom": 317.0454559326172,
+      "height": 98,
+      "left": 20.72727394104004,
+      "right": 329.8181858062744,
+      "top": 219.0454559326172,
+      "width": 309.0909118652344,
+      "x": 20.72727394104004,
+      "y": 219.0454559326172
+    },
+    "viewport": 360
+  },
+  {
+    "check": "client-hover-timing",
+    "samples": [
+      {
+        "elapsedMs": 39,
+        "dialogs": 0
+      },
+      {
+        "elapsedMs": 176,
+        "dialogs": 0
+      },
+      {
+        "elapsedMs": 301,
+        "dialogs": 0
+      },
+      {
+        "elapsedMs": 424,
+        "dialogs": 1
+      }
+    ]
+  },
+  {
+    "check": "client-nonidentifier-hover",
+    "dialogs": 0
+  },
+  {
+    "check": "client-safe-travel",
+    "dialogs": 1
+  },
+  {
+    "card": {
+      "bottom": 849.3182067871094,
+      "height": 493.5909118652344,
+      "left": 331.4545593261719,
+      "right": 811.4545593261719,
+      "top": 355.727294921875,
+      "width": 480,
+      "x": 331.4545593261719,
+      "y": 355.727294921875
+    },
+    "check": "client-desktop",
+    "entries": 2,
+    "overflow": false,
+    "viewport": 1440
+  },
+  {
+    "card": {
+      "bottom": 918.9886779785156,
+      "height": 493.5682067871094,
+      "left": 277,
+      "right": 757,
+      "top": 425.42047119140625,
+      "width": 480,
+      "x": 277,
+      "y": 425.42047119140625
+    },
+    "check": "client-tablet",
+    "overflow": false,
+    "viewport": 769
+  },
+  {
+    "check": "client-notes-only",
+    "editorInNotes": 1,
+    "editorOutsideNotes": 0,
+    "dialogs": 1
+  },
+  {
+    "card": {
+      "bottom": 767.2727432250977,
+      "height": 646.1136474609375,
+      "left": 0,
+      "right": 360,
+      "top": 121.15909576416016,
+      "width": 360,
+      "x": 0,
+      "y": 121.15909576416016
+    },
+    "check": "client-phone",
+    "entries": 2,
+    "overflow": false,
+    "viewport": 360
+  }
+]
