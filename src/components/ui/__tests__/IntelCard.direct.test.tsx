@@ -20,6 +20,26 @@ afterEach(() => {
 })
 
 describe('direct Intel card', () => {
+  it('returns focus after Escape without reopening the card', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    await act(async () => root.render(<MemoryRouter>
+      <IntelCard glance={{ avatarLabel: 'BK', title: 'B-715' }} detailTitle="B-715" detail={[]}>
+        <span data-intel-identifier>B-715</span>
+      </IntelCard>
+    </MemoryRouter>))
+    const trigger = host.querySelector('[data-intel-row]') as HTMLElement
+    await act(async () => trigger.focus())
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    const close = document.querySelector('[aria-label="Close Intel"]') as HTMLButtonElement
+    await act(async () => close.focus())
+    await act(async () => close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.activeElement).toBe(trigger)
+    expect(document.querySelector('[data-intel-overlay]')).toBeNull()
+    await act(async () => root.unmount())
+    host.remove()
+  })
   it('shows the full record on hover without a Peek step, then closes on Escape', async () => {
     vi.useFakeTimers()
     const host = document.createElement('div')

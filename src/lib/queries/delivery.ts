@@ -1,4 +1,36 @@
 import { businessDayAd, kathmanduMinutes } from '../../data/today'
+import { IS_MOCK } from '../supabase'
+import { canPerformOperations, canViewMoney } from '../rbac'
+import type { SystemRole } from '../../types/database'
+
+export interface DeliveryWriteContext {
+  role: SystemRole | null
+  isOnline: boolean
+}
+
+export function deliveryReadRefusal(role: SystemRole | null): string | null {
+  if (!role || role === 'Client') return 'Internal delivery records are not available to this session.'
+  if (role === 'Driver') return 'Assigned delivery records are unavailable until verified trip assignment access is connected.'
+  if (!IS_MOCK) return 'Delivery records are unavailable: a server-backed delivery query and action are not connected. No live deliveries were loaded and nothing has been saved.'
+  return null
+}
+
+/** This local preview has no delivery server action. Never report a live save. */
+export function deliveryMutationRefusal(context: DeliveryWriteContext): string | null {
+  if (!context.role || !canPerformOperations(context.role) || !canViewMoney(context.role)) {
+    return 'Your role cannot change delivery records.'
+  }
+  if (!IS_MOCK) {
+    return 'Delivery changes are unavailable until a server-backed delivery action is connected. Nothing has been saved.'
+  }
+  if (!context.isOnline) return 'This device is offline. Delivery changes are not queued. Reconnect before trying again.'
+  return null
+}
+
+function requireDeliveryMutation(context: DeliveryWriteContext): void {
+  const refusal = deliveryMutationRefusal(context)
+  if (refusal) throw new Error(refusal)
+}
 
 /**
  * One instant, rendered as `YYYY-MM-DD HH:MM`, both halves in **Kathmandu**.
@@ -138,7 +170,9 @@ export const INITIAL_DELIVERIES: DeliveryRecord[] = [
 
 const STORAGE_KEY = 'babin_rentals_deliveries_v1'
 
-export function getDeliveries(): DeliveryRecord[] {
+export function getDeliveries(role: SystemRole | null): DeliveryRecord[] {
+  // Local sample records cannot stand in for live deliveries.
+  if (deliveryReadRefusal(role)) return []
   if (typeof window === 'undefined') return INITIAL_DELIVERIES
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -152,21 +186,20 @@ export function getDeliveries(): DeliveryRecord[] {
   }
 }
 
-export function saveDeliveries(list: DeliveryRecord[]): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-  } catch {
-    // quota exceeded or private mode
-  }
+export function saveDeliveries(list: DeliveryRecord[], context: DeliveryWriteContext): void {
+  requireDeliveryMutation(context)
+  if (typeof window === 'undefined') throw new Error('Delivery storage is unavailable. Nothing has been saved.')
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
 }
 
 export function updateDeliveryStatus(
   id: string,
   status: DeliveryStatus,
+  context: DeliveryWriteContext,
   extra?: { recipientName?: string; notes?: string }
 ): DeliveryRecord[] {
-  const current = getDeliveries()
+  requireDeliveryMutation(context)
+  const current = getDeliveries(context.role)
   const timeStr = kathmanduStamp()
 
   const next = current.map((d) => {
@@ -185,7 +218,7 @@ export function updateDeliveryStatus(
     return updated
   })
 
-  saveDeliveries(next)
+  saveDeliveries(next, context)
   return next
 }
 
@@ -193,9 +226,11 @@ export function assignDeliveryRider(
   id: string,
   driverName: string,
   driverPhone: string,
-  vehiclePlate: string
+  vehiclePlate: string,
+  context: DeliveryWriteContext
 ): DeliveryRecord[] {
-  const current = getDeliveries()
+  requireDeliveryMutation(context)
+  const current = getDeliveries(context.role)
   const next = current.map((d) => {
     if (d.id !== id) return d
     return {
@@ -206,7 +241,7 @@ export function assignDeliveryRider(
       status: d.status === 'Scheduled' ? ('Ready' as DeliveryStatus) : d.status,
     }
   })
-  saveDeliveries(next)
+  saveDeliveries(next, context)
   return next
 }
 
@@ -235,10 +270,11 @@ function nextDeliveryId(existing: readonly DeliveryRecord[]): string {
   return `DEL-${candidate}`
 }
 
-export function createDeliveryRecord(payload: Omit<DeliveryRecord, 'id'>): DeliveryRecord {
-  const current = getDeliveries()
+export function createDeliveryRecord(payload: Omit<DeliveryRecord, 'id'>, context: DeliveryWriteContext): DeliveryRecord {
+  requireDeliveryMutation(context)
+  const current = getDeliveries(context.role)
   const created: DeliveryRecord = { ...payload, id: nextDeliveryId(current) }
   const next = [created, ...current]
-  saveDeliveries(next)
+  saveDeliveries(next, context)
   return created
 }

@@ -56,7 +56,7 @@ export function RentalHoverCard({
       </div>
       <div data-rental-intel-summary style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--surface-card, var(--card))', padding: '4px 0 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ padding: '0 14px 8px' }}>
-        {canViewFinance && total !== undefined ? <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8 }}><span>{preview.isDraft ? 'Draft rental total' : 'Rental total'}</span><strong className="figure">{formatMoney(total as Paisa)}</strong></div> : null}
+        {canViewFinance ? <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8 }}><span>{preview.isDraft ? 'Draft rental total' : 'Rental total'}</span><strong className={total !== undefined ? 'figure' : undefined}>{total !== undefined ? formatMoney(total as Paisa) : 'Not recorded'}</strong></div> : null}
         {beforeHandover && blocked ? (
           <p role={blocked === 'Readiness verification unavailable' ? 'status' : 'alert'} style={{ margin: '6px 0 0', fontSize: 13, color: blocked === 'Readiness verification unavailable' ? 'var(--muted)' : 'var(--danger-text)' }}>{blocked === 'Readiness verification unavailable' ? 'Handover readiness not verified' : `🔴 Handover blocked — ${blocked}`}</p>
         ) : (
@@ -122,6 +122,7 @@ export function RentalHoverCard({
         ) : null}
         {tab === 'notes' ? (
           notesContent ?? <div>
+            {preview.notes.length === 0 ? <p style={{ color: 'var(--muted)' }}>No notes recorded.</p> : null}
             <ul style={{ margin: 0, padding: 0 }}>
               {preview.notes.map((n) => (
                 <li key={n.id} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>

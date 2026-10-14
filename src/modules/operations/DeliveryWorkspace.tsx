@@ -1,5 +1,5 @@
 import { DateField } from '../../components/ui/DateField'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -14,11 +14,16 @@ import { EmptyState } from '../../components/ui/StateViews'
 import { formatMoney, rupees } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
+import { canPerformOperations, canViewMoney } from '../../lib/rbac'
 import {
   getDeliveries,
   updateDeliveryStatus,
   assignDeliveryRider,
   createDeliveryRecord,
+  deliveryMutationRefusal,
+  deliveryReadRefusal,
   type DeliveryRecord,
   type DeliveryStatus,
   type DeliveryMode,
@@ -38,11 +43,21 @@ const STATUS_BADGE_STYLE: Record<DeliveryStatus, { bg: string; color: string; bo
 type ViewMode = 'table' | 'kanban'
 
 export function DeliveryWorkspace() {
-  const [deliveries, setDeliveries] = useState<DeliveryRecord[]>(() => getDeliveries())
+  const { user } = useAuth()
+  const [deliveries, setDeliveries] = useState<DeliveryRecord[]>(() => getDeliveries(user?.role ?? null))
+  useEffect(() => { setDeliveries(getDeliveries(user?.role ?? null)) }, [user?.role])
   const [statusFilter, setStatusFilter] = useState<'All' | DeliveryStatus>('All')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const canMoney = useCanViewMoney()
+  const isOnline = useNetwork()
+  const writeContext = { role: user?.role ?? null, isOnline }
+  // Conservative local preview: transport writes exclude money-blind roles.
+  // A real delivery permission/action contract is still unimplemented.
+  const canChange = !!user && canPerformOperations(user.role) && canViewMoney(user.role)
+  const writeRefusal = deliveryMutationRefusal(writeContext)
+  const readRefusal = deliveryReadRefusal(user?.role ?? null)
+  const [mutationError, setMutationError] = useState<string | null>(null)
   const viewport = useViewport()
   const isMobile = viewport === 'phone'
   const { showSuccessToast } = useToast()
@@ -97,6 +112,8 @@ export function DeliveryWorkspace() {
   const totalRevenue = deliveries.reduce((acc, d) => acc + (d.status === 'Delivered' ? d.deliveryFeeNpr : 0), 0)
 
   const handleOpenAssign = (rec: DeliveryRecord) => {
+    if (writeRefusal) { setMutationError(writeRefusal); return }
+    setMutationError(null)
     setAssignTarget(rec)
     setDriverName(rec.driverName ?? '')
     setDriverPhone(rec.driverPhone ?? '')
@@ -105,19 +122,27 @@ export function DeliveryWorkspace() {
 
   const handleSaveAssign = () => {
     if (!assignTarget) return
-    const updated = assignDeliveryRider(assignTarget.id, driverName, driverPhone, vehiclePlate)
-    setDeliveries(updated)
-    setAssignTarget(null)
-    showSuccessToast(`Rider/Driver assigned to ${assignTarget.id}`)
+    try {
+      const updated = assignDeliveryRider(assignTarget.id, driverName, driverPhone, vehiclePlate, writeContext)
+      setDeliveries(updated)
+      setAssignTarget(null)
+      setMutationError(null)
+      showSuccessToast(`Local preview: rider/driver assigned to ${assignTarget.id}`)
+    } catch (error) { setMutationError(error instanceof Error ? error.message : 'Delivery changes could not be saved.') }
   }
 
   const handleStartTransit = (rec: DeliveryRecord) => {
-    const updated = updateDeliveryStatus(rec.id, 'In Transit')
-    setDeliveries(updated)
-    showSuccessToast(`${rec.id} marked In Transit · Driver en route`)
+    try {
+      const updated = updateDeliveryStatus(rec.id, 'In Transit', writeContext)
+      setDeliveries(updated)
+      setMutationError(null)
+      showSuccessToast(`Local preview: ${rec.id} marked In Transit · Driver en route`)
+    } catch (error) { setMutationError(error instanceof Error ? error.message : 'Delivery changes could not be saved.') }
   }
 
   const handleOpenDeliver = (rec: DeliveryRecord) => {
+    if (writeRefusal) { setMutationError(writeRefusal); return }
+    setMutationError(null)
     setDeliverTarget(rec)
     setRecipientName(rec.recipientName || rec.clientName)
     setDeliveryNote('')
@@ -125,22 +150,28 @@ export function DeliveryWorkspace() {
 
   const handleConfirmDelivered = () => {
     if (!deliverTarget) return
-    const updated = updateDeliveryStatus(deliverTarget.id, 'Delivered', {
-      recipientName,
-      notes: deliveryNote,
-    })
-    setDeliveries(updated)
-    setDeliverTarget(null)
-    showSuccessToast(`${deliverTarget.id} successfully marked Delivered to ${recipientName}`)
+    if (!recipientName.trim()) { setMutationError('Enter the name of the person who received the delivery.'); return }
+    try {
+      const updated = updateDeliveryStatus(deliverTarget.id, 'Delivered', writeContext, {
+        recipientName: recipientName.trim(),
+        notes: deliveryNote,
+      })
+      setDeliveries(updated)
+      setDeliverTarget(null)
+      setMutationError(null)
+      showSuccessToast(`Local preview: ${deliverTarget.id} marked Delivered to ${recipientName}`)
+    } catch (error) { setMutationError(error instanceof Error ? error.message : 'Delivery changes could not be saved.') }
   }
 
   const handleCreateDelivery = (e: React.FormEvent) => {
     e.preventDefault()
+    if (writeRefusal) { setCreateError(writeRefusal); return }
     if (!newBookingNo || !newClientName || !newAddress) {
       setCreateError('Please fill all required delivery details (Booking Number, Client Name, and Delivery Address).')
       return
     }
     setCreateError(null)
+    try {
     const created = createDeliveryRecord({
       bookingNo: newBookingNo.toUpperCase(),
       clientName: newClientName,
@@ -155,10 +186,11 @@ export function DeliveryWorkspace() {
       notes: newNotes,
       gatePassNo: `GP-${Math.floor(1000 + Math.random() * 9000)}`,
       packageSealNo: `BR-SEAL-${Math.floor(100 + Math.random() * 900)}`,
-    })
+    }, writeContext)
     setDeliveries([created, ...deliveries])
     setNewModalOpen(false)
-    showSuccessToast(`Created delivery order ${created.id}`)
+    showSuccessToast(`Local preview: created delivery order ${created.id}`)
+    } catch (error) { setCreateError(error instanceof Error ? error.message : 'Delivery changes could not be saved.') }
   }
 
   return (
@@ -176,16 +208,17 @@ export function DeliveryWorkspace() {
           actions={
             <PageActions
               primary={
-                <Button variant="primary" onClick={() => setNewModalOpen(true)}>
+                canChange ? <Button variant="primary" disabled={!!writeRefusal} onClick={() => setNewModalOpen(true)}>
                   <Icon name="truck" size={16} /> + New Dispatch
-                </Button>
+                </Button> : null
               }
             />
           }
         />
       }
     >
-      <PageBody>
+      <PageBody error={readRefusal}>
+        {(writeRefusal || mutationError) && <div role="alert" style={{ padding: 12, color: 'var(--st-danger-fg)', background: 'var(--st-danger-bg)' }}>{mutationError || writeRefusal}</div>}
         <div className="delivery-workspace">
           {/* KPI Strip */}
           <div className="delivery-kpi-grid">
@@ -315,13 +348,15 @@ export function DeliveryWorkspace() {
                     ? 'No dispatch records matched your active search query or status filter.'
                     : 'Dispatch records and courier runs will appear here as bookings get scheduled for delivery.'
                 }
-                actionLabel={searchQuery || statusFilter !== 'All' ? 'Clear Filters' : '+ New Dispatch'}
+                {...((searchQuery || statusFilter !== 'All' || (canChange && !writeRefusal)) ? {
+                  actionLabel: searchQuery || statusFilter !== 'All' ? 'Clear Filters' : '+ New Dispatch'
+                } : {})}
                 onAction={() => {
                   if (searchQuery || statusFilter !== 'All') {
                     setSearchQuery('')
                     setStatusFilter('All')
                   } else {
-                    setNewModalOpen(true)
+                    if (!writeRefusal) setNewModalOpen(true)
                   }
                 }}
               />
@@ -436,33 +471,36 @@ export function DeliveryWorkspace() {
 
                             {/* Card action footer */}
                             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                              {d.status === 'Scheduled' && (
+                              {canChange && d.status === 'Scheduled' && (
                                 <Button
                                   variant="secondary"
                                   size="sm"
                                   style={{ width: '100%' }}
+                                  disabled={!!writeRefusal}
                                   onClick={() => handleOpenAssign(d)}
                                 >
                                   Assign Driver
                                 </Button>
                               )}
-                              {d.status === 'Ready' && (
+                              {canChange && d.status === 'Ready' && (
                                 <Button
                                   variant="primary"
                                   data-primary-verb
                                   size="sm"
                                   style={{ width: '100%' }}
+                                  disabled={!!writeRefusal}
                                   onClick={() => handleStartTransit(d)}
                                 >
                                   Dispatch Now
                                 </Button>
                               )}
-                              {d.status === 'In Transit' && (
+                              {canChange && d.status === 'In Transit' && (
                                 <Button
                                   variant="primary"
                                   data-primary-verb
                                   size="sm"
                                   style={{ width: '100%' }}
+                                  disabled={!!writeRefusal}
                                   onClick={() => handleOpenDeliver(d)}
                                 >
                                   Confirm Delivered ✓
@@ -577,15 +615,16 @@ export function DeliveryWorkspace() {
                                   </a>
                                 )}
                               </div>
-                            ) : (
+                            ) : canChange ? (
                               <Button
                                 type="button"
                                 variant="secondary"
-                                onClick={() => handleOpenAssign(d)}
+                                disabled={!!writeRefusal}
+                                  onClick={() => handleOpenAssign(d)}
                               >
                                 + Assign Rider
                               </Button>
-                            )}
+                            ) : <span>Rider unassigned</span>}
                           </td>
 
                           {/* Status */}
@@ -648,32 +687,35 @@ export function DeliveryWorkspace() {
                                 <span>Slip</span>
                               </button>
 
-                              {d.status === 'Scheduled' && (
+                              {canChange && d.status === 'Scheduled' && (
                                 <Button
                                   variant="secondary"
                                   size="sm"
+                                  disabled={!!writeRefusal}
                                   onClick={() => handleOpenAssign(d)}
                                 >
                                   Assign
                                 </Button>
                               )}
 
-                              {d.status === 'Ready' && (
+                              {canChange && d.status === 'Ready' && (
                                 <Button
                                   variant="primary"
                                   data-primary-verb
                                   size="sm"
+                                  disabled={!!writeRefusal}
                                   onClick={() => handleStartTransit(d)}
                                 >
                                   Dispatch
                                 </Button>
                               )}
 
-                              {d.status === 'In Transit' && (
+                              {canChange && d.status === 'In Transit' && (
                                 <Button
                                   variant="primary"
                                   data-primary-verb
                                   size="sm"
+                                  disabled={!!writeRefusal}
                                   onClick={() => handleOpenDeliver(d)}
                                 >
                                   Delivered ✓
@@ -698,6 +740,7 @@ export function DeliveryWorkspace() {
               title={`Assign Driver / Rider — ${assignTarget.id}`}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+                {mutationError && <div role="alert">{mutationError}</div>}
                 <div
                   style={{
                     padding: '12px 14px',
@@ -786,7 +829,7 @@ export function DeliveryWorkspace() {
                   <Button variant="secondary" onClick={() => setAssignTarget(null)}>
                     Cancel
                   </Button>
-                  <Button variant="primary" onClick={handleSaveAssign}>
+                  <Button variant="primary" onClick={handleSaveAssign} disabled={!!writeRefusal}>
                     Save & Stage (Ready)
                   </Button>
                 </div>
@@ -802,6 +845,7 @@ export function DeliveryWorkspace() {
               title={`Confirm Equipment Delivery — ${deliverTarget.id}`}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+                {mutationError && <div role="alert">{mutationError}</div>}
                 <div
                   style={{
                     padding: '12px 14px',
@@ -865,7 +909,7 @@ export function DeliveryWorkspace() {
                   <Button variant="secondary" onClick={() => setDeliverTarget(null)}>
                     Cancel
                   </Button>
-                  <Button variant="primary" onClick={handleConfirmDelivered}>
+                  <Button variant="primary" onClick={handleConfirmDelivered} disabled={!!writeRefusal || !recipientName.trim()}>
                     Confirm Delivery ✓
                   </Button>
                 </div>
@@ -1094,7 +1138,7 @@ export function DeliveryWorkspace() {
                   <Button variant="secondary" onClick={() => setNewModalOpen(false)}>
                     Cancel
                   </Button>
-                  <Button variant="primary" type="submit">
+                  <Button variant="primary" type="submit" disabled={!!writeRefusal}>
                     Create Dispatch Order
                   </Button>
                 </div>
@@ -1142,7 +1186,7 @@ export function DeliveryWorkspace() {
                   <div><strong>Vehicle Plate:</strong> {gatePassSlip.vehiclePlate || 'N/A'}</div>
                 </div>
 
-                {gatePassSlip.notes && (
+                {canMoney && gatePassSlip.notes && (
                   <div style={{ border: '1px dashed var(--border)', padding: '10px 12px', borderRadius: 'var(--r-xs)', marginBottom: '20px', background: 'var(--surface2)' }}>
                     <strong>Special Instructions:</strong> {gatePassSlip.notes}
                   </div>

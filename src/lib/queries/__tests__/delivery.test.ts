@@ -11,6 +11,10 @@ import {
   type DeliveryRecord,
 } from '../delivery'
 
+const mode = vi.hoisted(() => ({ mock: true }))
+vi.mock('../../supabase', () => ({ get IS_MOCK() { return mode.mock } }))
+const context = { role: 'Owner' as const, isOnline: true }
+
 /*
  * Two defects in this module were invisible to the UI because both produced a
  * plausible-looking record:
@@ -28,7 +32,7 @@ import {
  */
 
 function seed(records: DeliveryRecord[]) {
-  saveDeliveries(records)
+  saveDeliveries(records, context)
 }
 
 function blank(over: Partial<DeliveryRecord> = {}): Omit<DeliveryRecord, 'id'> {
@@ -48,7 +52,52 @@ function blank(over: Partial<DeliveryRecord> = {}): Omit<DeliveryRecord, 'id'> {
 }
 
 beforeEach(() => {
+  mode.mock = true
   window.localStorage.clear()
+})
+
+describe('delivery local preview fail-closed writes', () => {
+  it.each(['Driver', 'Client', null] as const)('refuses unscoped internal records for %s', (role) => {
+    seed([{ ...blank({ status: 'Ready' }), id: 'DEL-2601' }])
+    expect(getDeliveries(role)).toEqual([])
+  })
+  it.each(['Coordinator', 'Accounts', 'Warehouse', 'Technician', 'Driver', 'Client', null] as const)('refuses %s before writing', (role) => {
+    seed([{ ...blank({ status: 'Ready' }), id: 'DEL-2601' }])
+    const before = localStorage.getItem('babin_rentals_deliveries_v1')
+    const denied = { role, isOnline: true }
+    expect(() => updateDeliveryStatus('DEL-2601', 'In Transit', denied)).toThrow('Your role')
+    expect(() => assignDeliveryRider('DEL-2601', 'Test Driver', '', '', denied)).toThrow('Your role')
+    expect(() => createDeliveryRecord(blank(), denied)).toThrow('Your role')
+    expect(() => saveDeliveries([], denied)).toThrow('Your role')
+    expect(localStorage.getItem('babin_rentals_deliveries_v1')).toBe(before)
+  })
+
+  it('refuses all live mutations and hides local sample records', () => {
+    seed([{ ...blank({ status: 'Ready' }), id: 'DEL-2601' }])
+    const before = localStorage.getItem('babin_rentals_deliveries_v1')
+    mode.mock = false
+    expect(getDeliveries('Owner')).toEqual([])
+    expect(() => updateDeliveryStatus('DEL-2601', 'In Transit', context)).toThrow('server-backed')
+    expect(() => assignDeliveryRider('DEL-2601', 'Test Driver', '', '', context)).toThrow('server-backed')
+    expect(() => createDeliveryRecord(blank(), context)).toThrow('server-backed')
+    expect(() => saveDeliveries([], context)).toThrow('server-backed')
+    expect(localStorage.getItem('babin_rentals_deliveries_v1')).toBe(before)
+  })
+
+  it('refuses offline mutations and does not queue them', () => {
+    seed([{ ...blank({ status: 'Ready' }), id: 'DEL-2601' }])
+    const before = localStorage.getItem('babin_rentals_deliveries_v1')
+    expect(() => updateDeliveryStatus('DEL-2601', 'In Transit', { ...context, isOnline: false })).toThrow('not queued')
+    expect(localStorage.getItem('babin_rentals_deliveries_v1')).toBe(before)
+  })
+
+  it('does not return success when local persistence fails', () => {
+    seed([{ ...blank({ status: 'Ready' }), id: 'DEL-2601' }])
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage full') })
+    expect(() => updateDeliveryStatus('DEL-2601', 'In Transit', context)).toThrow('Storage full')
+    write.mockRestore()
+    expect(getDeliveries('Owner')[0]?.status).toBe('Ready')
+  })
 })
 
 afterEach(() => {
@@ -71,10 +120,10 @@ describe('delivery id allocation', () => {
     /* Drop DEL-2603. DEL-2605 is still in use, so DEL-2605 is not available. */
     seed(five.filter((d) => d.id !== 'DEL-2603'))
 
-    const created = createDeliveryRecord(blank())
+    const created = createDeliveryRecord(blank(), context)
     expect(created.id).toBe('DEL-2606')
 
-    const ids = getDeliveries().map((d) => d.id)
+    const ids = getDeliveries('Owner').map((d) => d.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
 
@@ -86,7 +135,7 @@ describe('delivery id allocation', () => {
       { ...blank(), id: 'DEL-2609' },
       { ...blank(), id: 'DEL-2603' },
     ])
-    expect(createDeliveryRecord(blank()).id).toBe('DEL-2610')
+    expect(createDeliveryRecord(blank(), context).id).toBe('DEL-2610')
   })
 
   it('never returns an id that is already taken, even with a legacy non-numeric id', () => {
@@ -94,14 +143,14 @@ describe('delivery id allocation', () => {
       { ...blank(), id: 'LEGACY-1' },
       { ...blank(), id: 'DEL-2604' },
     ])
-    const created = createDeliveryRecord(blank())
+    const created = createDeliveryRecord(blank(), context)
     expect(created.id).toBe('DEL-2605')
-    expect(getDeliveries().map((d) => d.id)).toContain(created.id)
+    expect(getDeliveries('Owner').map((d) => d.id)).toContain(created.id)
   })
 
   it('keeps ids unique across a run of consecutive creations', () => {
     seed(INITIAL_DELIVERIES.slice(0, 2))
-    const made = Array.from({ length: 6 }, () => createDeliveryRecord(blank()).id)
+    const made = Array.from({ length: 6 }, () => createDeliveryRecord(blank(), context).id)
     expect(new Set(made).size).toBe(6)
   })
 })
@@ -116,7 +165,7 @@ describe('dispatch stamps', () => {
     const at = new Date('2026-07-13T18:30:00.000Z')
     vi.setSystemTime(at)
 
-    const next = updateDeliveryStatus('DEL-2601', 'In Transit')
+    const next = updateDeliveryStatus('DEL-2601', 'In Transit', context)
     const stamped = next.find((d) => d.id === 'DEL-2601')?.dispatchedAt
     expect(stamped).toBe('2026-07-14 00:15')
   })
@@ -126,7 +175,7 @@ describe('dispatch stamps', () => {
     const at = new Date('2026-07-13T18:30:00.000Z')
     vi.setSystemTime(at)
 
-    const stamped = updateDeliveryStatus('DEL-2601', 'In Transit')
+    const stamped = updateDeliveryStatus('DEL-2601', 'In Transit', context)
       .find((d) => d.id === 'DEL-2601')?.dispatchedAt
     /* `data/today.ts` is the single place the +05:45 offset lives; the stamp's
      * date half must not be computed independently of it. */
@@ -140,10 +189,10 @@ describe('assignDeliveryRider', () => {
       { ...blank({ status: 'Scheduled' }), id: 'DEL-2601' },
       { ...blank({ status: 'In Transit' }), id: 'DEL-2602' },
     ])
-    const next = assignDeliveryRider('DEL-2601', 'Real Person', '+977 9812345678', 'Ba 1 Pa 1')
+    const next = assignDeliveryRider('DEL-2601', 'Real Person', '+977 9812345678', 'Ba 1 Pa 1', context)
     expect(next.find((d) => d.id === 'DEL-2601')?.status).toBe('Ready')
 
-    const after = assignDeliveryRider('DEL-2602', 'Real Person', '+977 9812345678', 'Ba 1 Pa 1')
+    const after = assignDeliveryRider('DEL-2602', 'Real Person', '+977 9812345678', 'Ba 1 Pa 1', context)
     expect(after.find((d) => d.id === 'DEL-2602')?.status).toBe('In Transit')
   })
 
@@ -154,7 +203,7 @@ describe('assignDeliveryRider', () => {
       { ...blank({ bookingNo: 'BR-A', status: 'Scheduled' }), id: 'DEL-2601' },
       { ...blank({ bookingNo: 'BR-B', status: 'Scheduled' }), id: 'DEL-2601' },
     ])
-    const next = assignDeliveryRider('DEL-2601', 'Driver', '', '')
+    const next = assignDeliveryRider('DEL-2601', 'Driver', '', '', context)
     /* Both are touched because they are the same record as far as the data
      * model is concerned — which is the point: the invariant the allocator now
      * guarantees is that this state cannot be created in the first place. */

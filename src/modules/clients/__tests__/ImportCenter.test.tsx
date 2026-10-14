@@ -22,6 +22,7 @@ let root: Root | undefined, container: HTMLDivElement
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   mocks.role = 'Owner'; mocks.online = true
   mocks.matches.mockResolvedValue([])
   mocks.save.mockImplementation(async (input: ImportClientsInput) => {
@@ -50,6 +51,45 @@ async function upload(text: string) {
 const button = (label: string) => [...container.querySelectorAll('button')].find(b => b.textContent?.trim() === label)!
 
 describe('client import interaction', () => {
+  it('restores file, skipped rows and original receipt keys after a refresh', async () => {
+    mocks.save.mockImplementationOnce(async (input: ImportClientsInput) => {
+      const outcomes = [{ rowIndex: 0, status: 'saved' as const, clientId: 'first', clientCode: 'C-1' }, { rowIndex: 1, status: 'unconfirmed' as const, message: 'Confirmation lost. Retry.' }]
+      input.onProgress?.(outcomes)
+      return { outcomes }
+    })
+    await mount(); await upload('name,phone\nOne,9801234567\nTwo,9807654321\nSkip,9801111111')
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Include row 3 (Skip)"]')!.click())
+    await act(async () => button('Import 2 Clients').click())
+    const original = mocks.save.mock.calls[0]![0] as ImportClientsInput
+    await act(async () => root!.unmount()); root = undefined; container.remove()
+    await mount()
+    expect(container.textContent).toContain('Resume client import')
+    expect(container.textContent).toContain('1 confirmed saved')
+    await act(async () => button('Resume import').click())
+    const skip = container.querySelector<HTMLInputElement>('input[aria-label="Include row 3 (Skip)"]')!
+    expect(skip.checked).toBe(false)
+    expect(skip.disabled).toBe(true)
+    await act(async () => button('Check saved rows & continue').click())
+    const retry = mocks.save.mock.calls[1]![0] as ImportClientsInput
+    expect(retry.rows.map(row => row.clientUuid)).toEqual(original.rows.map(row => row.clientUuid))
+    expect(container.textContent).toContain('2 of 2 clients confirmed saved.')
+  })
+  it('requires explicit confirmation to discard a draft and explains saved clients remain', async () => {
+    await mount(); await upload('name,phone\nOne,9801234567')
+    await act(async () => button('Choose Different File').click())
+    expect(container.textContent).toContain('Clients already saved remain in the directory')
+    expect(container.querySelector('[aria-label="CSV import preview"]')).not.toBeNull()
+    await act(async () => button('Discard local draft').click())
+    expect(container.querySelector('[aria-label="CSV import preview"]')).toBeNull()
+    expect(localStorage.length).toBe(0)
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('provides persistent labels for the responsive preview including status and selection', async () => {
+    await mount(); await upload('name,phone\nOne,invalid')
+    const preview = container.querySelector('.client-import-preview')!
+    expect([...preview.querySelectorAll('td')].map(cell => cell.getAttribute('data-label'))).toEqual(['Include row', 'Row', 'Name', 'Phone', 'Type', 'Status'])
+    expect(preview.querySelector('td[data-label="Status"]')!.textContent).toContain('Nepali mobile')
+  })
   it('saves a reviewed file once despite a double click and shows confirmed client links', async () => {
     await mount(); await upload('name,phone\nOne,9801234567\nTwo,9807654321')
     const save = button('Import 2 Clients')
