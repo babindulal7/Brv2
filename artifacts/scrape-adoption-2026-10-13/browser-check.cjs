@@ -37,9 +37,10 @@ async function run() {
     `${name},9799999124,csv-two@example.test,Individual,600111223`
   try {
     await page.goto(`${base}/login`, { waitUntil: 'commit', timeout: 120000 })
+    await page.getByRole('button', { name: 'Skip', exact: true }).click({ timeout: 120000 })
     await page.getByRole('button', { name: 'Owner', exact: true }).click({ timeout: 120000 })
     await page.goto(`${base}/clients?tab=import`, { waitUntil: 'domcontentloaded', timeout: 120000 })
-    await page.getByText('Import Clients', { exact: true }).first().waitFor({ timeout: 60000 })
+    await page.locator('input[type=file]').waitFor({ state: 'attached', timeout: 30000 })
     await page.locator('input[type=file]').setInputFiles({ name: 'synthetic-clients.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) })
     const commit = page.getByRole('button', { name: 'Import 2 Clients', exact: true })
     await commit.waitFor({ timeout: 30000 })

@@ -188,7 +188,8 @@ export function CancelRentalModal({
         <label
           style={{
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
+            minHeight: 44,
             gap: 'var(--sp-sm)',
             fontSize: 'var(--t-meta)',
             color: 'var(--text)',
@@ -200,7 +201,7 @@ export function CancelRentalModal({
             aria-label="I confirm that this booking is to be cancelled and all reserved equipment released back into stock"
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
-            style={{ marginTop: 2 }}
+            style={{ width: 18, height: 18, flexShrink: 0 }}
           />
           <span>I confirm that this booking is to be cancelled and all reserved equipment released back into stock.</span>
         </label>

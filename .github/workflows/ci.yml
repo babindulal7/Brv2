@@ -47,7 +47,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+      - name: Test (offline mock backend)
+        env:
+          VITE_DATA_SOURCE: mock
         run: npm run test
 
       # The migration chain, applied from scratch into an in-process Postgres 18
@@ -104,7 +106,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Coverage
+      - name: Coverage (offline mock backend)
+        env:
+          VITE_DATA_SOURCE: mock
         run: npm run test:coverage
 
       # `npm run completion` (R-29) reads this to fill the Lifecycle row of the

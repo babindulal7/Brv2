@@ -1329,14 +1329,14 @@ export default function Finance() {
             },
           } : {}),
         } : money && tab === 'Expenses' ? {
-          leading: (
+          leading: !phone ? (
             <FilterButton
               onClick={() => setExpenseFiltersOpen((open) => !open)}
               activeCount={expenseFilterCount}
               controls="expense-filters"
               expanded={expenseFiltersOpen}
             />
-          ),
+          ) : undefined,
           search: {
             value: expenseSearch,
             onChange: setExpenseSearch,
@@ -1345,14 +1345,14 @@ export default function Finance() {
             ariaLabel: 'Search expenses by expense number, vendor, or description',
           },
         } : tab === 'Documents' ? {
-          leading: (
+          leading: !phone ? (
             <FilterButton
               onClick={() => setDocumentFiltersOpen((open) => !open)}
               activeCount={documentFilterCount}
               controls="documents-filters"
               expanded={documentFiltersOpen}
             />
-          ),
+          ) : undefined,
           search: {
             value: documentSearch,
             onChange: setDocumentSearch,
@@ -1372,7 +1372,16 @@ export default function Finance() {
         icon="card"
         title="Finance"
         module={tab === 'Expenses' ? 'expenses' : 'payments'}
-        {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : {})}
+        {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : phone && ((money && tab === 'Expenses') || tab === 'Documents') ? {
+          // RULING 2026-10-14: hosted Finance filters use phone More, matching Invoices and Calendar.
+          actions: <PageActions overflow={[{
+            label: (tab === 'Expenses' ? expenseFilterCount : documentFilterCount) > 0
+              ? `Filters (${tab === 'Expenses' ? expenseFilterCount : documentFilterCount})`
+              : 'Filters',
+            icon: 'filter',
+            onClick: () => tab === 'Expenses' ? setExpenseFiltersOpen(true) : setDocumentFiltersOpen(true),
+          }]} />,
+        } : {})}
       />
 
       {/*

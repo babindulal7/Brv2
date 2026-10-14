@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { resolveScannedCode } from '../scannerLookup'
+import { loadMockClient } from '../supabase'
+
+beforeAll(async () => {
+  await loadMockClient()
+})
 
 describe('AUD-002: Barcode Scanner Truthfulness', () => {
   it('returns unknown_code for empty input', async () => {

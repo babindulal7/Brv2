@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -7,6 +7,11 @@ import { ToastProvider } from '../../../components/ui/Toast'
 import PackingWorkspace from '../PackingWorkspace'
 import ReturnWorkspace from '../ReturnWorkspace'
 import { loadFloorScan, saveFloorScan } from '../../../lib/floorScanStorage'
+import { loadMockClient } from '../../../lib/supabase'
+
+beforeAll(async () => {
+  await loadMockClient()
+})
 
 const B901_ID = '11111111-1111-4111-8111-111111111111'
 

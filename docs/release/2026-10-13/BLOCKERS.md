@@ -1,9 +1,9 @@
 # Babin Rentals OS — Evidence-Based Blocker Register
 
-**Date:** 2026-10-13 (Nepal time, Asia/Kathmandu)  
-**Auditor / Integration Agent:** TestingRealityChecker (`agency-reality-checker`)  
-**Methodology:** Direct inspection of runtime gates, responsive layout constraints, and permissions matrix.  
-**Release Recommendation:** **HOLD** (Cannot promote to production until P0 and P1 blockers are resolved or authorized).  
+**Date:** 2026-10-14 (Nepal time, Asia/Kathmandu)<br>
+**Auditor / Integration Agent:** Antigravity / TestingRealityChecker<br>
+**Methodology:** Direct inspection of runtime gates, responsive layout constraints, and permissions matrix.<br>
+**Release Recommendation:** **HOLD** (Cannot promote to production until live staging checks and remaining P1 header flows are completed and authorized by the Owner).
 
 ---
 
@@ -19,14 +19,15 @@
 
 ### BLOCKER-01: Calendar Phone Header Overflow (P1)
 - **Component:** `src/modules/calendar/Calendar.tsx`
-- **Description:** On phone viewports (<768px, tested at 360px–390px), Calendar passes `leading={<FilterButton />} `, `primary={<Button>Check availability</Button>}`, and `extra={navButtons}` (Today button, prev/next month chevrons, BS/AD month pill) directly into the 64px fixed-height application header.
-- **Impact:** Total header width required exceeds 712px, crushing the title "Calendar" to 0px, causing profile/search buttons to clip off-screen, and breaking touch target spacing.
-- **Required Resolution:**
-  1. Remove leading `FilterButton` on phone viewports (`!phone ? ... : undefined`) and move "Filters" into the More menu.
-  2. Compact the primary CTA on phone to "Availability" (≥44px tap target).
-  3. Relocate `navButtons` out of the 64px header on phone into a dedicated content date toolbar directly above the month grid, preserving full BS/AD month labels and 44px buttons.
-  4. Preserve contextual phone search (`MobileHeaderSearch`).
-- **Status:** **IN PROGRESS (Target of Current Sprint)**
+- **Description:** On phone viewports (<768px, tested at 360px–390px), Calendar previously passed `leading={<FilterButton />} `, `primary={<Button>Check availability</Button>}`, and `extra={navButtons}` (Today button, prev/next month chevrons, BS/AD month pill) directly into the 64px fixed-height application header, requiring >700px width and crushing the title.
+- **Resolution Implemented:**
+  1. FilterButton removed from header leading position on phone (`!phone ? ... : undefined`) and accessible in More menu (`Filters` / `Filters (n)`).
+  2. Primary CTA compacted on phone to "Availability" with ≥44px touch target.
+  3. `navButtons` relocated out of 64px header into `.calendar-phone-nav` content bar directly above the month grid, preserving full BS/AD month labels and 44px tap targets.
+  4. Contextual phone search preserved via `MobileHeaderSearch`.
+  5. Interactive callbacks verified: Availability modal opens, More menu filters drawer opens, and navigation buttons meet ≥44px floor.
+- **Verification Evidence:** `src/modules/calendar/__tests__/CalendarHeader.test.tsx` (4/4 tests PASS in 1,096ms).
+- **Status:** **RESOLVED & LOCALLY VERIFIED**
 
 ---
 
@@ -35,7 +36,7 @@
 - **Description:** Similar to Calendar, these modules pass multiple contextual buttons into the header which crowd or truncate on 375px phone screens.
 - **Impact:** Header controls compete for width; titles truncate aggressively or push action buttons out of viewport.
 - **Required Resolution:** Consolidate secondary buttons into More menus, ensure page-level single primary action ownership, and align with the 64px single-header specification.
-- **Status:** **QUEUED (Follows Calendar Acceptance)**
+- **Status:** **ACTIVE SPRINT / QUEUED NEXT (Follows Calendar Acceptance)**
 
 ---
 

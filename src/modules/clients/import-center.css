@@ -1,0 +1,26 @@
+.client-import { min-width: 0; }
+.client-import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-sm); }
+.client-import-recovery { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--sp-lg); }
+.client-import-recovery h2 { margin-top: 0; font-family: var(--font-display); font-size: var(--t-ui); }
+.client-import-recovery p, .client-import-recovery-error { overflow-wrap: anywhere; }
+.client-import-recovery-error { color: var(--danger-text); }
+.client-import td { overflow-wrap: anywhere; }
+@media (max-width: 767px) {
+  .client-import strong { overflow-wrap: anywhere; }
+  .client-import [aria-label="CSV column mapping"],
+  .client-import [aria-label="CSV import preview"] { overflow-x: hidden !important; }
+  .client-import-mapping, .client-import-preview { display: block; min-width: 0 !important; }
+  .client-import-mapping thead, .client-import-preview thead { display: none; }
+  .client-import-mapping tbody, .client-import-preview tbody { display: block; }
+  .client-import-mapping tr, .client-import-preview tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: var(--sp-sm); gap: 0 var(--sp-sm); }
+  .client-import-mapping td, .client-import-preview td { display: block; width: auto !important; height: auto !important; min-width: 0; padding: var(--sp-sm) !important; }
+  .client-import-mapping td::before, .client-import-preview td::before { content: attr(data-label); display: block; font-family: var(--font-body); font-size: var(--t-th); font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+  .client-import-mapping td:last-child,
+  .client-import-preview td[data-label="Name"],
+  .client-import-preview td[data-label="Type"],
+  .client-import-preview td[data-label="Status"] { grid-column: 1 / -1; }
+  .client-import-preview td[data-label="Phone"] { grid-column: 1 / -1; }
+  .client-import-preview td[data-label="Status"] { line-height: 1.5; }
+  .client-import-preview td[data-label="Status"] a { display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
+  .client-import [role="alert"] { flex-wrap: wrap; }
+}

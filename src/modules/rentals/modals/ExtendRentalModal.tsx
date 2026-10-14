@@ -252,7 +252,7 @@ export function ExtendRentalModal({
                 setDays(Number.isFinite(next) ? next : 0)
               }}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -276,7 +276,7 @@ export function ExtendRentalModal({
                 setDailyRate(Number.isFinite(next) ? next : 0)
               }}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -337,11 +337,12 @@ export function ExtendRentalModal({
           </div>
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', cursor: 'pointer' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
+            style={{ width: 18, height: 18 }}
           />
           Client has authorized the extension and additional charges.
         </label>

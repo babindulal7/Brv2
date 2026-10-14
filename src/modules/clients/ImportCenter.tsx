@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -28,6 +28,9 @@ import {
   type ImportRowResult,
 } from '../../lib/clientImport'
 import { findClientMatches, type ClientRecord } from '../../lib/queries/clients'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { loadClientImportRecovery, saveClientImportRecovery, discardClientImportRecovery, type ClientImportRecoveryDraft } from '../../lib/clientImportRecovery'
+import './import-center.css'
 
 /** CSV imports use the shared transactional client save, with one receipt key per row. */
 
@@ -62,6 +65,11 @@ export interface ImportCenterProps {
 
 export default function ImportCenter(props: ImportCenterProps = {}) {
   const { user } = useAuth()
+  const previousActor = useRef(user?.id)
+  useEffect(() => {
+    if (previousActor.current && previousActor.current !== user?.id) discardClientImportRecovery(previousActor.current)
+    previousActor.current = user?.id
+  }, [user?.id])
   if (!user || !canImportClients(user.role)) return <RestrictedState />
   return <ClientImportForm key={user.id} {...props} />
 }
@@ -93,6 +101,36 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
   const [parseError, setParseError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set())
+  const [recovery] = useState(() => user ? loadClientImportRecovery(user.id) : { draft: null, error: null })
+  const [resumeDraft, setResumeDraft] = useState(recovery.draft)
+  const [recoveryError, setRecoveryError] = useState<string | null>(recovery.error)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const resumedBatch = useRef(false)
+
+  const persistDraft = useCallback((nextBatch = batch, nextOutcomes = outcomes) => {
+    if (!user || !fileName || rawRows.length === 0) return false
+    const draft: ClientImportRecoveryDraft = { fileName, rawRows, hasHeaderRow, mapping, skippedRows: [...skippedRows], batch: nextBatch, outcomes: nextOutcomes }
+    const result = saveClientImportRecovery(user.id, draft)
+    setRecoveryError(result.error)
+    return result.ok
+  }, [user, fileName, rawRows, hasHeaderRow, mapping, skippedRows, batch, outcomes])
+
+  useEffect(() => {
+    if (!resumeDraft && fileName && rawRows.length > 0) persistDraft()
+  }, [fileName, rawRows, resumeDraft, persistDraft])
+
+  function resumeImport() {
+    if (!resumeDraft) return
+    setFileName(resumeDraft.fileName)
+    setRawRows(resumeDraft.rawRows)
+    setHasHeaderRow(resumeDraft.hasHeaderRow)
+    setMapping(resumeDraft.mapping)
+    setSkippedRows(new Set(resumeDraft.skippedRows))
+    setBatch(resumeDraft.batch)
+    setOutcomes(resumeDraft.outcomes)
+    resumedBatch.current = resumeDraft.batch !== null
+    setResumeDraft(null)
+  }
 
   /**
    * The duplicate corpus: directory clients whose phone or email matches
@@ -189,25 +227,33 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
     const prepared = batch ?? readyRows.map(row => ({
       rowIndex: row.rowIndex, clientUuid: newClientUuid(), values: importClientValues(row.record!),
     }))
+    const preparedOutcomes: ClientImportOutcome[] = prepared.map(row => outcomes.find(outcome => outcome.rowIndex === row.rowIndex) ?? { rowIndex: row.rowIndex, status: 'pending' })
+    if (!persistDraft(prepared, preparedOutcomes)) {
+      setBusy(false)
+      submitGuard.current = false
+      return
+    }
     setBatch(prepared)
     setOutcomes(previous => {
       const byIndex = new Map(previous.map(row => [row.rowIndex, row]))
       return prepared.map(row => byIndex.get(row.rowIndex) ?? { rowIndex: row.rowIndex, status: 'pending' })
     })
     const confirmed = new Set(outcomes.filter(row => row.status === 'saved').map(row => row.rowIndex))
-    const remaining = prepared.filter(row => !confirmed.has(row.rowIndex))
+    const remaining = resumedBatch.current ? prepared : prepared.filter(row => !confirmed.has(row.rowIndex))
+    let latestOutcomes = preparedOutcomes
     function update(next: readonly ClientImportOutcome[]) {
-      setOutcomes(previous => {
-        const byIndex = new Map(previous.map(row => [row.rowIndex, row]))
+        const byIndex = new Map(latestOutcomes.map(row => [row.rowIndex, row]))
         next.forEach(row => byIndex.set(row.rowIndex, row))
-        return prepared.map(row => byIndex.get(row.rowIndex) ?? { rowIndex: row.rowIndex, status: 'pending' })
-      })
+        latestOutcomes = prepared.map(row => byIndex.get(row.rowIndex) ?? { rowIndex: row.rowIndex, status: 'pending' })
+        persistDraft(prepared, latestOutcomes)
+        setOutcomes(latestOutcomes)
     }
     try {
       const result = await importClients({
         rows: remaining, onProgress: update, shouldStop: () => stopRequested.current,
       }, { userId: user.id, role: user.role, isOnline: online })
       update(result.outcomes)
+      resumedBatch.current = false
     } catch (error: unknown) {
       setCommitError(error instanceof Error ? error.message : 'The import could not finish. Your file and mappings are still here.')
     } finally {
@@ -268,6 +314,14 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
 
   function reset() {
     if (busy) return
+    if (user) {
+      const result = discardClientImportRecovery(user.id)
+      setRecoveryError(result.error)
+      if (!result.ok) return
+    }
+    setResumeDraft(null)
+    setDiscardOpen(false)
+    resumedBatch.current = false
     fileVersion.current += 1
     setBatch(null)
     setOutcomes([])
@@ -294,7 +348,7 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
     : []
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 32 }}>
+    <div className="client-import" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 32 }}>
       <ScreenHeader
         embedded={embedded}
         icon="upload"
@@ -309,7 +363,14 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
         }
       />
 
-      {rawRows.length === 0 && (
+      {recoveryError && <p role="alert" className="client-import-recovery-error">{recoveryError} Client saves wait until recovery storage is available.</p>}
+      {resumeDraft && <section className="client-import-recovery" aria-label="Saved import draft">
+        <h2>Resume client import</h2>
+        <p><strong>{resumeDraft.fileName}</strong> · {resumeDraft.rawRows.length - (resumeDraft.hasHeaderRow ? 1 : 0)} data rows</p>
+        <p>{resumeDraft.outcomes.filter(row => row.status === 'saved').length} confirmed saved. File columns, selected rows and retry keys are preserved on this device.</p>
+        <div className="client-import-actions"><Button variant="primary" onClick={resumeImport}>Resume import</Button><Button onClick={() => setDiscardOpen(true)}>Discard local draft</Button></div>
+      </section>}
+      {rawRows.length === 0 && !resumeDraft && (
         <section style={{ ...cardStyle, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div
             onDragOver={(e) => {
@@ -398,8 +459,8 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
                 <strong style={{ color: 'var(--text)', fontSize: 'var(--t-meta)' }}>{fileName}</strong>
                 <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>· {dataRows.length} data row{dataRows.length === 1 ? '' : 's'}</span>
               </div>
-              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <div className="client-import-actions">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 44, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   <input
                     type="checkbox"
                     disabled={locked}
@@ -409,7 +470,7 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
                   />
                   First row is headers
                 </label>
-                <Button icon="close" onClick={reset} disabled={busy}>
+                <Button icon="close" onClick={() => setDiscardOpen(true)} disabled={busy}>
                   Choose Different File
                 </Button>
               </div>
@@ -418,7 +479,7 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
             <div>
               <h2 style={{ margin: '0 0 10px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Map Columns</h2>
               <DataTableShell ariaLabel="CSV column mapping" data-table-scroll style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                <table className="client-import-mapping" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       <th style={th}>CSV Column</th>
@@ -429,9 +490,9 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
                   <tbody>
                     {headers.map((h, colIndex) => (
                       <tr key={colIndex} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ ...td, fontWeight: 600 }}>{h || `Column ${colIndex + 1}`}</td>
-                        <td style={{ ...td, color: 'var(--muted)' }}>{dataRows[0]?.[colIndex] || '—'}</td>
-                        <td style={td}>
+                        <td data-label="CSV column" style={{ ...td, fontWeight: 600 }}>{h || `Column ${colIndex + 1}`}</td>
+                        <td data-label="Sample value" style={{ ...td, color: 'var(--muted)' }}>{dataRows[0]?.[colIndex] || '—'}</td>
+                        <td data-label="Maps to" style={td}>
                           <Select
                             aria-label={`Map column ${colIndex + 1}: ${h || "unnamed"}`}
                             disabled={locked}
@@ -505,7 +566,7 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
 
               <Card title="Preview & Validate" bodyStyle={{ padding: 0 }}>
                 <DataTableShell ariaLabel="CSV import preview" data-table-scroll style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                  <table className="client-import-preview" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
                         <th style={{ ...th, width: 30 }} />
@@ -522,7 +583,7 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
                         const outcome = outcomes.find(row => row.rowIndex === r.rowIndex)
                         return (
                           <tr key={r.rowIndex} style={{ borderBottom: '1px solid var(--border)', opacity: skipped ? 0.5 : 1 }}>
-                            <td style={{ ...td, width: 30 }}>
+                            <td data-label="Include row" style={{ ...td, width: 30 }}>
                               <input
                                 type="checkbox"
                                 aria-label={`Include row ${r.rowIndex + 1} (${r.record?.name || "unnamed"})`}
@@ -539,13 +600,13 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
                                 }
                               />
                             </td>
-                            <td className="figure" style={{ ...td, color: 'var(--muted)' }}>
+                            <td data-label="Row" className="figure" style={{ ...td, color: 'var(--muted)' }}>
                               {r.rowIndex + 1}
                             </td>
-                            <td style={{ ...td, fontWeight: 600 }}>{r.record?.name || dataRows[r.rowIndex]?.[0] || '—'}</td>
-                            <td className="figure" style={td}>{r.record?.phone || '—'}</td>
-                            <td style={{ ...td, color: 'var(--text2)' }}>{r.record?.clientType ?? '—'}</td>
-                            <td style={td}>
+                            <td data-label="Name" style={{ ...td, fontWeight: 600 }}>{r.record?.name || dataRows[r.rowIndex]?.[0] || '—'}</td>
+                            <td data-label="Phone" className="figure" style={td}>{r.record?.phone || '—'}</td>
+                            <td data-label="Type" style={{ ...td, color: 'var(--text2)' }}>{r.record?.clientType ?? '—'}</td>
+                            <td data-label="Status" style={td}>
                               {outcome?.status === 'saved' ? (
                                 <span style={{ color: 'var(--success-text)' }}><Icon name="check" size={14} /> Saved <Link to={`/clients/${outcome.clientId}`}>{outcome.clientCode}</Link></span>
                               ) : outcome && outcome.status !== 'pending' ? (
@@ -614,8 +675,8 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
                 )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-sm)' }}>
                   <Button variant="primary" icon="check" onClick={() => void runImport()}
-                    disabled={busy || !online || (batch ? !unresolved : !commitReady)}>
-                    {busy ? 'Importing…' : batch ? unresolved ? 'Retry remaining rows' : 'Import complete' : `Import ${readyRows.length} Client${readyRows.length === 1 ? '' : 's'}`}
+                    disabled={busy || !online || (batch ? !unresolved && !resumedBatch.current : !commitReady)}>
+                    {busy ? 'Importing…' : batch ? resumedBatch.current ? 'Check saved rows & continue' : unresolved ? 'Retry remaining rows' : 'Import complete' : `Import ${readyRows.length} Client${readyRows.length === 1 ? '' : 's'}`}
                   </Button>
                   {busy && <Button disabled={stopping} onClick={() => { stopRequested.current = true; setStopping(true) }}>
                     {stopping ? 'Stopping after this row…' : 'Stop after current row'}
@@ -623,7 +684,7 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
                   {savedCount > 0 && !busy && <Button onClick={() => navigate('/clients')}>View Clients</Button>}
                 </div>
                 <p style={{ margin: 0, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
-                  Keep the CSV and stay on this page while saving. Each row is saved separately; if one fails, later rows wait.
+                  This device preserves the file, mappings and retry keys when you leave or refresh. Each row is saved separately; if one fails, later rows wait.
                   A lost confirmation is checked with the same save when you retry.
                 </p>
               </section>
@@ -634,6 +695,9 @@ function ClientImportForm({ embedded = false }: ImportCenterProps = {}) {
 
       <FooterNote extra={['Only confirmed saves are counted. Existing clients and memberships are unchanged.']} />
       <UnsavedLeaveDialog />
+      <ConfirmDialog isOpen={discardOpen} onClose={() => setDiscardOpen(false)} onConfirm={reset}
+        title="Discard local import draft?" confirmLabel="Discard local draft"
+        description="This removes the file, mappings and unfinished retry keys from this device. Clients already saved remain in the directory. Keep the draft if any save confirmation is uncertain." />
     </div>
   )
 }

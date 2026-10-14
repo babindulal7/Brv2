@@ -225,7 +225,7 @@ export function LifecycleProgress({
 
   return (
     <div className={`lifecycle-container ${className}`}>
-      <div className="lifecycle-track" role="region" aria-label="Booking Lifecycle Progress">
+      <div className="lifecycle-track" role="region" aria-label="Booking Lifecycle Progress" tabIndex={0}>
         {LIFECYCLE_STAGES.map((stage, idx) => {
           const isDone = idx < activeIndex
           const isCurrent = idx === activeIndex

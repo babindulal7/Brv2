@@ -71,6 +71,7 @@ export interface RentalPreview {
   rentalDays: number | null
   readiness: RentalReadiness
   rentalTotalPaisa?: Paisa
+  isDraft?: boolean
   equipment: Array<{ label: string; qty: number; packed?: boolean | undefined }>
   packing: { status: PackingStatus; lines: PackingLine[]; updatedAt?: string | undefined; updatedBy?: string | undefined }
   payments?: { summary: RentalPaymentSummary; history: PaymentTransaction[]; depositHeldVerified?: boolean } | undefined

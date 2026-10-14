@@ -1221,7 +1221,9 @@ export function rentalGlance(row: RentalListRow, gctx: GateContext): IntelGlance
       ...(row.isCancelled ? [{ label: 'Cancelled', tone: 'danger' as StatusKey }] : []),
     ],
     lines,
-    primaryAction: { label: 'Open booking', to: `/rentals/${row.bookingNo}` },
+    primaryAction: (row.status as string) === 'Draft'
+      ? { label: 'Continue draft', to: `/rentals?action=new&draft=${encodeURIComponent(row.id)}` }
+      : { label: 'Open booking', to: `/rentals/${encodeURIComponent(row.bookingNo)}` },
   }
 }
 

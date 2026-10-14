@@ -19,13 +19,18 @@
  *
  * Environment pragma per `vitest.config.ts`, which keeps the suite on `node`.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { Viewport } from '../../../lib/device'
 import { OperationsWorkspaceProvider } from '../OperationsWorkspaceContext'
+import { loadMockClient } from '../../../lib/supabase'
+
+beforeAll(async () => {
+  await loadMockClient()
+})
 
 let viewport: Viewport = 'desktop'
 

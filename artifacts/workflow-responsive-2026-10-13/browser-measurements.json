@@ -1,0 +1,64 @@
+[
+  {
+    "buttons": [
+      {
+        "height": 44,
+        "text": "← Handover",
+        "width": 300.8000183105469
+      },
+      {
+        "height": 56,
+        "text": "Confirm Return & Next",
+        "width": 300.8000183105469
+      }
+    ],
+    "columns": "141.2px 141.2px",
+    "documentWidth": 390,
+    "missingBooking": false,
+    "stageDisplay": "grid",
+    "width": 390
+  },
+  {
+    "breadcrumb": "Today",
+    "documentWidth": 768,
+    "headerHeight": 64,
+    "healthySyncDisplay": "none",
+    "width": 768
+  },
+  {
+    "buttons": [
+      {
+        "contentWidth": 165,
+        "height": 60,
+        "text": "Packing · Done",
+        "width": 167
+      },
+      {
+        "contentWidth": 165,
+        "height": 60,
+        "text": "Handover · Done",
+        "width": 167
+      },
+      {
+        "contentWidth": 165,
+        "height": 60,
+        "text": "Return & Inspection · Open",
+        "width": 167
+      },
+      {
+        "contentWidth": 165,
+        "height": 60,
+        "text": "Cleaning & Reset · Not open yet",
+        "width": 167
+      }
+    ],
+    "columns": "167px 167px 167px 167px",
+    "documentWidth": 768,
+    "width": 768
+  },
+  {
+    "columns": "331px 331px 331px 331px",
+    "documentWidth": 1440,
+    "width": 1440
+  }
+]

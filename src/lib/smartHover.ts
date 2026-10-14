@@ -151,6 +151,7 @@ export function rentalIntelChecks(r: RentalReadiness) {
 
 /** Navigation guidance only. The booking workflow owns every transition gate. */
 export function rentalIntelNextStep(stage: string, r: RentalReadiness): string {
+  if (stage === 'Draft') return 'Continue the saved draft to review items and requirements before creating the rental.'
   if (stage === 'Quote' || stage === 'Booked' || stage === 'Packed') {
     if (r.clientAllowed === false) return 'Review the client restriction in the booking before continuing.'
     if (handoverBlockedReason(r)) return 'Review booking requirements and complete the blocked or unverified checks.'

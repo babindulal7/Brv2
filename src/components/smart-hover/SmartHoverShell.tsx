@@ -90,7 +90,7 @@ export function SmartHoverTabs({
   onChange: (id: string) => void
 }) {
   return (
-    <div role="tablist" aria-label="Preview sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '0 8px 8px', minWidth: 0 }}>
+    <div role="tablist" aria-label="Preview sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '0 8px 8px', minWidth: 0, position: 'sticky', top: 0, zIndex: 1, background: 'var(--surface-card, var(--card))' }}>
       {tabs.map((t) => {
         const selected = t.id === active
         return (
